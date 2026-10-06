@@ -73,6 +73,8 @@ pub struct SqliteWorkspace {
     active: Option<String>,
     next_tab: u64,
     queries: u32,
+    /// Why the last tab request was refused (the tab limit).
+    message: Option<String>,
     connect_task: Option<Task<()>>,
     _tree_events: Subscription,
 }
@@ -107,6 +109,7 @@ impl SqliteWorkspace {
             active: None,
             next_tab: 0,
             queries: 0,
+            message: None,
             connect_task: None,
             _tree_events: tree_events,
         }
@@ -285,6 +288,7 @@ impl SqliteWorkspace {
                 .map(|tab| tab.id.clone());
             self.focus_active(window, cx);
         }
+        self.message = None;
         cx.emit(SqliteEvent::Changed);
         cx.notify();
         true
@@ -308,7 +312,23 @@ impl SqliteWorkspace {
         }
     }
 
+    /// Refuses a new tab past [`sqlite_model::MAX_TABS`], saying why.
+    fn at_tab_limit(&mut self, cx: &mut Context<Self>) -> bool {
+        match sqlite_model::tab_limit_message(self.tabs.len()) {
+            Some(message) => {
+                self.message = Some(message);
+                cx.emit(SqliteEvent::Changed);
+                cx.notify();
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn new_query(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.at_tab_limit(cx) {
+            return;
+        }
         self.queries += 1;
         let number = self.queries;
         let context = self.context.clone();
@@ -341,7 +361,7 @@ impl SqliteWorkspace {
             schema: schema.clone(),
             name: name.clone(),
         };
-        if self.focus_existing(&kind, window, cx) {
+        if self.focus_existing(&kind, window, cx) || self.at_tab_limit(cx) {
             return;
         }
         let context = self.context.clone();
@@ -361,7 +381,7 @@ impl SqliteWorkspace {
             schema: schema.clone(),
             name: name.clone(),
         };
-        if self.focus_existing(&kind, window, cx) {
+        if self.focus_existing(&kind, window, cx) || self.at_tab_limit(cx) {
             return;
         }
         let context = self.context.clone();
@@ -424,6 +444,7 @@ impl SqliteWorkspace {
             view,
             _events: events,
         });
+        self.message = None;
         self.select_tab(&id, window, cx);
     }
 
@@ -506,8 +527,17 @@ impl Render for SqliteWorkspace {
         div()
             .id("sqlite-workspace")
             .size_full()
+            .flex()
+            .flex_col()
             .bg(style::bg())
-            .child(content)
+            .child(div().flex_1().min_h_0().child(content))
+            .when_some(self.message.clone(), |root, message| {
+                root.child(
+                    crate::ui::error_banner("sqlite-message", message)
+                        .flex_none()
+                        .m(px(8.)),
+                )
+            })
     }
 }
 

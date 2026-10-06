@@ -18,6 +18,7 @@ use gpui::{
     Task, Window, div, prelude::*, px,
 };
 use language::Buffer;
+use multi_buffer::MultiBufferOffset;
 
 /// The workspace-wide retained-results ceiling shared with query tabs.
 const RETAINED_CEILING: usize = 128 * 1024 * 1024;
@@ -203,7 +204,27 @@ impl SqliteQueryView {
         }
     }
 
-    fn run(&mut self, confirmed: bool, cx: &mut Context<Self>) {
+    /// The whole buffer for a script; otherwise the selection, or the
+    /// statement under the cursor when nothing is selected.
+    fn sql_to_run(&self, script: bool, cx: &mut Context<Self>) -> Result<String, &'static str> {
+        self.editor.update(cx, |editor, cx| {
+            let text = editor.text(cx);
+            if script {
+                return Ok(text);
+            }
+            let selection = editor
+                .selections
+                .newest::<MultiBufferOffset>(&editor.display_snapshot(cx));
+            match sqlite_model::sql_to_run(&text, selection.start.0..selection.end.0) {
+                Some(range) => Ok(text[range].to_owned()),
+                None => Err("No SQL statement at the cursor"),
+            }
+        })
+    }
+
+    /// Runs the statement at the cursor (or the selection), the whole
+    /// buffer when `script`, or the reviewed SQL when `confirmed`.
+    fn run(&mut self, confirmed: bool, script: bool, cx: &mut Context<Self>) {
         if self.running.is_some() {
             return;
         }
@@ -218,7 +239,14 @@ impl SqliteQueryView {
                 None => return,
             }
         } else {
-            self.editor.read(cx).text(cx)
+            match self.sql_to_run(script, cx) {
+                Ok(sql) => sql,
+                Err(message) => {
+                    self.summary = message.into();
+                    cx.notify();
+                    return;
+                }
+            }
         };
         if sql.trim().is_empty() {
             self.summary = "Nothing to run".into();
@@ -306,8 +334,14 @@ impl SqliteQueryView {
         }
     }
 
+    /// The session went away (its owner closes it, which interrupts the
+    /// run). Forget the run so a later Stop cannot aim its ticket at a new
+    /// session and Run is available after a reconnect.
     pub fn detached(&mut self, cx: &mut Context<Self>) {
         self.confirmation = None;
+        if self.running.take().is_some() {
+            self.summary = "Disconnected".into();
+        }
         cx.notify();
     }
 
@@ -347,8 +381,8 @@ impl Render for SqliteQueryView {
         div()
             .id("sqlite-query")
             .key_context("SqliteQuery")
-            .on_action(cx.listener(|this, _: &RunStatement, _, cx| this.run(false, cx)))
-            .on_action(cx.listener(|this, _: &RunScript, _, cx| this.run(false, cx)))
+            .on_action(cx.listener(|this, _: &RunStatement, _, cx| this.run(false, false, cx)))
+            .on_action(cx.listener(|this, _: &RunScript, _, cx| this.run(false, true, cx)))
             .on_action(cx.listener(|this, _: &StopQuery, _, cx| this.stop(cx)))
             .size_full()
             .flex()
@@ -365,8 +399,15 @@ impl Render for SqliteQueryView {
                         )
                         .aria_keyshortcuts("Meta+Enter")
                         .child(ui::shortcut("⌘↵"))
+                        .tooltip(ui::tooltip(
+                            "Run statement at cursor or selection (Cmd-Enter); \
+                             run all (Cmd-Shift-Enter)",
+                        ))
+                        .tooltip_show_delay(ui::tooltip_delay())
                         .when(connected && !running, |button| {
-                            button.on_click(cx.listener(|this, _, _, cx| this.run(false, cx)))
+                            button.on_click(
+                                cx.listener(|this, _, _, cx| this.run(false, false, cx)),
+                            )
                         }),
                     )
                     .child(
@@ -418,7 +459,7 @@ impl Render for SqliteQueryView {
                         .child(
                             ui::button("sqlite-confirm", "Run anyway", ui::Variant::Danger, true)
                                 .tab_index(0)
-                                .on_click(cx.listener(|this, _, _, cx| this.run(true, cx))),
+                                .on_click(cx.listener(|this, _, _, cx| this.run(true, false, cx))),
                         )
                         .child(
                             ui::button("sqlite-confirm-cancel", "Cancel", ui::Variant::Ghost, true)
@@ -551,7 +592,7 @@ impl SqliteDataView {
                     match result {
                         Ok(Ok(page)) => {
                             this.paging = paging;
-                            let events = sqlite_model::page_events(&page);
+                            let events = sqlite_model::page_events(&page, paging.limit);
                             this.retention.feed(&this.context, &this.grid, events, cx);
                             cx.emit(SqliteDocEvent::Latency(page.elapsed_ms));
                             this.page = Some(page);
@@ -641,8 +682,11 @@ impl Render for SqliteDataView {
                         )
                         .when(has_next, |button| {
                             button.on_click(cx.listener(|this, _, _, cx| {
-                                let paging = this.paging.next();
-                                this.load(paging, cx)
+                                // Advance by the rows the page kept.
+                                let next = this.page.as_ref().map(|page| this.paging.next(page));
+                                if let Some(paging) = next {
+                                    this.load(paging, cx)
+                                }
                             }))
                         }),
                     )
