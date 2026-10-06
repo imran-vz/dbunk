@@ -1,5 +1,5 @@
 //! Small captured-settings filter. It never sends a database request while typing.
-use crate::accessible_editor::AccessibleEditor;
+use crate::accessible_editor::{AccessibleEditor, fresh_editor};
 use editor::{Editor, EditorEvent, EditorMode};
 use gpui::{
     Context, Entity, EntityInputHandler, FocusHandle, Focusable, Subscription, Window, div,
@@ -163,9 +163,7 @@ impl FilterInput {
             cost: 0,
         };
         let replacement = cx.new(|cx| {
-            let buffer = cx.new(|cx| language::Buffer::local(value, cx));
-            let mut editor = Editor::for_buffer(buffer, None, window, cx);
-            editor.set_mode(EditorMode::SingleLine);
+            let mut editor = fresh_editor(value, EditorMode::SingleLine, window, cx);
             editor.set_read_only(self.lease.is_none());
             editor
         });

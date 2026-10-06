@@ -1,6 +1,9 @@
 //! Native forms share one editing model, secure AX fields and deterministic
 //! keyboard return. Stored passwords are never loaded into an editor.
-use crate::{accessible_editor::AccessibleEditor, controller::Host};
+use crate::{
+    accessible_editor::{AccessibleEditor, fresh_editor},
+    controller::Host,
+};
 use dbunk_lib::backend::*;
 use editor::Editor;
 use gpui::{
@@ -163,13 +166,29 @@ impl Form {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let editor = self.field_editor(value, secret, window, cx);
+        let accessible = cx.new(|cx| AccessibleEditor::field(editor.clone(), label, secret, cx));
+        self.fields.push(Field {
+            key,
+            label,
+            editor,
+            accessible,
+        });
+    }
+    /// Initial and URI-imported fields share construction, so every editor
+    /// invalidates a stale diagnosis when edited.
+    fn field_editor(
+        &mut self,
+        value: String,
+        secret: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<Editor> {
         let editor = cx.new(|cx| {
-            let mut editor = Editor::single_line(window, cx);
-            editor.set_text(value, window, cx);
+            let mut editor = fresh_editor(value, editor::EditorMode::SingleLine, window, cx);
             editor.set_masked(secret, cx);
             editor
         });
-        let accessible = cx.new(|cx| AccessibleEditor::field(editor.clone(), label, secret, cx));
         cx.subscribe(&editor, |this, _, event, cx| {
             if !matches!(event, editor::EditorEvent::BufferEdited) {
                 return;
@@ -184,12 +203,7 @@ impl Form {
             }
         })
         .detach();
-        self.fields.push(Field {
-            key,
-            label,
-            editor,
-            accessible,
-        });
+        editor
     }
     pub fn credentials(
         host: Arc<Host>,

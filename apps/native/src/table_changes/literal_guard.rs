@@ -1,5 +1,6 @@
 //! Finite literal buffers and CRDT history. Normal marked input stays editor-owned.
 use super::*;
+use crate::accessible_editor::fresh_editor;
 use editor::{EditorEvent, EditorMode};
 use gpui::{EntityInputHandler, Subscription};
 use multi_buffer::MultiBufferOffset;
@@ -75,11 +76,12 @@ pub(super) fn replace<T: 'static>(
         (selection.start.0, selection.end.0)
     };
     let editor = cx.new(|cx| {
-        let buffer = cx.new(|cx| language::Buffer::local(value, cx));
-        let mut editor = Editor::for_buffer(buffer, None, window, cx);
-        if !multiline {
-            editor.set_mode(EditorMode::SingleLine);
-        }
+        let mut editor = if multiline {
+            let buffer = cx.new(|cx| language::Buffer::local(value, cx));
+            Editor::for_buffer(buffer, None, window, cx)
+        } else {
+            fresh_editor(value, EditorMode::SingleLine, window, cx)
+        };
         editor.set_read_only(read_only);
         editor
     });

@@ -5,7 +5,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use editor::display_map::{DisplayPoint, DisplayRow, ToDisplayPoint};
-use editor::{Editor, EditorEvent, SelectionEffects};
+use editor::{Editor, EditorEvent, EditorMode, SelectionEffects};
 use gpui::{
     Bounds, Context, Entity, Focusable, Pixels, SharedString, Subscription, Window,
     accesskit::{
@@ -70,6 +70,20 @@ impl AccessibleEditor {
         field.secret = secret;
         field
     }
+}
+
+/// A field editor over a fresh buffer, so replacing a field never carries
+/// earlier text in undo history. The mode is fixed at construction: Zed derives
+/// gutter and line-number chrome from it, and `set_mode` does not reset them.
+pub fn fresh_editor(
+    text: impl Into<String>,
+    mode: EditorMode,
+    window: &mut Window,
+    cx: &mut Context<Editor>,
+) -> Editor {
+    let buffer = cx.new(|cx| language::Buffer::local(text.into(), cx));
+    let buffer = cx.new(|cx| multi_buffer::MultiBuffer::singleton(buffer, cx));
+    Editor::new(mode, buffer, None, window, cx)
 }
 
 impl Render for AccessibleEditor {

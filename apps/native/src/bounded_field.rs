@@ -1,6 +1,6 @@
 //! Short text fields own bounded histories inside the caller's shared lease.
 //! Admit editor/history working memory before constructing a field.
-use crate::accessible_editor::AccessibleEditor;
+use crate::accessible_editor::{AccessibleEditor, fresh_editor};
 use editor::{Editor, EditorEvent, EditorMode};
 use gpui::{
     Context, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, Subscription,
@@ -23,6 +23,17 @@ pub(super) struct Field {
     subscription: Option<Subscription>,
 }
 impl EventEmitter<Changed> for Field {}
+fn field_mode(multiline: bool) -> EditorMode {
+    if multiline {
+        EditorMode::AutoHeight {
+            min_lines: 1,
+            max_lines: Some(3),
+        }
+    } else {
+        EditorMode::SingleLine
+    }
+}
+
 impl Field {
     pub(super) fn new(
         label: &'static str,
@@ -32,19 +43,7 @@ impl Field {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let editor = cx.new(|cx| {
-            let buffer = cx.new(|cx| language::Buffer::local(text.clone(), cx));
-            let mut editor = Editor::for_buffer(buffer, None, window, cx);
-            editor.set_mode(if multiline {
-                EditorMode::AutoHeight {
-                    min_lines: 1,
-                    max_lines: Some(3),
-                }
-            } else {
-                EditorMode::SingleLine
-            });
-            editor
-        });
+        let editor = cx.new(|cx| fresh_editor(text.clone(), field_mode(multiline), window, cx));
         let accessible = cx.new(|cx| AccessibleEditor::field(editor.clone(), label, false, cx));
         let mut this = Self {
             editor,
@@ -113,16 +112,8 @@ impl Field {
                 });
                 let focused = editor.focus_handle(cx).is_focused(window);
                 let replacement = cx.new(|cx| {
-                    let buffer = cx.new(|cx| language::Buffer::local(text.clone(), cx));
-                    let mut editor = Editor::for_buffer(buffer, None, window, cx);
-                    editor.set_mode(if this.multiline {
-                        EditorMode::AutoHeight {
-                            min_lines: 1,
-                            max_lines: Some(3),
-                        }
-                    } else {
-                        EditorMode::SingleLine
-                    });
+                    let mut editor =
+                        fresh_editor(text.clone(), field_mode(this.multiline), window, cx);
                     editor.set_read_only(this.readonly);
                     editor
                 });

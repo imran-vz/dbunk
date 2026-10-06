@@ -58,20 +58,18 @@ impl Form {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let field = self
+        let index = self
             .fields
-            .iter_mut()
-            .find(|field| field.key == key)
+            .iter()
+            .position(|field| field.key == key)
             .unwrap();
-        let focused = field.editor.focus_handle(cx).is_focused(window);
+        let focused = self.fields[index]
+            .editor
+            .focus_handle(cx)
+            .is_focused(window);
         let secret = key == "password";
-        let editor = cx.new(|cx| {
-            let buffer = cx.new(|cx| language::Buffer::local(value, cx));
-            let mut editor = Editor::for_buffer(buffer, None, window, cx);
-            editor.set_mode(editor::EditorMode::SingleLine);
-            editor.set_masked(secret, cx);
-            editor
-        });
+        let editor = self.field_editor(value, secret, window, cx);
+        let field = &mut self.fields[index];
         if focused {
             window.focus(&editor.focus_handle(cx), cx);
         }
