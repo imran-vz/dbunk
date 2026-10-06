@@ -1,6 +1,9 @@
 //! Plan 031 step 4: MySQL session bounds, policy and lifecycle.
 use super::rows::{self, CellKind, Collector};
-use super::worker::{self, authorize, browse_sql, definition_sql, objects_of, page};
+use super::worker::{
+    self, authorize, browse_sql, column_order, definition_sql, objects_of, page, pinned_database,
+    timed_out, unique_key, BrowseOrder,
+};
 use super::*;
 use crate::backend::{
     DevelopmentConnectionOrganization, DevelopmentEngineConnection, DevelopmentEnvironment,
@@ -149,6 +152,173 @@ fn browse_pages_read_one_row_ahead_and_order_by_the_primary_key() {
 }
 
 #[test]
+fn a_byte_cut_on_the_last_page_still_reports_the_dropped_rows_as_more() {
+    // 5 rows exist after the offset, the byte budget kept 3: the next page
+    // starts after the 3 kept rows, so there is more to read.
+    let cut = page(
+        MySqlResult {
+            rows: (0..3).map(|i| vec![Some(i.to_string())]).collect(),
+            total_rows: 5,
+            ..Default::default()
+        },
+        10,
+    );
+    assert_eq!(cut.rows.len(), 3);
+    assert_eq!(cut.total_rows, 5);
+    assert!(cut.truncated);
+    assert!(cut.has_more);
+}
+
+#[test]
+fn browse_orders_by_the_first_unique_non_null_key_else_by_every_exact_column() {
+    let row = |values: &[&str]| values.iter().map(|v| (*v).to_owned()).collect::<Vec<_>>();
+    // The primary key comes first from the catalog and wins.
+    assert_eq!(
+        unique_key(vec![
+            row(&["PRIMARY", "id", ""]),
+            row(&["PRIMARY", "line", ""]),
+            row(&["email", "email", ""]),
+        ]),
+        Some(vec!["id".to_owned(), "line".to_owned()])
+    );
+    // Nullable and functional key parts disqualify an index.
+    assert_eq!(
+        unique_key(vec![
+            row(&["a_nullable", "code", "YES"]),
+            row(&["b_functional", "", ""]),
+            row(&["c_ok", "tenant", ""]),
+            row(&["c_ok", "slug", ""]),
+        ]),
+        Some(vec!["tenant".to_owned(), "slug".to_owned()])
+    );
+    assert_eq!(unique_key(vec![row(&["u", "x", "YES"])]), None);
+    assert_eq!(unique_key(Vec::new()), None);
+
+    assert_eq!(
+        column_order(vec![row(&["id", "int"]), row(&["name", "varchar"])]),
+        BrowseOrder {
+            columns: vec!["id".into(), "name".into()],
+            approximate: false
+        }
+    );
+    // Text, blob, JSON and spatial values are left out; the order is then
+    // approximate, and with no orderable column at all there is no order.
+    assert_eq!(
+        column_order(vec![row(&["id", "int"]), row(&["body", "LONGTEXT"])]),
+        BrowseOrder {
+            columns: vec!["id".into()],
+            approximate: true
+        }
+    );
+    assert_eq!(
+        column_order(vec![row(&["doc", "json"])]),
+        BrowseOrder {
+            columns: vec![],
+            approximate: true
+        }
+    );
+    assert!(column_order(Vec::new()).approximate);
+}
+
+#[test]
+fn scripts_always_run_in_the_documents_database_or_the_connection_default() {
+    assert_eq!(
+        pinned_database(Some("shop".into()), Some("app"), Some("other")),
+        Ok(Some("shop".into()))
+    );
+    // No document database: the connection default is pinned explicitly,
+    // whatever another tab selected.
+    assert_eq!(
+        pinned_database(None, Some("app"), Some("other")),
+        Ok(Some("app".into()))
+    );
+    assert_eq!(
+        pinned_database(Some(" ".into()), Some("app"), None),
+        Ok(Some("app".into()))
+    );
+    // Neither: runs only while the session has no database.
+    assert_eq!(pinned_database(None, None, None), Ok(None));
+    assert!(matches!(
+        pinned_database(None, None, Some("other")),
+        Err(reason) if reason.contains("`other`")
+    ));
+}
+
+#[test]
+fn an_expired_metadata_request_fails_alone_unless_it_cannot_be_stopped() {
+    assert!(matches!(timed_out(Some(Ok(7))), Ok(7)));
+    // Interrupted by the kill: a request error, the session stays open.
+    assert!(matches!(
+        timed_out::<()>(Some(Err(worker::Failure::Request(
+            MySqlSessionError::Cancelled
+        )))),
+        Err(worker::Failure::Request(MySqlSessionError::Database(reason)))
+            if reason.contains("still open")
+    ));
+    // Transport loss stays fatal, and so does a request that never returns.
+    assert!(matches!(
+        timed_out::<()>(Some(Err(worker::Failure::Fatal("gone".into())))),
+        Err(worker::Failure::Fatal(reason)) if reason == "gone"
+    ));
+    assert!(matches!(
+        timed_out::<()>(None),
+        Err(worker::Failure::Fatal(_))
+    ));
+}
+
+#[test]
+fn the_tracker_withdraws_queued_requests_and_only_targets_the_running_one() {
+    let mut tracker = Tracker::default();
+    tracker.enqueue(1);
+    tracker.enqueue(2);
+    assert_eq!(tracker.cancel(2), Target::Queued);
+    assert!(tracker.start(1));
+    assert_eq!(tracker.running, Some(1));
+    assert_eq!(tracker.cancel(1), Target::Running);
+    // An unknown or finished id targets nothing.
+    assert_eq!(tracker.cancel(9), Target::Idle);
+    tracker.finish(1);
+    assert_eq!(tracker.cancel(1), Target::Idle);
+    // The cancelled request is skipped when dequeued and leaves no trace.
+    assert!(!tracker.start(2));
+    assert_eq!(tracker.running, None);
+    assert!(tracker.queued.is_empty());
+    // A stale finish never clears another request.
+    tracker.enqueue(3);
+    assert!(tracker.start(3));
+    tracker.finish(1);
+    assert_eq!(tracker.running, Some(3));
+    // A request refused by a full queue is forgotten.
+    tracker.enqueue(4);
+    tracker.withdraw(4);
+    assert_eq!(tracker.cancel(4), Target::Idle);
+}
+
+/// Cancelling a queued or finished request never opens a side connection,
+/// so no `KILL QUERY` can reach whatever is running.
+#[tokio::test]
+async fn cancel_kills_only_the_running_request() {
+    // Port 1 refuses: any attempt to connect would fail the cancel.
+    let options = MySqlConnectOptions::new().host("127.0.0.1").port(1);
+    let tracker = Mutex::new(Tracker::default());
+    tracker.lock().await.enqueue(1);
+    tracker.lock().await.enqueue(2);
+    assert!(tracker.lock().await.start(1));
+    assert_eq!(
+        worker::cancel(&options, 42, &tracker, 2).await,
+        Ok(MySqlCancel::Withdrawn)
+    );
+    assert_eq!(
+        worker::cancel(&options, 42, &tracker, 7).await,
+        Ok(MySqlCancel::Finished)
+    );
+    // The running request does need the side connection.
+    assert!(worker::cancel(&options, 42, &tracker, 1).await.is_err());
+    assert!(worker::cancel(&options, 0, &tracker, 1).await.is_err());
+    assert!(!tracker.lock().await.start(2));
+}
+
+#[test]
 fn definitions_quote_both_names() {
     assert_eq!(
         definition_sql("app", MySqlObjectKind::Trigger, "audit`x"),
@@ -293,6 +463,9 @@ fn registry_retires_matching_sessions_and_refuses_after_close() {
     let (c, _) = watch::channel(false);
     assert!(registry.register("c", c).is_none());
 }
+
+/// Live requests that are never cancelled share one id.
+const ANY: MySqlRequestId = MySqlRequestId(0);
 
 fn mysql_form(host: &str, port: u16) -> DevelopmentMySqlConnection {
     DevelopmentMySqlConnection {
@@ -459,8 +632,15 @@ async fn live_session_tree_documents_cancel_and_failures() {
         CREATE FUNCTION answer() RETURNS INT DETERMINISTIC RETURN 42; \
         CREATE TRIGGER orders_bi BEFORE INSERT ON orders FOR EACH ROW SET NEW.note = NEW.note; \
         CREATE EVENT nightly ON SCHEDULE EVERY 1 DAY DISABLE DO SELECT 1";
-    let result = session.query(setup.into(), None, false).await.unwrap();
+    let result = session.query(setup.into(), None, false, ANY).await.unwrap();
     assert!(result.result_sets >= 10, "{result:?}");
+    // The script's `USE` is reported, and a tab with no database cannot run
+    // in the database another script left selected.
+    assert_eq!(result.database.as_deref(), Some("dbunk_live"));
+    assert!(matches!(
+        session.query("SELECT 1".into(), None, false, ANY).await,
+        Err(MySqlSessionError::Database(reason)) if reason.contains("dbunk_live")
+    ));
 
     let (databases, _) = session.databases().await.unwrap();
     assert!(databases.contains(&"dbunk_live".to_owned()));
@@ -477,6 +657,7 @@ async fn live_session_tree_documents_cancel_and_failures() {
             "SELECT id, total, placed, note, raw, flags FROM orders ORDER BY id".into(),
             Some("dbunk_live".into()),
             false,
+            ANY,
         )
         .await
         .unwrap();
@@ -500,6 +681,7 @@ async fn live_session_tree_documents_cancel_and_failures() {
             "SELECT id FROM orders WHERE id < 0".into(),
             Some("dbunk_live".into()),
             false,
+            ANY,
         )
         .await
         .unwrap();
@@ -508,18 +690,20 @@ async fn live_session_tree_documents_cancel_and_failures() {
 
     // A statement error keeps the session.
     assert!(matches!(
-        session.query("SELEC 1".into(), None, false).await,
+        session
+            .query("SELEC 1".into(), Some("dbunk_live".into()), false, ANY)
+            .await,
         Err(MySqlSessionError::Database(_))
     ));
 
     let first = session
-        .browse("dbunk_live".into(), "orders".into(), 0, 1)
+        .browse("dbunk_live".into(), "orders".into(), 0, 1, ANY)
         .await
         .unwrap();
     assert_eq!(first.rows[0][0].as_deref(), Some("1"));
     assert!(first.has_more);
     let second = session
-        .browse("dbunk_live".into(), "orders".into(), 1, 1)
+        .browse("dbunk_live".into(), "orders".into(), 1, 1, ANY)
         .await
         .unwrap();
     assert_eq!(second.rows[0][0].as_deref(), Some("2"));
@@ -550,20 +734,63 @@ async fn live_session_tree_documents_cancel_and_failures() {
         .unwrap();
     assert!(trigger.contains("BEFORE INSERT"), "{trigger}");
 
-    // Cancel interrupts the running statement and the session survives.
+    // Cancel targets one request: a queued one is withdrawn and never runs,
+    // the running one is interrupted, and the session survives.
+    let live = Some("dbunk_live".to_owned());
+    let sleeping = session.request_id();
     let running = {
-        let session = session.clone();
-        tokio::spawn(async move { session.query("SELECT SLEEP(20)".into(), None, false).await })
+        let (session, live) = (session.clone(), live.clone());
+        tokio::spawn(async move {
+            session
+                .query("SELECT SLEEP(20)".into(), live, false, sleeping)
+                .await
+        })
     };
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    backend.cancel_mysql_query(&session).await.unwrap();
+    let queued_id = session.request_id();
+    let queued = {
+        let (session, live) = (session.clone(), live.clone());
+        tokio::spawn(async move {
+            session
+                .query(
+                    "INSERT INTO orders VALUES (3, 1, NOW(), NULL, NULL, NULL)".into(),
+                    live,
+                    false,
+                    queued_id,
+                )
+                .await
+        })
+    };
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    assert_eq!(
+        backend.cancel_mysql_query(&session, queued_id).await,
+        Ok(MySqlCancel::Withdrawn)
+    );
+    assert_eq!(
+        backend.cancel_mysql_query(&session, sleeping).await,
+        Ok(MySqlCancel::Interrupted)
+    );
     let cancelled = tokio::time::timeout(std::time::Duration::from_secs(5), running)
         .await
         .expect("cancel returned promptly")
         .unwrap();
     // SLEEP reports an interruption as the value 1, not an error.
-    assert!(cancelled.is_ok() || matches!(cancelled, Err(MySqlSessionError::Database(_))));
-    assert!(session.query("SELECT 1".into(), None, false).await.is_ok());
+    assert!(cancelled.is_ok() || matches!(cancelled, Err(MySqlSessionError::Cancelled)));
+    assert_eq!(queued.await.unwrap(), Err(MySqlSessionError::Cancelled));
+    // A finished request is never killed again.
+    assert_eq!(
+        backend.cancel_mysql_query(&session, sleeping).await,
+        Ok(MySqlCancel::Finished)
+    );
+    let count = session
+        .query("SELECT COUNT(*) FROM orders".into(), live, false, ANY)
+        .await
+        .unwrap();
+    assert_eq!(
+        count.rows[0][0].as_deref(),
+        Some("2"),
+        "withdrawn insert ran"
+    );
 
     // Explicit disconnect retires the session: closed, no failure.
     backend
@@ -577,7 +804,7 @@ async fn live_session_tree_documents_cancel_and_failures() {
         None
     );
     assert_eq!(
-        session.query("SELECT 1".into(), None, false).await,
+        session.query("SELECT 1".into(), None, false, ANY).await,
         Err(MySqlSessionError::Closed(None))
     );
 
@@ -586,10 +813,10 @@ async fn live_session_tree_documents_cancel_and_failures() {
     let observer = backend.open_mysql_session(saved.id.clone()).await.unwrap();
     let thread = session.0.cancel.1;
     observer
-        .query(format!("KILL CONNECTION {thread}"), None, false)
+        .query(format!("KILL CONNECTION {thread}"), None, false, ANY)
         .await
         .unwrap();
-    match session.query("SELECT 1".into(), None, false).await {
+    match session.query("SELECT 1".into(), None, false, ANY).await {
         Err(MySqlSessionError::Closed(Some(_))) => {}
         other => panic!("expected a closed session, got {other:?}"),
     }
@@ -598,11 +825,11 @@ async fn live_session_tree_documents_cancel_and_failures() {
         MySqlSessionStatus::Closed(Some(_))
     ));
     assert!(matches!(
-        session.query("SELECT 1".into(), None, false).await,
+        session.query("SELECT 1".into(), None, false, ANY).await,
         Err(MySqlSessionError::Closed(Some(_)))
     ));
     observer
-        .query("DROP DATABASE dbunk_live".into(), None, false)
+        .query("DROP DATABASE dbunk_live".into(), None, false, ANY)
         .await
         .unwrap();
     backend.shutdown().await.unwrap();

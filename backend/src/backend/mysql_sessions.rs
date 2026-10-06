@@ -2,9 +2,15 @@
 //!
 //! One session is one dedicated `MySqlConnection` owned by a worker task that
 //! the backend tracks for shutdown. Requests queue on a bounded channel and
-//! run one at a time. A lost connection, a metadata timeout or a retirement
-//! (disconnect, connection or credential change, shutdown) closes the session
-//! for good: nothing reconnects automatically, the host opens a new one.
+//! run one at a time. A lost connection, a metadata request that cannot be
+//! interrupted, or a retirement (disconnect, connection or credential change,
+//! shutdown) closes the session for good: nothing reconnects automatically,
+//! the host opens a new one.
+//!
+//! Every request carries an id. The worker records the id it is running, so
+//! a cancel withdraws a queued request before it starts and sends
+//! `KILL QUERY` only while the target request is the one running (checked
+//! under the tracker lock, which the worker also takes between requests).
 //!
 //! Resolution follows the native health probe: the development gate and the
 //! credential guard are held while the record, its secret and its SSH route
@@ -18,20 +24,27 @@ mod tests;
 
 pub use rows::{MYSQL_MAX_CELL_BYTES, MYSQL_MAX_RESULT_BYTES, MYSQL_MAX_ROWS};
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use sqlx::mysql::{MySqlConnectOptions, MySqlSslMode};
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{mpsc, oneshot, watch, Mutex};
 
 use super::{Backend, StatementClassSummary};
 use crate::{credentials, storage, StoredConnection};
 
 /// Connect, including the SSH route, must finish within this budget.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-/// Catalog, browse, structure and definition requests. Expiry closes the
-/// session because the connection state is then unknown.
+/// Catalog, browse, structure and definition requests. Expiry fails the
+/// request and interrupts it with `KILL QUERY`; the session stays open.
 const METADATA_TIMEOUT: Duration = Duration::from_secs(30);
+/// After an expired metadata request is interrupted, it must hand the
+/// connection back within this budget, or the session closes (state unknown).
+const METADATA_KILL_GRACE: Duration = Duration::from_secs(10);
+/// Connect plus `KILL QUERY` on the short side connection.
+const KILL_TIMEOUT: Duration = Duration::from_secs(5);
 /// Requests waiting behind the running one.
 const QUEUE: usize = 8;
 /// Names listed per catalog kind; more are reported as truncated.
@@ -55,6 +68,8 @@ pub enum MySqlSessionError {
     NeedsConfirmation(Vec<StatementClassSummary>),
     /// Too many requests are already queued on this session.
     Busy,
+    /// The request was cancelled before it ran, or interrupted while running.
+    Cancelled,
 }
 
 impl std::fmt::Display for MySqlSessionError {
@@ -67,6 +82,7 @@ impl std::fmt::Display for MySqlSessionError {
             Self::Closed(Some(reason)) => write!(f, "Session closed: {reason}"),
             Self::NeedsConfirmation(_) => f.write_str("This statement requires confirmation"),
             Self::Busy => f.write_str("Session is busy; wait for the running request"),
+            Self::Cancelled => f.write_str("Cancelled"),
         }
     }
 }
@@ -103,7 +119,27 @@ pub struct MySqlResult {
     pub result_sets: u32,
     /// Browse only: another page exists after this one.
     pub has_more: bool,
+    /// Browse only: the object has no unique non-null key and some columns
+    /// cannot be ordered exactly, so pages may overlap or skip rows.
+    pub approximate: bool,
+    /// Query only: the session's database after the script ran.
+    pub database: Option<String>,
     pub runtime_ms: u64,
+}
+
+/// Identity of one query or browse request, for cancellation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MySqlRequestId(u64);
+
+/// What a cancel did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MySqlCancel {
+    /// The request was still queued; it will not run and replies `Cancelled`.
+    Withdrawn,
+    /// `KILL QUERY` was sent while the request was running.
+    Interrupted,
+    /// The request is neither queued nor running (finished or unknown).
+    Finished,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,7 +265,64 @@ enum Reply {
     Definition(String),
 }
 
-type Envelope = (Request, oneshot::Sender<Result<Reply, MySqlSessionError>>);
+type Envelope = (
+    u64,
+    Request,
+    oneshot::Sender<Result<Reply, MySqlSessionError>>,
+);
+
+/// Queued and running request ids, shared by the handles and the worker.
+#[derive(Debug, Default)]
+struct Tracker {
+    /// Queued ids; `true` once cancelled.
+    queued: HashMap<u64, bool>,
+    running: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Target {
+    Queued,
+    Running,
+    Idle,
+}
+
+impl Tracker {
+    fn enqueue(&mut self, id: u64) {
+        self.queued.insert(id, false);
+    }
+
+    /// The request never reached the queue.
+    fn withdraw(&mut self, id: u64) {
+        self.queued.remove(&id);
+    }
+
+    /// Worker: `id` was dequeued. False when it was cancelled and must not run.
+    fn start(&mut self, id: u64) -> bool {
+        if self.queued.remove(&id).unwrap_or(false) {
+            return false;
+        }
+        self.running = Some(id);
+        true
+    }
+
+    fn finish(&mut self, id: u64) {
+        if self.running == Some(id) {
+            self.running = None;
+        }
+    }
+
+    /// Marks a queued request cancelled; reports where `id` is.
+    fn cancel(&mut self, id: u64) -> Target {
+        if let Some(cancelled) = self.queued.get_mut(&id) {
+            *cancelled = true;
+            Target::Queued
+        } else if self.running == Some(id) {
+            Target::Running
+        } else {
+            Target::Idle
+        }
+    }
+}
 
 /// Cloneable handle to one open session. Dropping every handle closes it.
 #[derive(Clone)]
@@ -244,6 +337,8 @@ struct Shared {
     /// Side connection target for `KILL QUERY`; the route stays up while the
     /// worker lives.
     cancel: (MySqlConnectOptions, u64),
+    tracker: Arc<Mutex<Tracker>>,
+    next_id: AtomicU64,
 }
 
 impl MySqlSession {
@@ -278,18 +373,29 @@ impl MySqlSession {
         let _ = tokio::time::timeout(Duration::from_secs(5), self.closed()).await;
     }
 
-    async fn request(&self, request: Request) -> Result<Reply, MySqlSessionError> {
+    /// A fresh id for a query or browse request, so it can be cancelled.
+    pub fn request_id(&self) -> MySqlRequestId {
+        MySqlRequestId(self.0.next_id.fetch_add(1, Ordering::Relaxed) + 1)
+    }
+
+    async fn request(&self, id: u64, request: Request) -> Result<Reply, MySqlSessionError> {
         if let MySqlSessionStatus::Closed(reason) = self.status() {
             return Err(MySqlSessionError::Closed(reason));
         }
         let (reply, receive) = oneshot::channel();
-        self.0
-            .requests
-            .try_send((request, reply))
-            .map_err(|error| match error {
-                mpsc::error::TrySendError::Full(_) => MySqlSessionError::Busy,
-                mpsc::error::TrySendError::Closed(_) => MySqlSessionError::Closed(None),
-            })?;
+        {
+            // Registered before the worker can dequeue it, under the lock the
+            // worker takes to start it.
+            let mut tracker = self.0.tracker.lock().await;
+            tracker.enqueue(id);
+            if let Err(error) = self.0.requests.try_send((id, request, reply)) {
+                tracker.withdraw(id);
+                return Err(match error {
+                    mpsc::error::TrySendError::Full(_) => MySqlSessionError::Busy,
+                    mpsc::error::TrySendError::Closed(_) => MySqlSessionError::Closed(None),
+                });
+            }
+        }
         match receive.await {
             Ok(result) => result,
             // The worker ended before answering; report why.
@@ -299,33 +405,46 @@ impl MySqlSession {
 
     /// Databases the account can see, name-ordered; the flag reports truncation.
     pub async fn databases(&self) -> Result<(Vec<String>, bool), MySqlSessionError> {
-        match self.request(Request::Databases).await? {
+        match self
+            .request(self.request_id().0, Request::Databases)
+            .await?
+        {
             Reply::Databases(names, truncated) => Ok((names, truncated)),
             _ => unreachable!("databases reply"),
         }
     }
 
     pub async fn objects(&self, database: String) -> Result<MySqlObjects, MySqlSessionError> {
-        match self.request(Request::Objects(database)).await? {
+        match self
+            .request(self.request_id().0, Request::Objects(database))
+            .await?
+        {
             Reply::Objects(objects) => Ok(objects),
             _ => unreachable!("objects reply"),
         }
     }
 
-    /// Runs a script on the session. `database` is selected first when given.
-    /// Writes follow the connection's read-only flag and safety policy.
+    /// Runs a script on the session. Its database is always pinned first:
+    /// `database` when given, else the connection's default; with neither,
+    /// the script is refused while an earlier script left the session in a
+    /// database. Writes follow the connection's read-only flag and safety
+    /// policy. `id` (from `request_id`) identifies it for cancellation.
     pub async fn query(
         &self,
         sql: String,
         database: Option<String>,
         confirmed: bool,
+        id: MySqlRequestId,
     ) -> Result<MySqlResult, MySqlSessionError> {
         match self
-            .request(Request::Query {
-                sql,
-                database,
-                confirmed,
-            })
+            .request(
+                id.0,
+                Request::Query {
+                    sql,
+                    database,
+                    confirmed,
+                },
+            )
             .await?
         {
             Reply::Result(result) => Ok(result),
@@ -333,21 +452,28 @@ impl MySqlSession {
         }
     }
 
-    /// One page of a table or view, ordered by its primary key when it has one.
+    /// One page of a table or view, ordered by its primary key, else a unique
+    /// non-null index, else every exactly orderable column (`approximate`
+    /// when that is not a total order). `id` (from `request_id`) identifies
+    /// it for cancellation.
     pub async fn browse(
         &self,
         database: String,
         table: String,
         offset: u64,
         limit: u32,
+        id: MySqlRequestId,
     ) -> Result<MySqlResult, MySqlSessionError> {
         match self
-            .request(Request::Browse {
-                database,
-                table,
-                offset,
-                limit: limit.clamp(1, MYSQL_MAX_PAGE_ROWS),
-            })
+            .request(
+                id.0,
+                Request::Browse {
+                    database,
+                    table,
+                    offset,
+                    limit: limit.clamp(1, MYSQL_MAX_PAGE_ROWS),
+                },
+            )
             .await?
         {
             Reply::Result(result) => Ok(result),
@@ -360,7 +486,10 @@ impl MySqlSession {
         database: String,
         table: String,
     ) -> Result<MySqlStructure, MySqlSessionError> {
-        match self.request(Request::Structure { database, table }).await? {
+        match self
+            .request(self.request_id().0, Request::Structure { database, table })
+            .await?
+        {
             Reply::Structure(structure) => Ok(structure),
             _ => unreachable!("structure reply"),
         }
@@ -374,11 +503,14 @@ impl MySqlSession {
         name: String,
     ) -> Result<String, MySqlSessionError> {
         match self
-            .request(Request::Definition {
-                database,
-                kind,
-                name,
-            })
+            .request(
+                self.request_id().0,
+                Request::Definition {
+                    database,
+                    kind,
+                    name,
+                },
+            )
             .await?
         {
             Reply::Definition(text) => Ok(text),
@@ -555,16 +687,25 @@ impl Backend {
         .and_then(|spawned| spawned.ok_or(unavailable("Native backend is closing")))
     }
 
-    /// Asks the server to stop the session's running statement (`KILL QUERY`
-    /// on a short side connection). The session itself stays open.
-    pub async fn cancel_mysql_query(&self, session: &MySqlSession) -> Result<(), String> {
+    /// Cancels one request: a queued one is withdrawn before it runs; a
+    /// running one is stopped with `KILL QUERY` on a short side connection,
+    /// sent only while that request is still the one running. Other requests
+    /// on the session are never touched, and the session stays open.
+    pub async fn cancel_mysql_query(
+        &self,
+        session: &MySqlSession,
+        request: MySqlRequestId,
+    ) -> Result<MySqlCancel, String> {
+        // Only the pieces, so a pending cancel never keeps the session open.
         let (options, thread) = session.0.cancel.clone();
+        let tracker = session.0.tracker.clone();
         self.call(move |_| async move {
-            Ok(
-                tokio::time::timeout(Duration::from_secs(5), worker::kill_query(&options, thread))
-                    .await
-                    .unwrap_or_else(|_| Err("Cancel timed out".into())),
+            Ok(tokio::time::timeout(
+                KILL_TIMEOUT,
+                worker::cancel(&options, thread, &tracker, request.0),
             )
+            .await
+            .unwrap_or_else(|_| Err("Cancel timed out".into())))
         })
         .await
         .map_err(|_| "Native backend is closing".to_string())?

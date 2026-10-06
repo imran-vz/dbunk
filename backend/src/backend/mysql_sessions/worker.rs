@@ -4,16 +4,17 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use futures_util::TryStreamExt;
-use sqlx::mysql::{MySqlConnectOptions, MySqlConnection};
+use sqlx::mysql::{MySqlConnectOptions, MySqlConnection, MySqlRow};
 use sqlx::{Column, ConnectOptions, Connection, Either, Executor, Row};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, watch, Mutex};
 
 use super::rows::Collector;
 use super::{
-    Envelope, MySqlColumn, MySqlConstraint, MySqlForeignKey, MySqlIndex, MySqlObjectKind,
-    MySqlObjects, MySqlResult, MySqlRoutine, MySqlRoutineKind, MySqlServerInfo, MySqlSessionError,
-    MySqlSessionStatus, MySqlStructure, MySqlTrigger, Reply, Request, Shared, METADATA_TIMEOUT,
-    MYSQL_MAX_CATALOG_ITEMS, QUEUE,
+    Envelope, MySqlCancel, MySqlColumn, MySqlConstraint, MySqlForeignKey, MySqlIndex,
+    MySqlObjectKind, MySqlObjects, MySqlResult, MySqlRoutine, MySqlRoutineKind, MySqlServerInfo,
+    MySqlSessionError, MySqlSessionStatus, MySqlStructure, MySqlTrigger, Reply, Request, Shared,
+    Target, Tracker, KILL_TIMEOUT, METADATA_KILL_GRACE, METADATA_TIMEOUT, MYSQL_MAX_CATALOG_ITEMS,
+    QUEUE,
 };
 use crate::app::AppState;
 use crate::backend::bastions::ProbeRoute;
@@ -64,13 +65,7 @@ pub(super) async fn connect(
             return Err(MySqlSessionError::Unavailable(message(&error)));
         }
     };
-    let text = |index: usize| {
-        row.try_get_raw(index)
-            .ok()
-            .filter(|raw| !sqlx::ValueRef::is_null(raw))
-            .and_then(|raw| <&str as sqlx::Decode<sqlx::MySql>>::decode(raw).ok())
-            .map(str::to_owned)
-    };
+    let text = |index: usize| text_at(&row, index);
     let thread = text(0).and_then(|id| id.parse().ok()).unwrap_or_default();
     let server = MySqlServerInfo {
         version: text(1).unwrap_or_default(),
@@ -101,21 +96,30 @@ pub(super) fn spawn(
     };
     let (requests, receive) = mpsc::channel(QUEUE);
     let (status, observe) = watch::channel(MySqlSessionStatus::Open);
+    let tracker = Arc::new(Mutex::new(Tracker::default()));
+    let kill = (opened.options.clone(), opened.session.thread);
     let shared = Arc::new(Shared {
         connection_id: opened.connection_id.clone(),
         server: opened.session.server.clone(),
         requests,
         retire,
         status: observe,
-        cancel: (opened.options.clone(), opened.session.thread),
+        cancel: kill.clone(),
+        tracker: tracker.clone(),
+        next_id: std::sync::atomic::AtomicU64::new(0),
     });
     let owner = inner.clone();
+    let default_database = opened.session.server.database.clone();
     let worker = Worker {
         connection: opened.session.connection,
         connection_id: opened.connection_id,
         resolved: opened.resolved,
         state,
         status,
+        tracker,
+        kill,
+        current_database: default_database.clone(),
+        default_database,
     };
     let route = opened.route;
     inner.tasks.track_task(tokio::spawn(async move {
@@ -133,6 +137,13 @@ struct Worker {
     resolved: StoredConnection,
     state: Arc<AppState>,
     status: watch::Sender<MySqlSessionStatus>,
+    tracker: Arc<Mutex<Tracker>>,
+    /// Side connection target for interrupting an expired metadata request.
+    kill: (MySqlConnectOptions, u64),
+    /// The connection's default schema, pinned for scripts without one.
+    default_database: Option<String>,
+    /// `DATABASE()` as last observed on this connection.
+    current_database: Option<String>,
 }
 
 impl Worker {
@@ -150,9 +161,19 @@ impl Worker {
                 next = requests.recv() => next,
             };
             // Every handle dropped: nobody can use the session any more.
-            let Some((request, reply)) = next else {
+            let Some((id, request, reply)) = next else {
                 break None;
             };
+            // A cancelled request never runs; neither does one whose caller
+            // is gone.
+            if !self.tracker.lock().await.start(id) {
+                let _ = reply.send(Err(MySqlSessionError::Cancelled));
+                continue;
+            }
+            if reply.is_closed() {
+                self.tracker.lock().await.finish(id);
+                continue;
+            }
             let outcome = tokio::select! {
                 biased;
                 // Abandoning a statement leaves the protocol state unknown,
@@ -164,6 +185,9 @@ impl Worker {
                 }
                 outcome = self.handle(request) => outcome,
             };
+            // A cancel holds this lock while it sends `KILL QUERY`, so the
+            // next request cannot start under a kill meant for this one.
+            self.tracker.lock().await.finish(id);
             match outcome {
                 Ok(value) => {
                     let _ = reply.send(Ok(value));
@@ -197,13 +221,47 @@ impl Worker {
                 .query(sql, database, confirmed)
                 .await
                 .map(Reply::Result),
-            request => match tokio::time::timeout(METADATA_TIMEOUT, self.metadata(request)).await {
-                Ok(result) => result,
-                Err(_) => Err(Failure::Fatal(
-                    "Request timed out; the connection was closed".into(),
-                )),
-            },
+            Request::Structure { database, table } => {
+                // The shared introspection opens its own short connection over
+                // the same resolved endpoint (the route is held by this
+                // worker), so abandoning it leaves this session untouched.
+                match tokio::time::timeout(
+                    METADATA_TIMEOUT,
+                    crate::dispatch::fetch_table_structure(&self.resolved, &database, &table),
+                )
+                .await
+                {
+                    Ok(result) => result
+                        .map(|structure| Reply::Structure(structure_of(structure)))
+                        .map_err(|error| Failure::Request(MySqlSessionError::Database(error))),
+                    Err(_) => Err(Failure::Request(MySqlSessionError::Database(
+                        TIMED_OUT.into(),
+                    ))),
+                }
+            }
+            request => self.bounded_metadata(request).await,
         }
+    }
+
+    /// Runs a metadata request on the session connection within
+    /// `METADATA_TIMEOUT`. On expiry the request is interrupted with
+    /// `KILL QUERY` and fails; only a request that still does not hand the
+    /// connection back closes the session, since its state is then unknown.
+    async fn bounded_metadata(&mut self, request: Request) -> Result<Reply, Failure> {
+        let (options, thread) = self.kill.clone();
+        let work = self.metadata(request);
+        tokio::pin!(work);
+        if let Ok(result) = tokio::time::timeout(METADATA_TIMEOUT, work.as_mut()).await {
+            return result;
+        }
+        let interrupt = async move {
+            let _ = tokio::time::timeout(KILL_TIMEOUT, kill_query(&options, thread)).await;
+        };
+        let (outcome, ()) = tokio::join!(
+            tokio::time::timeout(METADATA_KILL_GRACE, work.as_mut()),
+            interrupt
+        );
+        timed_out(outcome.ok())
     }
 
     async fn metadata(&mut self, request: Request) -> Result<Reply, Failure> {
@@ -229,14 +287,6 @@ impl Worker {
                 .browse(&database, &table, offset, limit)
                 .await
                 .map(Reply::Result),
-            Request::Structure { database, table } => {
-                // The shared introspection opens its own short connection over
-                // the same resolved endpoint; the route is held by this worker.
-                crate::dispatch::fetch_table_structure(&self.resolved, &database, &table)
-                    .await
-                    .map(|structure| Reply::Structure(structure_of(structure)))
-                    .map_err(|error| Failure::Request(MySqlSessionError::Database(error)))
-            }
             Request::Definition {
                 database,
                 kind,
@@ -245,7 +295,9 @@ impl Worker {
                 .definition(&database, kind, &name)
                 .await
                 .map(Reply::Definition),
-            Request::Query { .. } => unreachable!("queries are not metadata"),
+            Request::Query { .. } | Request::Structure { .. } => {
+                unreachable!("handled before the bounded metadata path")
+            }
         }
     }
 
@@ -292,28 +344,43 @@ impl Worker {
         offset: u64,
         limit: u32,
     ) -> Result<MySqlResult, Failure> {
-        let key = strings(
+        // Unique indexes, the primary key first.
+        let unique = strings(
             &mut self.connection,
-            "SELECT CAST(COLUMN_NAME AS CHAR) FROM information_schema.KEY_COLUMN_USAGE \
-             WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY' \
-             ORDER BY ORDINAL_POSITION LIMIT ?",
+            "SELECT CAST(INDEX_NAME AS CHAR), CAST(COLUMN_NAME AS CHAR), CAST(NULLABLE AS CHAR) \
+             FROM information_schema.STATISTICS \
+             WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND NON_UNIQUE = 0 \
+             ORDER BY INDEX_NAME = 'PRIMARY' DESC, INDEX_NAME, SEQ_IN_INDEX LIMIT ?",
             &[database, table],
         )
         .await?;
-        let key: Vec<String> = key.into_iter().map(first).collect();
-        let sql = browse_sql(database, table, &key, offset, limit);
+        let order = match unique_key(unique) {
+            Some(columns) => BrowseOrder {
+                columns,
+                approximate: false,
+            },
+            // No key (or a view): every column in ordinal order.
+            None => column_order(
+                strings(
+                    &mut self.connection,
+                    "SELECT CAST(COLUMN_NAME AS CHAR), CAST(DATA_TYPE AS CHAR) \
+                     FROM information_schema.COLUMNS \
+                     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? \
+                     ORDER BY ORDINAL_POSITION LIMIT ?",
+                    &[database, table],
+                )
+                .await?,
+            ),
+        };
+        let sql = browse_sql(database, table, &order.columns, offset, limit);
         let started = Instant::now();
         let mut collector = Collector::default();
-        {
-            let mut stream = self.connection.fetch_many(sql.as_str());
-            while let Some(item) = stream.try_next().await.map_err(Failure::from_sqlx)? {
-                match item {
-                    Either::Left(done) => collector.done(done.rows_affected()),
-                    Either::Right(row) => collector.row(&row),
-                }
-            }
-        }
-        Ok(page(collector.finish(elapsed(started)), limit))
+        stream_into(&mut self.connection, &sql, &mut collector)
+            .await
+            .map_err(Failure::from_sqlx)?;
+        let mut result = page(collector.finish(elapsed(started)), limit);
+        result.approximate = order.approximate;
+        Ok(result)
     }
 
     async fn definition(
@@ -367,22 +434,39 @@ impl Worker {
         }
         let (intent, audit, single_read) =
             authorize(&self.resolved, &sql, confirmed).map_err(Failure::Request)?;
-        if let Some(database) = database.filter(|database| !database.is_empty()) {
+        let target = pinned_database(
+            database,
+            self.default_database.as_deref(),
+            self.current_database.as_deref(),
+        )
+        .map_err(|reason| Failure::Request(MySqlSessionError::Database(reason)))?;
+        if let Some(database) = target {
             self.connection
                 .execute(format!("USE {}", quote_backtick(&database)).as_str())
                 .await
                 .map_err(Failure::from_sqlx)?;
+            self.current_database = Some(database);
+        }
+        // Audited as soon as execution starts: a script that fails part way
+        // may already have changed data.
+        if audit == AuditDisposition::RequiredAfterSuccess {
+            crate::safety::gate::record_override(
+                &self.state.pool,
+                &self.connection_id,
+                "mysql_query",
+                &intent,
+            )
+            .await;
         }
         let started = Instant::now();
         let mut collector = Collector::default();
-        {
-            let mut stream = self.connection.fetch_many(sql.as_str());
-            while let Some(item) = stream.try_next().await.map_err(Failure::from_sqlx)? {
-                match item {
-                    Either::Left(done) => collector.done(done.rows_affected()),
-                    Either::Right(row) => collector.row(&row),
-                }
+        if let Err(error) = stream_into(&mut self.connection, &sql, &mut collector).await {
+            let failure = Failure::from_sqlx(error);
+            if matches!(failure, Failure::Request(_)) {
+                // The script may have switched databases before failing.
+                self.refresh_database().await?;
             }
+            return Err(failure);
         }
         let runtime = elapsed(started);
         // An empty SELECT carries no row to name its columns; describe it.
@@ -397,17 +481,81 @@ impl Worker {
                 );
             }
         }
-        if audit == AuditDisposition::RequiredAfterSuccess {
-            crate::safety::gate::record_override(
-                &self.state.pool,
-                &self.connection_id,
-                "mysql_query",
-                &intent,
-            )
-            .await;
-        }
-        Ok(collector.finish(runtime))
+        self.refresh_database().await?;
+        let mut result = collector.finish(runtime);
+        result.database = self.current_database.clone();
+        Ok(result)
     }
+
+    /// Re-reads `DATABASE()`; a statement error keeps the last known value.
+    async fn refresh_database(&mut self) -> Result<(), Failure> {
+        match self.connection.fetch_one("SELECT DATABASE()").await {
+            Ok(row) => {
+                self.current_database = text_at(&row, 0);
+                Ok(())
+            }
+            Err(error) => match Failure::from_sqlx(error) {
+                Failure::Fatal(reason) => Err(Failure::Fatal(reason)),
+                Failure::Request(_) => Ok(()),
+            },
+        }
+    }
+}
+
+/// The database a script runs in: the document's, else the connection
+/// default. With neither, a script may only run while the session has no
+/// database, so it never silently runs where another tab left the session.
+pub(super) fn pinned_database(
+    requested: Option<String>,
+    default: Option<&str>,
+    current: Option<&str>,
+) -> Result<Option<String>, String> {
+    if let Some(database) = requested.filter(|database| !database.trim().is_empty()) {
+        return Ok(Some(database));
+    }
+    if let Some(database) = default.filter(|database| !database.trim().is_empty()) {
+        return Ok(Some(database.to_owned()));
+    }
+    match current {
+        None => Ok(None),
+        Some(current) => Err(format!(
+            "Choose a database for this tab; the session is currently using `{current}`"
+        )),
+    }
+}
+
+const TIMED_OUT: &str = "Request timed out and was stopped; the session is still open";
+
+/// Outcome of an expired metadata request after `KILL QUERY`: `None` when
+/// it did not hand the connection back within the grace period.
+pub(super) fn timed_out<T>(outcome: Option<Result<T, Failure>>) -> Result<T, Failure> {
+    match outcome {
+        // It finished just as the kill was sent.
+        Some(Ok(value)) => Ok(value),
+        Some(Err(Failure::Fatal(reason))) => Err(Failure::Fatal(reason)),
+        Some(Err(Failure::Request(_))) => Err(Failure::Request(MySqlSessionError::Database(
+            TIMED_OUT.into(),
+        ))),
+        None => Err(Failure::Fatal(
+            "Request timed out and could not be stopped; the connection was closed".into(),
+        )),
+    }
+}
+
+/// Streams a script into the collector.
+async fn stream_into(
+    connection: &mut MySqlConnection,
+    sql: &str,
+    collector: &mut Collector,
+) -> Result<(), sqlx::Error> {
+    let mut stream = connection.fetch_many(sql);
+    while let Some(item) = stream.try_next().await? {
+        match item {
+            Either::Left(done) => collector.done(done.rows_affected()),
+            Either::Right(row) => collector.row(&row),
+        }
+    }
+    Ok(())
 }
 
 /// The native query policy: statements are classified with the shared SQL
@@ -446,10 +594,17 @@ impl Failure {
     pub(super) fn from_sqlx(error: sqlx::Error) -> Self {
         if is_fatal(&error) {
             Self::Fatal(message(&error))
+        } else if is_interrupted(&error) {
+            Self::Request(MySqlSessionError::Cancelled)
         } else {
             Self::Request(MySqlSessionError::Database(message(&error)))
         }
     }
+}
+
+/// 1317: the statement was stopped by `KILL QUERY`.
+fn is_interrupted(error: &sqlx::Error) -> bool {
+    matches!(error, sqlx::Error::Database(error) if error.code().as_deref() == Some("1317"))
 }
 
 /// Transport and protocol failures, and server errors that end the
@@ -522,6 +677,97 @@ async fn strings(
 
 fn first(row: Vec<String>) -> String {
     row.into_iter().next().unwrap_or_default()
+}
+
+/// One text-protocol value as a string; `None` for NULL.
+fn text_at(row: &MySqlRow, index: usize) -> Option<String> {
+    row.try_get_raw(index)
+        .ok()
+        .filter(|raw| !sqlx::ValueRef::is_null(raw))
+        .and_then(|raw| <&str as sqlx::Decode<sqlx::MySql>>::decode(raw).ok())
+        .map(str::to_owned)
+}
+
+/// How a browse page is ordered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct BrowseOrder {
+    pub columns: Vec<String>,
+    /// Not a total order: pages may overlap or skip rows.
+    pub approximate: bool,
+}
+
+/// The first unique index (primary key first) whose key parts are all plain,
+/// non-null columns. Rows are `[index, column, nullable]` in index order;
+/// functional key parts have no column name.
+pub(super) fn unique_key(rows: Vec<Vec<String>>) -> Option<Vec<String>> {
+    let mut indexes: Vec<(String, Vec<String>, bool)> = Vec::new();
+    for row in rows {
+        let mut row = row.into_iter();
+        let index = row.next().unwrap_or_default();
+        let column = row.next().unwrap_or_default();
+        let nullable = row.next().unwrap_or_default();
+        let usable = !column.is_empty() && !nullable.eq_ignore_ascii_case("YES");
+        match indexes.last_mut() {
+            Some((name, columns, ok)) if *name == index => {
+                columns.push(column);
+                *ok &= usable;
+            }
+            _ => indexes.push((index, vec![column], usable)),
+        }
+    }
+    indexes
+        .into_iter()
+        .find(|(_, _, usable)| *usable)
+        .map(|(_, columns, _)| columns)
+}
+
+/// Fallback order for objects without a usable unique key: every column in
+/// ordinal order. Large text, binary, JSON and spatial values cannot be
+/// ordered exactly, so they are left out and the order is approximate.
+/// Rows are `[column, data type]`.
+pub(super) fn column_order(rows: Vec<Vec<String>>) -> BrowseOrder {
+    let mut columns = Vec::new();
+    let mut approximate = false;
+    for row in rows {
+        let mut row = row.into_iter();
+        let column = row.next().unwrap_or_default();
+        let data_type = row.next().unwrap_or_default().to_ascii_lowercase();
+        if column.is_empty() || inexact_order(&data_type) {
+            approximate = true;
+        } else {
+            columns.push(column);
+        }
+    }
+    approximate |= columns.is_empty();
+    BrowseOrder {
+        columns,
+        approximate,
+    }
+}
+
+fn inexact_order(data_type: &str) -> bool {
+    matches!(
+        data_type,
+        "tinytext"
+            | "text"
+            | "mediumtext"
+            | "longtext"
+            | "tinyblob"
+            | "blob"
+            | "mediumblob"
+            | "longblob"
+            | "json"
+            | "vector"
+            | "geometry"
+            | "point"
+            | "linestring"
+            | "polygon"
+            | "multipoint"
+            | "multilinestring"
+            | "multipolygon"
+            | "geometrycollection"
+            | "geomcollection"
+    )
 }
 
 /// Caps a list at the catalog budget; the flag reports the cut.
@@ -620,13 +866,14 @@ pub(super) fn browse_sql(
 }
 
 /// Trims the look-ahead row. `truncated` stays only for a byte-budget cut
-/// inside the page itself.
+/// inside the page itself; the rows it dropped belong to the next page, so
+/// the caller advances by the rows kept, never by `limit`.
 pub(super) fn page(mut result: MySqlResult, limit: u32) -> MySqlResult {
     let limit = limit as usize;
     let returned = (result.total_rows as usize).min(limit);
-    result.has_more = result.total_rows as usize > limit;
     result.rows.truncate(limit);
     result.truncated = result.rows.len() < returned;
+    result.has_more = result.total_rows as usize > limit || result.truncated;
     result.total_rows = returned as u64;
     result
 }
@@ -698,17 +945,58 @@ fn structure_of(structure: crate::TableStructure) -> MySqlStructure {
     }
 }
 
-/// `KILL QUERY` from a short side connection.
+/// `KILL QUERY` from a short side connection, whatever is running. Only the
+/// worker uses this, for its own expired request.
 pub(super) async fn kill_query(options: &MySqlConnectOptions, thread: u64) -> Result<(), String> {
     if thread == 0 {
-        return Err("The session's server thread is unknown".into());
+        return Err(UNKNOWN_THREAD.into());
     }
     let mut connection = options.connect().await.map_err(|error| message(&error))?;
-    let result = connection
+    let result = kill(&mut connection, thread).await;
+    let _ = connection.close().await;
+    result
+}
+
+const UNKNOWN_THREAD: &str = "The session's server thread is unknown";
+
+async fn kill(connection: &mut MySqlConnection, thread: u64) -> Result<(), String> {
+    connection
         .execute(format!("KILL QUERY {thread}").as_str())
         .await
         .map(drop)
-        .map_err(|error| message(&error));
+        .map_err(|error| message(&error))
+}
+
+/// Cancels request `id`: withdraws it while queued; while it runs, sends
+/// `KILL QUERY` with the tracker locked, so the worker cannot finish it and
+/// start another request in between. Anything else is left alone.
+pub(super) async fn cancel(
+    options: &MySqlConnectOptions,
+    thread: u64,
+    tracker: &Mutex<Tracker>,
+    id: u64,
+) -> Result<MySqlCancel, String> {
+    let target = tracker.lock().await.cancel(id);
+    match target {
+        Target::Queued => return Ok(MySqlCancel::Withdrawn),
+        Target::Idle => return Ok(MySqlCancel::Finished),
+        Target::Running => {}
+    }
+    if thread == 0 {
+        return Err(UNKNOWN_THREAD.into());
+    }
+    // Connect before taking the lock so the worker is not held up by it.
+    let mut connection = options.connect().await.map_err(|error| message(&error))?;
+    let result = {
+        let tracker = tracker.lock().await;
+        if tracker.running == Some(id) {
+            kill(&mut connection, thread)
+                .await
+                .map(|()| MySqlCancel::Interrupted)
+        } else {
+            Ok(MySqlCancel::Finished)
+        }
+    };
     let _ = connection.close().await;
     result
 }
