@@ -807,7 +807,7 @@ impl Render for ManagedServersView {
                                 .gap(px(3.))
                                 .child(
                                     div()
-                                        .text_size(px(15.))
+                                        .text_size(px(crate::style::FONT_TITLE))
                                         .font_weight(gpui::FontWeight::SEMIBOLD)
                                         .child("Managed servers"),
                                 )

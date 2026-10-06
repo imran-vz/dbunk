@@ -818,7 +818,7 @@ impl Render for Form {
                     .gap(px(3.))
                     .child(
                         div()
-                            .text_size(px(15.))
+                            .text_size(px(style::FONT_TITLE))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(style::text())
                             .child(title.clone()),

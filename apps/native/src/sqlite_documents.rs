@@ -451,7 +451,7 @@ impl Render for SqliteQueryView {
                         .gap(px(8.))
                         .px(px(10.))
                         .py(px(6.))
-                        .bg(style::with_alpha(0xd29922, 0x1c))
+                        .bg(style::warn_fill())
                         .border_b_1()
                         .border_color(style::line())
                         .text_color(style::text())
