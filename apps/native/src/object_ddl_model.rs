@@ -3,9 +3,14 @@
 use dbunk_lib::backend::{
     WorkspaceApplyState, WorkspaceObjectDdl,
     object_ddl::{
-        MAX_OBJECT_DDL_RECEIPT_BYTES, ObjectDdlError, ObjectDdlOperation, ObjectDdlOutcome,
-        ObjectDdlReceipt, ObjectDdlRequest, ObjectDdlReview, PgObjectKind, PgObjectRef,
+        MAX_OBJECT_DDL_RECEIPT_BYTES, ObjectDdlEnumPosition, ObjectDdlError, ObjectDdlOperation,
+        ObjectDdlOutcome, ObjectDdlReceipt, ObjectDdlRequest, ObjectDdlReview, PgObjectKind,
+        PgObjectRef,
     },
+};
+mod form;
+pub use form::{
+    EnumPlacement, IndexMethod, derived_index_name, index_columns_text, parse_index_columns,
 };
 use std::{cell::Cell, rc::Rc};
 pub const ALLOWANCE: usize = 2 * 1024 * 1024;
@@ -37,6 +42,13 @@ impl Drop for Lease {
 pub enum Purpose {
     Drop(PgObjectRef),
     CreateView { schema: String },
+    /// A plain table; the backend claims it as an existing `Table`.
+    CreateIndex { schema: String, table: String },
+    /// An enum type; the backend claims it as an existing `Type`.
+    AddEnumValue { schema: String, name: String },
+}
+fn valid_name(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 63 && !value.contains('\0')
 }
 impl Purpose {
     pub fn drop(reference: PgObjectRef) -> Result<Self, &'static str> {
@@ -60,6 +72,23 @@ impl Purpose {
         }
         Ok(Self::CreateView { schema })
     }
+    pub fn create_index(schema: String, table: String) -> Result<Self, &'static str> {
+        if !valid_name(&schema) || !valid_name(&table) {
+            return Err("Select a table row to create an index on it");
+        }
+        Ok(Self::CreateIndex { schema, table })
+    }
+    pub fn add_enum_value(schema: String, name: String) -> Result<Self, &'static str> {
+        if !valid_name(&schema) || !valid_name(&name) {
+            return Err("Select an enum type row to add a value to it");
+        }
+        Ok(Self::AddEnumValue { schema, name })
+    }
+    /// Index and enum drafts edit their options through the form controls
+    /// rather than the shared Mode/Option toggles.
+    pub fn uses_form(&self) -> bool {
+        matches!(self, Self::CreateIndex { .. } | Self::AddEnumValue { .. })
+    }
     /// The purpose a restored journal described; used only to prefill a draft.
     pub fn from_operations(operations: &[ObjectDdlOperation]) -> Option<Self> {
         match operations {
@@ -71,6 +100,22 @@ impl Purpose {
                 | ObjectDdlOperation::CreateMaterializedView { schema, .. },
             ] => Some(Self::CreateView {
                 schema: schema.clone(),
+            }),
+            // A method this build cannot represent stays inspect-only.
+            [
+                ObjectDdlOperation::CreateIndex {
+                    schema,
+                    table,
+                    method,
+                    ..
+                },
+            ] if IndexMethod::parse(method).is_some() => Some(Self::CreateIndex {
+                schema: schema.clone(),
+                table: table.clone(),
+            }),
+            [ObjectDdlOperation::AddEnumValue { schema, name, .. }] => Some(Self::AddEnumValue {
+                schema: schema.clone(),
+                name: name.clone(),
             }),
             _ => None,
         }
@@ -94,6 +139,12 @@ impl Purpose {
                 )
             }
             Self::CreateView { schema } => format!("Create view in schema {schema:?}"),
+            Self::CreateIndex { schema, table } => {
+                format!("Create index on table {schema:?}.{table:?}")
+            }
+            Self::AddEnumValue { schema, name } => {
+                format!("Add value to enum {schema:?}.{name:?}")
+            }
         }
     }
 }
@@ -106,6 +157,10 @@ pub struct Draft {
     pub materialized: bool,
     pub or_replace: bool,
     pub with_data: bool,
+    pub unique: bool,
+    pub concurrently: bool,
+    pub method: IndexMethod,
+    pub placement: EnumPlacement,
 }
 impl Draft {
     pub fn from_operations(operations: &[ObjectDdlOperation]) -> (Self, String, String) {
@@ -149,9 +204,52 @@ impl Draft {
                 name.clone(),
                 sql_body.clone(),
             ),
+            [
+                ObjectDdlOperation::CreateIndex {
+                    name,
+                    unique,
+                    method,
+                    columns,
+                    concurrently,
+                    ..
+                },
+            ] => (
+                Self {
+                    unique: *unique,
+                    concurrently: *concurrently,
+                    method: IndexMethod::parse(method).unwrap_or_default(),
+                    ..Self::default()
+                },
+                name.clone(),
+                index_columns_text(columns),
+            ),
+            [ObjectDdlOperation::AddEnumValue {
+                value, position, ..
+            }] => {
+                let (placement, neighbor) = match position {
+                    None => (EnumPlacement::End, String::new()),
+                    Some(ObjectDdlEnumPosition::Before { neighbor }) => {
+                        (EnumPlacement::Before, neighbor.clone())
+                    }
+                    Some(ObjectDdlEnumPosition::After { neighbor }) => {
+                        (EnumPlacement::After, neighbor.clone())
+                    }
+                };
+                (
+                    Self {
+                        placement,
+                        ..Self::default()
+                    },
+                    value.clone(),
+                    neighbor,
+                )
+            }
             _ => (Self::default(), String::new(), String::new()),
         }
     }
+    /// `name` and `body` are the two draft fields: view name and SQL body,
+    /// index name (empty derives one) and column list, or the new enum label
+    /// and the neighbor label for BEFORE/AFTER.
     pub fn operations(
         &self,
         purpose: &Purpose,
@@ -159,6 +257,13 @@ impl Draft {
         body: String,
     ) -> Result<Vec<ObjectDdlOperation>, &'static str> {
         let operation = match purpose {
+            Purpose::CreateIndex { schema, table } => {
+                self.create_index(schema, table, name, &body)?
+            }
+            Purpose::AddEnumValue {
+                schema,
+                name: enum_name,
+            } => self.add_enum_value(schema, enum_name, name, body)?,
             Purpose::Drop(reference) => ObjectDdlOperation::DropObject {
                 reference: reference.clone(),
                 cascade: self.cascade,
@@ -184,9 +289,92 @@ impl Draft {
         }
         .validate()
         .map_err(|_| {
-            "Name requires 1-63 UTF-8 bytes; the SQL body requires 1 byte to 16 KiB; NUL is unsupported"
+            if purpose.uses_form() {
+                "Names and labels require 1-63 UTF-8 bytes; NUL is unsupported"
+            } else {
+                "Name requires 1-63 UTF-8 bytes; the SQL body requires 1 byte to 16 KiB; NUL is unsupported"
+            }
         })?;
         Ok(operations)
+    }
+    fn create_index(
+        &self,
+        schema: &str,
+        table: &str,
+        name: String,
+        columns: &str,
+    ) -> Result<ObjectDdlOperation, &'static str> {
+        let columns = parse_index_columns(columns)?;
+        if !self.method.multicolumn() && columns.len() > 1 {
+            return Err("hash and spgist indexes take exactly one column");
+        }
+        if self.unique && !self.method.ordered() {
+            return Err("Only btree indexes can be UNIQUE");
+        }
+        if !self.method.ordered() && columns.iter().any(|column| column.descending) {
+            return Err("Only btree indexes accept DESC columns");
+        }
+        let trimmed = name.trim();
+        let name = if trimmed.is_empty() {
+            derived_index_name(table, &columns)
+        } else if trimmed.len() > 63 {
+            return Err("Index names are limited to 63 bytes");
+        } else if trimmed.contains('\0') {
+            return Err("NUL is unsupported in index names");
+        } else {
+            trimmed.to_owned()
+        };
+        Ok(ObjectDdlOperation::CreateIndex {
+            schema: schema.to_owned(),
+            table: table.to_owned(),
+            name,
+            unique: self.unique,
+            method: self.method.as_str().to_owned(),
+            columns,
+            concurrently: self.concurrently,
+        })
+    }
+    fn add_enum_value(
+        &self,
+        schema: &str,
+        name: &str,
+        value: String,
+        neighbor: String,
+    ) -> Result<ObjectDdlOperation, &'static str> {
+        if value.trim().is_empty() {
+            return Err("Enter the new enum label");
+        }
+        if value.len() > 63 {
+            return Err("Enum labels are limited to 63 bytes");
+        }
+        if value.contains('\0') || neighbor.contains('\0') {
+            return Err("NUL is unsupported in enum labels");
+        }
+        let position = match self.placement {
+            EnumPlacement::End => None,
+            placement => {
+                if neighbor.is_empty() {
+                    return Err("Enter the existing label to place the new one BEFORE or AFTER");
+                }
+                if neighbor.len() > 63 {
+                    return Err("Enum labels are limited to 63 bytes");
+                }
+                if neighbor == value {
+                    return Err("The neighbor label must differ from the new label");
+                }
+                Some(if placement == EnumPlacement::Before {
+                    ObjectDdlEnumPosition::Before { neighbor }
+                } else {
+                    ObjectDdlEnumPosition::After { neighbor }
+                })
+            }
+        };
+        Ok(ObjectDdlOperation::AddEnumValue {
+            schema: schema.to_owned(),
+            name: name.to_owned(),
+            value,
+            position,
+        })
     }
 }
 

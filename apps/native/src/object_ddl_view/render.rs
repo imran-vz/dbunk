@@ -257,6 +257,8 @@ impl ObjectDdlView {
                     }
                 }
                 writeln!(out, "\n{}", j.preview.effect_scope())?;
+            } else if let Some(summary) = self.form_draft_summary() {
+                writeln!(out, "{summary}")?;
             } else {
                 writeln!(
                     out,
@@ -395,6 +397,7 @@ impl ObjectDdlView {
             .map(|(i, _)| self.buttons[i].clone())
             .collect::<Vec<_>>();
         if self.editable_recipe() {
+            handles.extend(self.form_focus());
             handles.extend(self.fields().map(|field| field.focus_handle(cx)));
         }
         handles.push(self.details.clone());
@@ -450,6 +453,9 @@ impl Render for ObjectDdlView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_fields(cx);
         let text = self.review_text();
+        // Index and enum drafts lay out their own fields and options.
+        let form = self.render_form(cx);
+        let plain_fields = form.is_none();
         div()
             .id("object-ddl-review")
             .key_context("ObjectDdl")
@@ -481,14 +487,19 @@ impl Render for ObjectDdlView {
                     .flex()
                     .flex_wrap()
                     .gap_1()
-                    .children((0..ACTIONS.len()).map(|i| self.button(i, cx))),
+                    .children(
+                        (0..ACTIONS.len())
+                            .filter(|i| self.shows_action(ACTIONS[*i].0))
+                            .map(|i| self.button(i, cx)),
+                    ),
             )
-            .when_some(self.name.as_ref(), |v, field| {
+            .when_some(self.name.as_ref().filter(|_| plain_fields), |v, field| {
                 v.child(div().px_2().pt_1().child(field.clone()))
             })
-            .when_some(self.body.as_ref(), |v, field| {
+            .when_some(self.body.as_ref().filter(|_| plain_fields), |v, field| {
                 v.child(div().px_2().pt_1().child(field.clone()))
             })
+            .when_some(form, |v, form| v.child(form))
             .child(
                 div()
                     .id("object-ddl-status")

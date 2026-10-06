@@ -1,7 +1,7 @@
 use super::*;
 use dbunk_lib::backend::object_ddl::{
     ObjectAddress, ObjectDdlAttemptId, ObjectDdlClaim, ObjectDdlDescription, ObjectDdlFailure,
-    ObjectDdlResidue, ObjectDdlStop, render_preview,
+    ObjectDdlIndexColumn, ObjectDdlResidue, ObjectDdlStop, render_preview,
 };
 fn view() -> PgObjectRef {
     PgObjectRef {
@@ -208,4 +208,224 @@ fn lease_reserves_and_releases_the_shared_allowance() {
     assert_eq!(budget.get(), SHARED_BYTES);
     drop(lease);
     assert_eq!(budget.get(), SHARED_BYTES - ALLOWANCE);
+}
+
+fn column(expression: &str, descending: bool) -> ObjectDdlIndexColumn {
+    ObjectDdlIndexColumn {
+        expression: expression.into(),
+        descending,
+    }
+}
+
+#[test]
+fn index_columns_parse_in_order_with_direction_and_nested_commas() {
+    let columns =
+        parse_index_columns(" email , lower(name) DESC, coalesce(a, b) asc,\"Mixed, Case\" desc")
+            .unwrap();
+    assert_eq!(
+        columns,
+        vec![
+            column("email", false),
+            column("lower(name)", true),
+            column("coalesce(a, b)", false),
+            column("\"Mixed, Case\"", true),
+        ]
+    );
+    assert_eq!(
+        index_columns_text(&columns),
+        "email, lower(name) DESC, coalesce(a, b), \"Mixed, Case\" DESC"
+    );
+    assert_eq!(
+        parse_index_columns(&index_columns_text(&columns)).unwrap(),
+        columns
+    );
+}
+
+#[test]
+fn index_columns_refuse_empty_duplicate_and_unbalanced_input() {
+    for text in [
+        "",
+        "   ",
+        "a,,b",
+        "a,",
+        "DESC",
+        "lower(a",
+        "a)",
+        "\"open",
+        "a, A",
+        "a, \"a\"",
+        "lower(a), LOWER(a)",
+        "a  +  b, a + b",
+    ] {
+        assert!(parse_index_columns(text).is_err(), "{text:?}");
+    }
+    // Quoted mixed case is a different column from its folded form.
+    assert!(parse_index_columns("a, \"A\"").is_ok());
+    let many = (0..17)
+        .map(|i| format!("c{i}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    assert!(parse_index_columns(&many).is_err());
+    assert!(parse_index_columns(&"x".repeat(1025)).is_err());
+}
+
+#[test]
+fn create_index_draft_derives_name_and_enforces_method_rules() {
+    let purpose = Purpose::create_index("app".into(), "users".into()).unwrap();
+    assert!(purpose.uses_form());
+    assert!(Purpose::create_index("app".into(), String::new()).is_err());
+    let draft = Draft {
+        unique: true,
+        concurrently: true,
+        ..Draft::default()
+    };
+    let operations = draft
+        .operations(&purpose, "  ".into(), "email, created_at DESC".into())
+        .unwrap();
+    assert!(
+        operations
+            == vec![ObjectDdlOperation::CreateIndex {
+                schema: "app".into(),
+                table: "users".into(),
+                name: "users_email_created_at_idx".into(),
+                unique: true,
+                method: "btree".into(),
+                columns: vec![column("email", false), column("created_at", true)],
+                concurrently: true,
+            }]
+    );
+    assert_eq!(Purpose::from_operations(&operations), Some(purpose.clone()));
+    let (restored, name, body) = Draft::from_operations(&operations);
+    assert_eq!(restored, draft);
+    assert_eq!(name, "users_email_created_at_idx");
+    assert_eq!(body, "email, created_at DESC");
+
+    let named = Draft::default()
+        .operations(&purpose, " by_email ".into(), "email".into())
+        .unwrap();
+    assert!(matches!(
+        &named[0],
+        ObjectDdlOperation::CreateIndex { name, .. } if name == "by_email"
+    ));
+    assert!(
+        Draft::default()
+            .operations(&purpose, "n".repeat(64), "email".into())
+            .is_err()
+    );
+    assert_eq!(
+        derived_index_name(&"t".repeat(70), &[column("a", false)]).len(),
+        63
+    );
+
+    let hash = Draft {
+        method: IndexMethod::Hash,
+        ..Draft::default()
+    };
+    assert!(hash.operations(&purpose, String::new(), "a".into()).is_ok());
+    assert!(
+        hash.operations(&purpose, String::new(), "a, b".into())
+            .is_err()
+    );
+    assert!(
+        hash.operations(&purpose, String::new(), "a DESC".into())
+            .is_err()
+    );
+    let unique_gin = Draft {
+        method: IndexMethod::Gin,
+        unique: true,
+        ..Draft::default()
+    };
+    assert!(
+        unique_gin
+            .operations(&purpose, String::new(), "a".into())
+            .is_err()
+    );
+    let gist = Draft {
+        method: IndexMethod::Gist,
+        ..Draft::default()
+    };
+    assert!(
+        gist.operations(&purpose, String::new(), "a, b".into())
+            .is_ok()
+    );
+}
+
+#[test]
+fn index_methods_cycle_and_unknown_restored_methods_stay_inspect_only() {
+    let mut method = IndexMethod::default();
+    let mut seen = Vec::new();
+    for _ in 0..IndexMethod::ALL.len() {
+        assert_eq!(IndexMethod::parse(method.as_str()), Some(method));
+        seen.push(method);
+        method = method.next();
+    }
+    assert_eq!(method, IndexMethod::Btree);
+    assert_eq!(seen, IndexMethod::ALL);
+    assert_eq!(IndexMethod::parse("BTREE"), None);
+    let operations = vec![ObjectDdlOperation::CreateIndex {
+        schema: "app".into(),
+        table: "t".into(),
+        name: "i".into(),
+        unique: false,
+        method: "bloom".into(),
+        columns: vec![column("a", false)],
+        concurrently: false,
+    }];
+    assert_eq!(Purpose::from_operations(&operations), None);
+}
+
+#[test]
+fn add_enum_value_draft_validates_label_and_position() {
+    let purpose = Purpose::add_enum_value("app".into(), "mood".into()).unwrap();
+    assert!(Purpose::add_enum_value(String::new(), "mood".into()).is_err());
+    let at_end = Draft::default()
+        .operations(&purpose, "calm".into(), "ignored".into())
+        .unwrap();
+    assert!(
+        at_end
+            == vec![ObjectDdlOperation::AddEnumValue {
+                schema: "app".into(),
+                name: "mood".into(),
+                value: "calm".into(),
+                position: None,
+            }]
+    );
+    let after = Draft {
+        placement: EnumPlacement::After,
+        ..Draft::default()
+    };
+    let operations = after
+        .operations(&purpose, "calm".into(), "happy".into())
+        .unwrap();
+    assert!(matches!(
+        &operations[0],
+        ObjectDdlOperation::AddEnumValue {
+            position: Some(ObjectDdlEnumPosition::After { neighbor }),
+            ..
+        } if neighbor == "happy"
+    ));
+    assert_eq!(Purpose::from_operations(&operations), Some(purpose.clone()));
+    let (restored, value, neighbor) = Draft::from_operations(&operations);
+    assert_eq!(
+        (restored, value.as_str(), neighbor.as_str()),
+        (after.clone(), "calm", "happy")
+    );
+    let long_value = "v".repeat(64);
+    let long_neighbor = "n".repeat(64);
+    for (draft, value, neighbor) in [
+        (Draft::default(), "", ""),
+        (Draft::default(), "  ", ""),
+        (Draft::default(), long_value.as_str(), ""),
+        (after.clone(), "calm", ""),
+        (after.clone(), "calm", "calm"),
+        (after.clone(), "calm", long_neighbor.as_str()),
+    ] {
+        assert!(
+            draft
+                .operations(&purpose, value.into(), neighbor.into())
+                .is_err(),
+            "{value:?} {neighbor:?}"
+        );
+    }
+    assert_eq!(EnumPlacement::End.next().next().next(), EnumPlacement::End);
 }

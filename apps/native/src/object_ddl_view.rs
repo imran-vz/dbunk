@@ -1,5 +1,6 @@
 //! Generic typed object-DDL review over the Objects document worker. Each
-//! consumer (drop, create view) supplies a purpose; the lifecycle is shared:
+//! consumer (drop, create view, create index, add enum value) supplies a
+//! purpose; the lifecycle is shared:
 //! observe exact identities, review regenerated SQL, durably save the exact
 //! attempt, then Apply/Confirm once; Unknown requires explicit reconciliation.
 use crate::{
@@ -15,6 +16,7 @@ use gpui::{
 };
 use std::{cell::Cell, rc::Rc};
 mod actions;
+mod form;
 mod render;
 mod replies;
 gpui::actions!(object_ddl, [NextControl, PreviousControl]);
@@ -97,6 +99,8 @@ pub struct ObjectDdlView {
     root: FocusHandle,
     details: FocusHandle,
     buttons: Vec<FocusHandle>,
+    /// Index/enum option controls, indexed like `form::CONTROLS`.
+    form_buttons: Vec<FocusHandle>,
     scroll: ScrollHandle,
     // Dropped after all typed payload and editor handles.
     _lease: Lease,
@@ -135,23 +139,36 @@ impl ObjectDdlView {
             .journal()
             .map(|j| Draft::from_operations(&j.operations))
             .unwrap_or_default();
-        let creating = matches!(purpose, Some(Purpose::CreateView { .. }));
-        let (name, body) = if creating {
-            (
-                Some(cx.new(|cx| Field::new("New view name", 63, false, name, window, cx))),
+        // The two fields carry purpose-specific meaning; see `Draft::operations`.
+        let labels: Option<(&'static str, &'static str, usize, bool)> = match purpose {
+            Some(Purpose::CreateView { .. }) => Some((
+                "New view name",
+                "View SQL body (one SELECT or VALUES query)",
+                MAX_OBJECT_DDL_SQL_BODY_BYTES,
+                true,
+            )),
+            Some(Purpose::CreateIndex { .. }) => Some((
+                "Index name (empty derives one)",
+                "Columns, comma separated (append DESC to descend)",
+                form::COLUMNS_FIELD_BYTES,
+                false,
+            )),
+            Some(Purpose::AddEnumValue { .. }) => Some((
+                "New enum label",
+                "Existing label for BEFORE or AFTER",
+                63,
+                false,
+            )),
+            _ => None,
+        };
+        let (name, body) = match labels {
+            Some((name_label, body_label, body_limit, multiline)) => (
+                Some(cx.new(|cx| Field::new(name_label, 63, false, name, window, cx))),
                 Some(cx.new(|cx| {
-                    Field::new(
-                        "View SQL body (one SELECT or VALUES query)",
-                        MAX_OBJECT_DDL_SQL_BODY_BYTES,
-                        true,
-                        body,
-                        window,
-                        cx,
-                    )
+                    Field::new(body_label, body_limit, multiline, body, window, cx)
                 })),
-            )
-        } else {
-            (None, None)
+            ),
+            None => (None, None),
         };
         let subscriptions = name
             .iter()
@@ -189,6 +206,7 @@ impl ObjectDdlView {
             root: cx.focus_handle(),
             details: cx.focus_handle(),
             buttons: ACTIONS.iter().map(|_| cx.focus_handle()).collect(),
+            form_buttons: form::CONTROLS.iter().map(|_| cx.focus_handle()).collect(),
             scroll: ScrollHandle::new(),
         }
     }
@@ -227,6 +245,10 @@ impl ObjectDdlView {
     }
     fn creating(&self) -> bool {
         matches!(self.purpose, Some(Purpose::CreateView { .. }))
+    }
+    /// Create index and Add enum value edit through the form controls.
+    fn uses_form(&self) -> bool {
+        self.purpose.as_ref().is_some_and(Purpose::uses_form)
     }
     fn editable_recipe(&self) -> bool {
         self.editable

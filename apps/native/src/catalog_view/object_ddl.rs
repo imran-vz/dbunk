@@ -1,11 +1,24 @@
-//! Objects-owned typed object-DDL review (drop, create view). Tokens never
-//! cross the data-document lane; only the descriptive journal is persisted.
+//! Objects-owned typed object-DDL review (drop, create view, create index,
+//! add enum value). Tokens never cross the data-document lane; only the
+//! descriptive journal is persisted.
 use super::*;
 use crate::{
+    catalog::Kind,
     object_ddl_model::{Lease, Purpose},
     object_ddl_view::{ObjectDdlEvent, ObjectDdlView},
 };
-use dbunk_lib::backend::{WorkspaceObjectDdl, objects::PgObjectKind};
+use dbunk_lib::backend::{
+    WorkspaceObjectDdl,
+    objects::{PgObjectKind, PgTypeClass},
+};
+/// Which object change a catalog action starts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ObjectDdlStart {
+    Drop,
+    CreateView,
+    CreateIndex,
+    AddEnumValue,
+}
 impl CatalogView {
     pub fn object_ddl_snapshot(&self, cx: &gpui::App) -> Option<WorkspaceObjectDdl> {
         self.object_ddl.as_ref().map_or_else(
@@ -46,31 +59,66 @@ impl CatalogView {
         }
     }
     /// The selected row's purpose. Drop needs an exact supported object row;
-    /// Create view uses a schema row, or the schema of any selected object.
-    pub(super) fn object_ddl_purpose(&self, drop: bool) -> Result<Purpose, &'static str> {
+    /// Create view uses a schema row, or the schema of any selected object;
+    /// Create index needs a table row; Add enum value needs an enum type row.
+    pub(super) fn object_ddl_purpose(
+        &self,
+        start: ObjectDdlStart,
+    ) -> Result<Purpose, &'static str> {
         let row = self
             .visible
             .get(self.selected)
             .and_then(|i| self.catalog.as_ref()?.rows.get(*i))
             .ok_or("Select an Objects row first")?;
-        if drop {
-            Purpose::drop(
+        match start {
+            ObjectDdlStart::Drop => Purpose::drop(
                 row.reference()
                     .ok_or("Cluster objects cannot be dropped from Objects")?,
-            )
-        } else {
-            match (row.reference(), &row.schema) {
+            ),
+            ObjectDdlStart::CreateView => match (row.reference(), &row.schema) {
                 (Some(reference), _) if reference.kind == PgObjectKind::Schema => {
                     Purpose::create_view(reference.name)
                 }
                 (_, Some(schema)) => Purpose::create_view(schema.clone()),
                 _ => Err("Select a schema row, or an object inside the target schema"),
-            }
+            },
+            ObjectDdlStart::CreateIndex => match (&row.kind, &row.schema) {
+                (Kind::Object(PgObjectKind::Table), Some(schema)) => {
+                    Purpose::create_index(schema.clone(), row.entry.name.clone())
+                }
+                _ => Err("Select a table row to create an index on it"),
+            },
+            ObjectDdlStart::AddEnumValue => match (&row.kind, &row.schema) {
+                (Kind::Object(PgObjectKind::Type), Some(schema))
+                    if row.entry.type_class == Some(PgTypeClass::Enum) =>
+                {
+                    Purpose::add_enum_value(schema.clone(), row.entry.name.clone())
+                }
+                _ => Err("Select an enum type row to add a value to it"),
+            },
         }
     }
+    /// Legacy entry: `Some(true)` drops, `Some(false)` creates a view.
     pub(super) fn open_object_ddl(
         &mut self,
         drop: Option<bool>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let start = drop.map(|drop| {
+            if drop {
+                ObjectDdlStart::Drop
+            } else {
+                ObjectDdlStart::CreateView
+            }
+        });
+        self.open_object_ddl_for(start, window, cx)
+    }
+    /// Opens the object-change review for `start`, or reopens the retained
+    /// change unchanged when `start` is `None` or a change is retained.
+    pub(super) fn open_object_ddl_for(
+        &mut self,
+        start: Option<ObjectDdlStart>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -82,8 +130,8 @@ impl CatalogView {
         // A retained change (live or restored) always reopens unchanged; the
         // selection is consulted only when there is nothing to finish.
         let retained = self.has_object_ddl_changes(cx);
-        let purpose = match drop.filter(|_| !retained) {
-            Some(drop) => match self.object_ddl_purpose(drop) {
+        let purpose = match start.filter(|_| !retained) {
+            Some(start) => match self.object_ddl_purpose(start) {
                 Ok(purpose) => Some(purpose),
                 Err(error) => {
                     self.status = error.into();
@@ -92,7 +140,7 @@ impl CatalogView {
             },
             None => None,
         };
-        if retained && drop.is_some() {
+        if retained && start.is_some() {
             self.status = "The previous object change is retained; finish or reconcile it before selecting another target".into();
         } else if purpose.is_some() {
             self.object_ddl = None;
@@ -100,7 +148,9 @@ impl CatalogView {
         }
         if self.object_ddl.is_none() {
             if purpose.is_none() && self.object_ddl_recovery.is_none() {
-                self.status = "Select a row, then Drop object or Create view".into();
+                self.status =
+                    "Select a row, then Drop object, Create view, Create index or Add enum value"
+                        .into();
                 return;
             }
             let Some(connection) = self.connection.as_deref() else {
