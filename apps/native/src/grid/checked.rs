@@ -63,14 +63,6 @@ impl CheckedRows {
     }
 }
 
-fn toggled(state: CheckState) -> gpui::accesskit::Toggled {
-    match state {
-        CheckState::Off => gpui::accesskit::Toggled::False,
-        CheckState::Mixed => gpui::accesskit::Toggled::Mixed,
-        CheckState::On => gpui::accesskit::Toggled::True,
-    }
-}
-
 impl ResultGrid {
     pub(super) fn checkboxes(&self) -> bool {
         self.editing
@@ -89,7 +81,7 @@ impl ResultGrid {
             .id(("row-check", row))
             .role(Role::CheckBox)
             .aria_label(SharedString::from(format!("Select row {}", row + 1)))
-            .aria_toggled(toggled(state))
+            .aria_toggled(state.toggled())
             .flex_none()
             .w(px(CHECK_WIDTH))
             .h_full()
@@ -113,7 +105,7 @@ impl ResultGrid {
             .id("row-check-all")
             .role(Role::CheckBox)
             .aria_label("Select all rows on this page")
-            .aria_toggled(toggled(state))
+            .aria_toggled(state.toggled())
             .flex_none()
             .w(px(CHECK_WIDTH))
             .h_full()

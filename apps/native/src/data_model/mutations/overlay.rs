@@ -167,7 +167,12 @@ fn identity_index(
             Some(_) => None,
             None => columns
                 .iter()
-                .map(|column| names.get(column.as_str()).and_then(|&i| values.get(i)).cloned())
+                .map(|column| {
+                    names
+                        .get(column.as_str())
+                        .and_then(|&i| values.get(i))
+                        .cloned()
+                })
                 .collect::<Option<Vec<_>>>(),
         };
         if let Some(identity) = identity {
@@ -307,11 +312,12 @@ impl MutationDraft {
                         .iter()
                         .map(|value| value.value.clone())
                         .collect::<Vec<_>>();
-                    let index = indexes
-                        .entry((columns, ctid))
-                        .or_insert_with_key(|(columns, ctid)| {
-                            identity_index(page, &names, columns, *ctid)
-                        });
+                    let index =
+                        indexes
+                            .entry((columns, ctid))
+                            .or_insert_with_key(|(columns, ctid)| {
+                                identity_index(page, &names, columns, *ctid)
+                            });
                     let Some(rows) = index.get(&identity) else {
                         continue;
                     };

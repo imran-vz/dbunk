@@ -19,12 +19,14 @@ fn table(name: &str, kind: MutationIdentityKind) -> AnalyzedTable {
         table: name.into(),
         identity: MutationIdentity {
             kind,
-            columns: vec![if kind == MutationIdentityKind::CtidFallback {
-                "ctid"
-            } else {
-                "id"
-            }
-            .into()],
+            columns: vec![
+                if kind == MutationIdentityKind::CtidFallback {
+                    "ctid"
+                } else {
+                    "id"
+                }
+                .into(),
+            ],
         },
         identity_projected: kind != MutationIdentityKind::CtidFallback,
         identity_projection_indexes: vec![0],
@@ -57,7 +59,10 @@ fn analysis(kind: MutationIdentityKind) -> AnalyzeResultSetResult {
         tables: vec![table("t", kind)],
     }
 }
-fn page(rows: Vec<Vec<Option<String>>>, row_identity: Option<Vec<Vec<String>>>) -> BrowseTableResult {
+fn page(
+    rows: Vec<Vec<Option<String>>>,
+    row_identity: Option<Vec<Vec<String>>>,
+) -> BrowseTableResult {
     BrowseTableResult {
         request_id: 1,
         columns: ["id", "name", "note"]
@@ -110,7 +115,13 @@ fn keyed_update_follows_its_row_after_the_page_is_resorted() {
     let ada = cells([Some("1"), Some("Ada"), Some("x")]);
     let bob = cells([Some("2"), Some("Bob"), None]);
     draft
-        .stage_update(0, &ada, None, false, vec![value("name", Some("Ann")), value("note", None)])
+        .stage_update(
+            0,
+            &ada,
+            None,
+            false,
+            vec![value("name", Some("Ann")), value("note", None)],
+        )
         .unwrap();
     let change = draft.changes[0].id;
     let failed = Some(change);
@@ -150,7 +161,13 @@ fn reused_ctid_with_different_values_is_not_painted() {
     let original = cells([Some("1"), Some("Ada"), None]);
     let ctid = vec!["(0,1)".to_owned()];
     draft
-        .stage_update(0, &original, Some(ctid.as_slice()), false, vec![value("name", Some("Ann"))])
+        .stage_update(
+            0,
+            &original,
+            Some(ctid.as_slice()),
+            false,
+            vec![value("name", Some("Ann"))],
+        )
         .unwrap();
     let same = draft.overlay(&page(vec![original], Some(vec![ctid.clone()])), 1, None);
     assert_eq!(same.cell(0, 1), Some(&text("Ann")));
@@ -160,7 +177,11 @@ fn reused_ctid_with_different_values_is_not_painted() {
     assert!(other.is_empty());
     // Without hidden identity the row cannot be matched at all.
     let original = cells([Some("1"), Some("Ada"), None]);
-    assert!(draft.overlay(&page(vec![original], None), 3, None).is_empty());
+    assert!(
+        draft
+            .overlay(&page(vec![original], None), 3, None)
+            .is_empty()
+    );
 }
 
 #[test]

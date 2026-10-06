@@ -172,15 +172,8 @@ impl TableChanges {
             || "Insert row JSON, omitted columns use defaults".to_owned(),
             |column| format!("Value for {column}"),
         );
-        let (replacement, accessible) = replace(
-            &editor,
-            value,
-            refused,
-            label,
-            edit.multiline(),
-            window,
-            cx,
-        );
+        let (replacement, accessible) =
+            replace(&editor, value, refused, label, edit.multiline(), window, cx);
         edit.editor = replacement;
         edit.accessible = accessible;
         self.relabel_batch(cx);

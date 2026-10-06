@@ -83,23 +83,6 @@ impl BrowseState {
         }
         Ok(())
     }
-    pub fn apply_filter(&mut self, filter: BrowseFilter) {
-        if let Some(column) = filter_column(&filter) {
-            self.typed_filters
-                .retain(|old| filter_column(old) != Some(column));
-        }
-        self.typed_filters.push(filter);
-    }
-}
-pub fn filter_column(filter: &BrowseFilter) -> Option<&str> {
-    match filter {
-        BrowseFilter::Comparison { column, .. }
-        | BrowseFilter::TextMatch { column, .. }
-        | BrowseFilter::IsNull { column }
-        | BrowseFilter::IsNotNull { column }
-        | BrowseFilter::InList { column, .. } => Some(column),
-        BrowseFilter::RawSql { .. } => None,
-    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

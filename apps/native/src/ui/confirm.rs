@@ -36,9 +36,8 @@ impl EventEmitter<TypedConfirmEvent> for TypedConfirm {}
 impl TypedConfirm {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let editor = cx.new(|cx| Editor::single_line(window, cx));
-        let accessible = cx.new(|cx| {
-            AccessibleEditor::field(editor.clone(), "Type confirm to apply", false, cx)
-        });
+        let accessible = cx
+            .new(|cx| AccessibleEditor::field(editor.clone(), "Type confirm to apply", false, cx));
         let subscription = cx.subscribe(&editor, |this: &mut Self, editor, event, cx| {
             if !matches!(event, EditorEvent::BufferEdited) {
                 return;
@@ -60,10 +59,6 @@ impl TypedConfirm {
 
     pub fn matches(&self) -> bool {
         self.matched
-    }
-
-    pub fn focus(&self, window: &mut Window, cx: &mut App) {
-        window.focus(&self.editor.focus_handle(cx), cx);
     }
 }
 

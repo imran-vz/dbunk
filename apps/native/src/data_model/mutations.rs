@@ -63,6 +63,9 @@ pub struct MutationDraft {
     invalidated: bool,
     outcome_unknown: bool,
 }
+/// One row to delete: its page values and, for ctid identity, its row identity.
+pub type DeleteRow<'a> = (&'a [Option<String>], Option<&'a [String]>);
+
 impl MutationDraft {
     pub fn new(analysis: AnalyzeResultSetResult) -> Result<Self, ModelError> {
         if !matches!(analysis.statement, AnalysisStatement::Analyzed) {
@@ -474,7 +477,7 @@ impl MutationDraft {
     pub fn stage_deletes(
         &mut self,
         table_index: usize,
-        rows: &[(&[Option<String>], Option<&[String]>)],
+        rows: &[DeleteRow<'_>],
         truncated: bool,
     ) -> Result<usize, ModelError> {
         self.editable()?;
@@ -533,11 +536,7 @@ impl MutationDraft {
     }
     /// An insert cell for editing: `None` is omitted (DEFAULT), `Some(None)`
     /// an explicit NULL. Refuses columns the insert cannot write.
-    pub fn insert_value(
-        &self,
-        id: Uuid,
-        column: &str,
-    ) -> Result<Option<Option<&str>>, ModelError> {
+    pub fn insert_value(&self, id: Uuid, column: &str) -> Result<Option<Option<&str>>, ModelError> {
         self.editable()?;
         let (index, table) = self.insert_change(id)?;
         self.writes(

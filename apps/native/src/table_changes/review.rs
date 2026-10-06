@@ -181,8 +181,7 @@ fn statements(preview: &PreviewResult) -> Vec<ReviewStatement> {
                     let line = format_param(index, param);
                     let value = match param {
                         DmlParam::Text { value: Some(value) } => {
-                            let mut text: String =
-                                value.chars().take(PARAM_LABEL_CHARS).collect();
+                            let mut text: String = value.chars().take(PARAM_LABEL_CHARS).collect();
                             if text.len() < value.len() {
                                 text.push('…');
                             }
@@ -362,14 +361,15 @@ impl TableChanges {
                     self.dialog = Some(Dialog::Review(ReviewDialog::default()));
                 }
                 // Show exactly what the held confirmation will run.
-                let confirmed = self.applying.as_ref().and_then(|pending| {
-                    match pending.flow.token() {
-                        Some(Token::Confirmation(confirmation)) => {
-                            Some(statements(confirmation.preview()))
-                        }
-                        _ => None,
-                    }
-                });
+                let confirmed =
+                    self.applying
+                        .as_ref()
+                        .and_then(|pending| match pending.flow.token() {
+                            Some(Token::Confirmation(confirmation)) => {
+                                Some(statements(confirmation.preview()))
+                            }
+                            _ => None,
+                        });
                 if let Some(dialog) = self.review_dialog_mut() {
                     dialog.escalated = true;
                     dialog.typed = None;
@@ -397,7 +397,10 @@ impl TableChanges {
                 if let Some(pending) = &mut self.applying
                     && pending.flow.cancel_before_dispatch()
                 {
-                    self.cancel_pending("Apply cancelled before dispatch; changes retained".into(), cx);
+                    self.cancel_pending(
+                        "Apply cancelled before dispatch; changes retained".into(),
+                        cx,
+                    );
                     self.dialog = None;
                 }
             }
@@ -434,7 +437,11 @@ impl TableChanges {
         }
         self.focus_request = true;
     }
-    pub(super) fn render_review(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_review(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         self.ensure_typed(window, cx);
         let phase = self.review_phase();
         let policy = self.policy;
@@ -546,25 +553,18 @@ impl TableChanges {
                         true,
                         cx,
                     ))
-                    .child(self.dialog_button(
-                        "review-apply",
-                        &label,
-                        action,
-                        variant,
-                        enabled,
-                        cx,
-                    ))
+                    .child(self.dialog_button("review-apply", &label, action, variant, enabled, cx))
             }
         };
         let modal = dialog::modal("review-dialog", "Review changes", 640.)
-            .child(dialog::header(
-                title,
-                Some(env_chip(policy.environment)),
-            ))
+            .child(dialog::header(title, Some(env_chip(policy.environment))))
             .child(body)
             .child(footer);
         dialog::backdrop("review-backdrop")
-            .child(ui::appear("review-dialog-appear",self.modal_keys(modal, cx)))
+            .child(ui::appear(
+                "review-dialog-appear",
+                self.modal_keys(modal, cx),
+            ))
             .into_any_element()
     }
 }
@@ -622,11 +622,11 @@ fn cell_row(index: usize, kind: DiffKind, cell: &DiffCell) -> AnyElement {
     let label = format!(
         "{}: {}{}",
         cell.column,
-        old.map_or(String::new(), |value| format!("{} to ", value_text(value).0)),
-        new.map_or_else(
-            || "removed".to_owned(),
-            |value| value_text(value).0
-        ),
+        old.map_or(String::new(), |value| format!(
+            "{} to ",
+            value_text(value).0
+        )),
+        new.map_or_else(|| "removed".to_owned(), |value| value_text(value).0),
     );
     let mut row = div()
         .id(("review-cell", index))
@@ -782,17 +782,21 @@ fn sql_list(statements: &[ReviewStatement]) -> AnyElement {
                         .text_color(style::text())
                         .child(statement.sql.clone()),
                 )
-                .children(statement.params.iter().enumerate().map(
-                    |(param, (line, label))| {
-                        div()
-                            .id(("param", param))
-                            .role(Role::Label)
-                            .aria_label(label.clone())
-                            .truncate()
-                            .text_color(style::dim())
-                            .child(line.clone())
-                    },
-                ))
+                .children(
+                    statement
+                        .params
+                        .iter()
+                        .enumerate()
+                        .map(|(param, (line, label))| {
+                            div()
+                                .id(("param", param))
+                                .role(Role::Label)
+                                .aria_label(label.clone())
+                                .truncate()
+                                .text_color(style::dim())
+                                .child(line.clone())
+                        }),
+                )
         }))
         .into_any_element()
 }
@@ -869,7 +873,12 @@ mod tests {
             ReviewPhase::Applying,
             ReviewPhase::Failed,
         ] {
-            assert!(!apply_enabled(Some(ConfirmStyle::Plain), true, phase, false));
+            assert!(!apply_enabled(
+                Some(ConfirmStyle::Plain),
+                true,
+                phase,
+                false
+            ));
         }
     }
 
@@ -904,9 +913,18 @@ mod tests {
     #[test]
     fn phase_without_an_apply_follows_failure_then_review_state() {
         let none: Option<&ApplyFlow<()>> = None;
-        assert_eq!(review_phase(false, true, false, none, 0), ReviewPhase::Preparing);
-        assert_eq!(review_phase(false, false, true, none, 0), ReviewPhase::Ready);
-        assert_eq!(review_phase(true, false, true, none, 0), ReviewPhase::Failed);
+        assert_eq!(
+            review_phase(false, true, false, none, 0),
+            ReviewPhase::Preparing
+        );
+        assert_eq!(
+            review_phase(false, false, true, none, 0),
+            ReviewPhase::Ready
+        );
+        assert_eq!(
+            review_phase(true, false, true, none, 0),
+            ReviewPhase::Failed
+        );
         assert_eq!(review_escape(ReviewPhase::Preparing), ReviewEscape::Close);
         assert_eq!(review_escape(ReviewPhase::Failed), ReviewEscape::Close);
     }

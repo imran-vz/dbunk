@@ -26,6 +26,9 @@ use std::{
 };
 use uuid::Uuid;
 
+/// The overlay last built, keyed by draft revision, page and failed change.
+type CachedOverlay = (OverlayKey, Option<Uuid>, Rc<DraftOverlay>);
+
 pub enum ChangesEvent {
     Changed,
     PersistApply(u64),
@@ -54,7 +57,6 @@ pub enum ChangesCommand {
     Discard,
     RetryRecovery,
     Reconcile,
-    CancelPending,
     OpenVirtualKey,
     OpenChangeList(Bounds<Pixels>),
 }
@@ -291,7 +293,7 @@ pub struct TableChanges {
     policy: TablePolicy,
     cell_editor: Option<(Entity<cell_editor::CellEditor>, Subscription)>,
     dialog: Option<Dialog>,
-    overlay_cache: RefCell<Option<(OverlayKey, Option<Uuid>, Rc<DraftOverlay>)>>,
+    overlay_cache: RefCell<Option<CachedOverlay>>,
     last_failed: Option<Uuid>,
     popover_anchor: Option<Bounds<Pixels>>,
     /// Why editing is unavailable after the last analysis, if it is.
@@ -417,7 +419,10 @@ impl TableChanges {
         self.overlay_cache.borrow_mut().take();
         self.controls = controls;
         self.reset_key();
-        if matches!(self.dialog, Some(Dialog::VirtualKey | Dialog::ChangeList(_))) {
+        if matches!(
+            self.dialog,
+            Some(Dialog::VirtualKey | Dialog::ChangeList(_))
+        ) {
             self.dialog = None;
         }
         self.discard_review();
@@ -810,21 +815,6 @@ impl TableChanges {
             cx,
         );
     }
-    /// Legacy JSON insert editor. Table tabs use `add_row` and the insert band.
-    pub fn insert(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.is_query() || !self.can_edit() || self.edit.is_some() || !self.admit_work() {
-            cx.notify();
-            return;
-        }
-        self.open_edit(
-            (None, None, 0),
-            "{}".into(),
-            false,
-            Presentation::Popover,
-            window,
-            cx,
-        );
-    }
     fn open_edit(
         &mut self,
         (row, column, table_index): (Option<usize>, Option<String>, usize),
@@ -1003,31 +993,6 @@ impl TableChanges {
             )
         })
     }
-    pub fn delete(&mut self, row: usize, cx: &mut Context<Self>) {
-        if self.is_query() || !self.can_edit() || !self.admit_work() {
-            cx.notify();
-            return;
-        }
-        let Some(page) = &self.page else {
-            self.finish_work();
-            return;
-        };
-        let Some(values) = page.rows.get(row) else {
-            self.finish_work();
-            return;
-        };
-        let hidden = page
-            .row_identity
-            .as_ref()
-            .and_then(|rows| rows.get(row))
-            .map(Vec::as_slice);
-        let result = self
-            .draft
-            .as_mut()
-            .ok_or(crate::data_model::ModelError::Unavailable)
-            .and_then(|draft| draft.stage_delete(0, values, hidden, page.truncated_cells > 0));
-        self.changed(result.map(|_| ()), cx);
-    }
     fn can_edit(&self) -> bool {
         self.can_edit_now().is_ok()
     }
@@ -1180,8 +1145,7 @@ impl TableChanges {
                 .as_mut()
                 .ok_or(ModelError::Unavailable)
                 .and_then(|draft| draft.set_insert_value(id, column, value))
-        } else if let (Some(row), Some(column), Some(rows)) =
-            (edit.row, edit.column.as_ref(), rows)
+        } else if let (Some(row), Some(column), Some(rows)) = (edit.row, edit.column.as_ref(), rows)
         {
             let Some(values) = rows.row(row) else {
                 self.edit_refused("Source row is unavailable", cx);
@@ -1584,7 +1548,7 @@ impl TableChanges {
                     }
                     Err(error) => {
                         self.reserve(true, 0);
-                        let message = match &error {
+                        let message = match &*error {
                             DataError::Mutation(error) => {
                                 crate::data_model::apply_error_message(error)
                             }
@@ -1825,8 +1789,7 @@ impl TableChanges {
                             self.analyze(cx);
                         }
                         Err(error) => {
-                            self.message =
-                                format!("Recovery refused: {}", model_error_text(error));
+                            self.message = format!("Recovery refused: {}", model_error_text(error));
                         }
                     }
                 }
@@ -1910,7 +1873,12 @@ impl TableChanges {
             cx.notify();
         }
     }
-    pub fn command(&mut self, command: ChangesCommand, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn command(
+        &mut self,
+        command: ChangesCommand,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match command {
             ChangesCommand::Review => self.activate(Action::Review, window, cx),
             ChangesCommand::Discard => {
@@ -1921,7 +1889,6 @@ impl TableChanges {
             }
             ChangesCommand::RetryRecovery => self.activate(Action::RetryRecovery, window, cx),
             ChangesCommand::Reconcile => self.activate(Action::Reconcile, window, cx),
-            ChangesCommand::CancelPending => self.activate(Action::CancelPending, window, cx),
             ChangesCommand::OpenVirtualKey => {
                 if self.pending() || self.modal_open() || self.edit.is_some() {
                     self.message = "Finish the current edit or operation first".into();
@@ -2408,7 +2375,10 @@ mod tests {
             true,
         );
         assert!(view.apply_policy(read_only));
-        assert!(!view.apply_policy(read_only), "an unchanged policy is a no-op");
+        assert!(
+            !view.apply_policy(read_only),
+            "an unchanged policy is a no-op"
+        );
         let reason = SharedString::from(read_only.read_only_reason().unwrap());
         assert_eq!(view.can_edit_now(), Err(reason.clone()));
         assert_eq!(view.summary().can_review, Err(reason.clone()));
@@ -2457,7 +2427,10 @@ mod tests {
         let ticket = draft.begin_apply(&plan).unwrap();
         view.draft = Some(draft);
         let mut flow = ApplyFlow::new(1, Token::Test);
-        assert!(flow.saved(1).is_some(), "journal acknowledged and dispatched");
+        assert!(
+            flow.saved(1).is_some(),
+            "journal acknowledged and dispatched"
+        );
         view.applying = Some(PendingApply {
             ticket,
             flow,

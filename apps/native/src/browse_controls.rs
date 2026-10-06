@@ -1517,13 +1517,5 @@ mod tests {
         assert!(
             matches!(build_filter("name", 10, " 東京, , É "), Ok(BrowseFilter::InList { values, .. }) if values == ["東京", "É"])
         );
-        let mut state = BrowseState {
-            raw_filter_text: "enabled".into(),
-            ..Default::default()
-        };
-        state.apply_filter(build_filter("name", 0, "old").unwrap());
-        state.apply_filter(build_filter("name", 1, "new").unwrap());
-        assert_eq!(state.typed_filters.len(), 1);
-        assert_eq!(state.raw_filter_text, "enabled");
     }
 }
