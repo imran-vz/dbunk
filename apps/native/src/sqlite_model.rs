@@ -3,6 +3,7 @@
 //! bounded SQLite execution into the result grid's event stream live here so
 //! they can be tested without a window.
 use std::collections::BTreeSet;
+use std::ops::Range;
 
 use dbunk_lib::backend::sqlite_session::{
     SqliteDatabase, SqliteExecution, SqliteObjects, SqlitePage, SqliteResultSet,
@@ -318,13 +319,18 @@ impl Default for Paging {
 }
 
 impl Paging {
-    pub fn next(self) -> Self {
+    /// The page after `page`, which was loaded with `self`. Advances by the
+    /// rows the page kept: the session's byte bound may keep fewer than
+    /// `limit`, and the rest start the next page.
+    pub fn next(self, page: &SqlitePage) -> Self {
         Self {
-            offset: self.offset.saturating_add(u64::from(self.limit)),
+            offset: self.offset.saturating_add(page.set.rows.len() as u64),
             ..self
         }
     }
 
+    /// Steps back a full page. After a shortened page this may show some
+    /// rows again; it never skips any.
     pub fn previous(self) -> Self {
         Self {
             offset: self.offset.saturating_sub(u64::from(self.limit)),
@@ -417,19 +423,24 @@ pub fn execution_events(
     events
 }
 
-/// One table page as a single result set.
-pub fn page_events(page: &SqlitePage) -> Vec<QueryEvent> {
+/// One table page, requested with `limit` rows, as a single result set.
+pub fn page_events(page: &SqlitePage, limit: u32) -> Vec<QueryEvent> {
     let mut set = page.set.clone();
     // Rows past the page are not omitted; they are on the next page.
     set.omitted_rows = 0;
     let truncated = set.truncated_cells;
     let mut events = vec![QueryEvent::ExecutionStarted];
     events_for_set(0, set, &mut events);
-    let reasons = if truncated > 0 {
-        vec![format!("{truncated} long values were shortened")]
-    } else {
-        Vec::new()
-    };
+    let mut reasons = Vec::new();
+    if page.has_more && (page.set.rows.len() as u64) < u64::from(limit) {
+        reasons.push(format!(
+            "Page shortened to {} rows to stay within 16 MiB; Next continues from there",
+            page.set.rows.len()
+        ));
+    }
+    if truncated > 0 {
+        reasons.push(format!("{truncated} long values were shortened"));
+    }
     events.push(completion("completed", 0, 0, reasons));
     events
 }
@@ -503,6 +514,155 @@ pub fn changes_objects(sql: &str) -> bool {
             .iter()
             .any(|keyword| word.eq_ignore_ascii_case(keyword))
     })
+}
+
+/// Tabs per connection, like the MySQL and ClickHouse workspaces.
+pub const MAX_TABS: usize = 16;
+
+/// Why another tab cannot open while `open` tabs are open, if it cannot.
+pub fn tab_limit_message(open: usize) -> Option<String> {
+    (open >= MAX_TABS).then(|| format!("Close a tab before opening another (limit {MAX_TABS})"))
+}
+
+/// End of a quoted token opened at `start` by `quote`; a doubled quote is
+/// an escaped one. Unterminated quotes run to the end.
+fn quoted_end(bytes: &[u8], start: usize, quote: u8) -> usize {
+    let mut at = start + 1;
+    while let Some(offset) = bytes[at..].iter().position(|&byte| byte == quote) {
+        let close = at + offset;
+        if bytes.get(close + 1) == Some(&quote) {
+            at = close + 2;
+        } else {
+            return close + 1;
+        }
+    }
+    bytes.len()
+}
+
+fn is_word_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'$' || byte >= 0x80
+}
+
+/// `[EXPLAIN [QUERY PLAN]] CREATE [TEMP|TEMPORARY] TRIGGER`: a statement
+/// whose `;`s only end it after `END`, as in `sqlite3_complete`.
+fn starts_trigger(words: &[String]) -> bool {
+    let mut words = words.iter().map(String::as_str).peekable();
+    if words.peek() == Some(&"explain") {
+        words.next();
+        if words.peek() == Some(&"query") {
+            words.next();
+            if words.next() != Some("plan") {
+                return false;
+            }
+        }
+    }
+    if words.next() != Some("create") {
+        return false;
+    }
+    match words.next() {
+        Some("temp" | "temporary") => words.next() == Some("trigger"),
+        next => next == Some("trigger"),
+    }
+}
+
+/// Byte ranges of the statements in `sql`, without their `;` or the
+/// whitespace and comments around them. Follows SQLite's tokenizer for
+/// what can hide a `;`: `'…'` strings, `"…"`, `` `…` `` and `[…]`
+/// identifiers, `--` and `/* */` comments, and `CREATE TRIGGER` bodies,
+/// which end only at `END;` (like the sqlite3 shell).
+pub fn statement_ranges(sql: &str) -> Vec<Range<usize>> {
+    let bytes = sql.as_bytes();
+    let mut ranges = Vec::new();
+    let mut start: Option<usize> = None;
+    let mut end = 0;
+    let mut words: Vec<String> = Vec::new();
+    let mut after_end = false;
+    let mut at = 0;
+    while at < bytes.len() {
+        let byte = bytes[at];
+        if byte.is_ascii_whitespace() {
+            at += 1;
+            continue;
+        }
+        if byte == b'-' && bytes.get(at + 1) == Some(&b'-') {
+            at = bytes[at..]
+                .iter()
+                .position(|&byte| byte == b'\n')
+                .map_or(bytes.len(), |offset| at + offset + 1);
+            continue;
+        }
+        if byte == b'/' && bytes.get(at + 1) == Some(&b'*') {
+            at = sql[at + 2..]
+                .find("*/")
+                .map_or(bytes.len(), |offset| at + 2 + offset + 2);
+            continue;
+        }
+        if byte == b';' {
+            if let Some(first) = start {
+                if starts_trigger(&words) && !after_end {
+                    // A `;` inside a trigger body.
+                    end = at + 1;
+                } else {
+                    ranges.push(first..end);
+                    start = None;
+                    words.clear();
+                }
+            }
+            after_end = false;
+            at += 1;
+            continue;
+        }
+        let token_end = match byte {
+            b'\'' | b'"' | b'`' => quoted_end(bytes, at, byte),
+            b'[' => bytes[at..]
+                .iter()
+                .position(|&byte| byte == b']')
+                .map_or(bytes.len(), |offset| at + offset + 1),
+            byte if is_word_byte(byte) => bytes[at..]
+                .iter()
+                .position(|&byte| !is_word_byte(byte))
+                .map_or(bytes.len(), |offset| at + offset),
+            _ => at + 1,
+        };
+        if start.is_none() {
+            start = Some(at);
+        }
+        end = token_end;
+        if is_word_byte(byte) {
+            let word = sql[at..token_end].to_ascii_lowercase();
+            after_end = word == "end";
+            if words.len() < 6 {
+                words.push(word);
+            }
+        } else {
+            after_end = false;
+        }
+        at = token_end;
+    }
+    if let Some(first) = start {
+        ranges.push(first..end);
+    }
+    ranges
+}
+
+/// What Run executes: the selection when it holds SQL, else the statement
+/// under the cursor (the first one ending at or after it, else the last).
+/// `None` when there is nothing to run there.
+pub fn sql_to_run(sql: &str, selection: Range<usize>) -> Option<Range<usize>> {
+    let end = selection.end.min(sql.len());
+    let start = selection.start.min(end);
+    if !sql.is_char_boundary(start) || !sql.is_char_boundary(end) {
+        return None;
+    }
+    if start < end {
+        return (!statement_ranges(&sql[start..end]).is_empty()).then_some(start..end);
+    }
+    let ranges = statement_ranges(sql);
+    ranges
+        .iter()
+        .find(|range| start <= range.end)
+        .or_else(|| ranges.last())
+        .cloned()
 }
 
 #[cfg(test)]
@@ -631,27 +791,135 @@ mod tests {
         assert_eq!(navigate(&[], 0, Key::Down), None);
     }
 
+    fn page_of(rows: usize, has_more: bool) -> SqlitePage {
+        SqlitePage {
+            set: SqliteResultSet {
+                columns: vec!["id".into()],
+                rows: vec![vec![None]; rows],
+                row_count: rows as u64,
+                ..Default::default()
+            },
+            offset: 0,
+            has_more,
+            elapsed_ms: 1,
+        }
+    }
+
     #[test]
     fn paging_never_underflows() {
         let paging = Paging::default();
+        let full = page_of(PAGE_ROWS as usize, true);
         assert_eq!(paging.previous().offset, 0);
-        assert_eq!(paging.next().offset, u64::from(PAGE_ROWS));
-        assert_eq!(paging.next().previous(), paging);
+        assert_eq!(paging.next(&full).offset, u64::from(PAGE_ROWS));
+        assert_eq!(paging.next(&full).previous(), paging);
         let page = SqlitePage {
-            set: SqliteResultSet {
-                rows: vec![vec![None]; 3],
-                ..Default::default()
-            },
             offset: 200,
             has_more: false,
-            elapsed_ms: 1,
+            ..page_of(3, false)
         };
-        assert_eq!(paging.next().label(&page), "Rows 201–203");
+        assert_eq!(paging.next(&full).label(&page), "Rows 201–203");
         let empty = SqlitePage {
             set: SqliteResultSet::default(),
             ..page
         };
         assert_eq!(paging.label(&empty), "No rows");
+    }
+
+    #[test]
+    fn a_byte_shortened_page_continues_after_its_last_kept_row() {
+        let paging = Paging {
+            offset: 400,
+            limit: PAGE_ROWS,
+        };
+        let short = page_of(150, true);
+        assert_eq!(paging.next(&short).offset, 550);
+        let note = |page: &SqlitePage| {
+            let mut model = crate::results::ResultModel::default();
+            for event in page_events(page, PAGE_ROWS) {
+                model.consume(event);
+            }
+            model.completion.unwrap().truncation_reasons
+        };
+        assert_eq!(note(&short).len(), 1);
+        assert!(note(&short)[0].contains("150 rows"));
+        // A full page, or the short last page of a table, is not shortened.
+        assert!(note(&page_of(PAGE_ROWS as usize, true)).is_empty());
+        assert!(note(&page_of(3, false)).is_empty());
+    }
+
+    #[test]
+    fn tabs_stop_at_the_limit_with_a_reason() {
+        assert_eq!(tab_limit_message(MAX_TABS - 1), None);
+        assert_eq!(
+            tab_limit_message(MAX_TABS).as_deref(),
+            Some("Close a tab before opening another (limit 16)")
+        );
+    }
+
+    fn texts(sql: &str) -> Vec<&str> {
+        statement_ranges(sql)
+            .into_iter()
+            .map(|range| &sql[range])
+            .collect()
+    }
+
+    #[test]
+    fn statements_split_on_semicolons_outside_sqlite_quoting() {
+        assert_eq!(
+            texts("SELECT 'a;''b'; SELECT \"x;\"\"y\" FROM `t;u`; SELECT [c;d] FROM t"),
+            [
+                "SELECT 'a;''b'",
+                "SELECT \"x;\"\"y\" FROM `t;u`",
+                "SELECT [c;d] FROM t"
+            ]
+        );
+        assert_eq!(
+            texts("-- lead; in\nSELECT 1 /* a; b */ + 2;;  ; -- tail;"),
+            ["SELECT 1 /* a; b */ + 2"]
+        );
+        assert_eq!(texts("SELECT 'é;' ; SELECT é"), ["SELECT 'é;'", "SELECT é"]);
+        assert!(texts("  -- only\n/* comments */ ;").is_empty());
+        // Unterminated quotes and comments run to the end.
+        assert_eq!(texts("SELECT 'open; still"), ["SELECT 'open; still"]);
+        assert_eq!(texts("SELECT 1 /* open; still"), ["SELECT 1"]);
+    }
+
+    #[test]
+    fn trigger_bodies_end_only_at_end() {
+        let sql = "CREATE TEMP TRIGGER t AFTER INSERT ON a BEGIN \
+                   UPDATE b SET n = n + 1; DELETE FROM c; END; SELECT 1;";
+        assert_eq!(
+            texts(sql),
+            [
+                "CREATE TEMP TRIGGER t AFTER INSERT ON a BEGIN \
+                 UPDATE b SET n = n + 1; DELETE FROM c; END",
+                "SELECT 1"
+            ]
+        );
+        // Not a trigger: an ordinary statement ending in a column named end.
+        assert_eq!(
+            texts("CREATE TABLE t (x); SELECT end FROM t;"),
+            ["CREATE TABLE t (x)", "SELECT end FROM t"]
+        );
+    }
+
+    #[test]
+    fn run_picks_the_selection_or_the_statement_at_the_cursor() {
+        let sql = "SELECT 1; SELECT [a;b] FROM t;\n-- note\n";
+        let pick = |range: Range<usize>| sql_to_run(sql, range).map(|range| &sql[range]);
+        assert_eq!(pick(0..0), Some("SELECT 1"));
+        // At the `;` still belongs to the statement it ends.
+        assert_eq!(pick(8..8), Some("SELECT 1"));
+        assert_eq!(pick(9..9), Some("SELECT [a;b] FROM t"));
+        let inside = sql.find("a;b").unwrap() + 1;
+        assert_eq!(pick(inside..inside), Some("SELECT [a;b] FROM t"));
+        // Past the last statement runs the last one.
+        assert_eq!(pick(sql.len()..sql.len()), Some("SELECT [a;b] FROM t"));
+        // A selection runs as written.
+        assert_eq!(pick(0..18), Some("SELECT 1; SELECT ["));
+        assert_eq!(pick(sql.len() - 8..sql.len()), None, "only a comment");
+        assert_eq!(sql_to_run("  ", 0..0), None);
+        assert_eq!(sql_to_run("SELECT 'é'", 9..9), None, "not a char boundary");
     }
 
     #[test]
@@ -715,7 +983,7 @@ mod tests {
             elapsed_ms: 0,
         };
         let mut model = crate::results::ResultModel::default();
-        for event in page_events(&page) {
+        for event in page_events(&page, PAGE_ROWS) {
             model.consume(event);
         }
         assert_eq!(model.sets[0].rows[1].as_ref(), [None]);

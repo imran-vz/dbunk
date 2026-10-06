@@ -14,12 +14,21 @@
 //! - User SQL passes the stored safety policy before it runs (read-only,
 //!   protected and strict modes; confirmation for writes where required).
 //! - Cancellation interrupts only the request it names, through SQLite's
-//!   progress handler. Nothing retries automatically.
-//! - `close` refuses queued work, interrupts the running request and joins
-//!   the worker within a deadline; an unjoined worker is aborted.
+//!   progress handler. Every request carries its own cancel flag, and
+//!   tickets are unique across the process, so a stale ticket (another
+//!   request, an older session) never cancels anything else. A request
+//!   cancelled while queued never starts. Nothing retries automatically.
+//! - `close` (and dropping the session) refuses queued work, interrupts the
+//!   running request and joins the worker within a deadline; an unjoined
+//!   worker is aborted.
+//! - Confirmed overrides are audited once execution starts, so a script
+//!   that commits some statements and then fails is still recorded.
+//! - Connections match the sqlite3 shell: foreign key enforcement is off
+//!   unless the user's SQL turns it on (`PRAGMA foreign_keys = ON`).
 
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use futures_util::TryStreamExt;
@@ -59,6 +68,12 @@ const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// VM instructions between progress callbacks (cancellation latency).
 const PROGRESS_OPS: i32 = 1_000;
+/// Tickets remembered when cancelled before they were submitted.
+const EARLY_CANCELS: usize = 64;
+
+/// Process-wide ticket source: a ticket never repeats across sessions, so a
+/// Stop aimed at an older session's request cannot match a newer one.
+static NEXT_TICKET: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SqliteSessionError {
@@ -143,6 +158,9 @@ pub enum SqliteExecution {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SqlitePage {
+    /// The rows kept. The retained-bytes bound may keep fewer than the
+    /// requested limit (never none while rows remain), so the next page
+    /// starts at `offset + set.rows.len()`.
     pub set: SqliteResultSet,
     pub offset: u64,
     pub has_more: bool,
@@ -245,21 +263,83 @@ impl Work {
 
 struct Job {
     ticket: u64,
+    /// This request's own cancel flag.
+    cancel: Arc<AtomicBool>,
     work: Work,
+}
+
+/// A poisoned lock still guards plain data here; never panic on it (the
+/// progress handler runs inside an SQLite callback).
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+#[derive(Default)]
+struct Requests {
+    /// Cancel flags of queued and running requests, by ticket.
+    live: HashMap<u64, Arc<AtomicBool>>,
+    /// Tickets cancelled before they were submitted (oldest dropped first).
+    early: VecDeque<u64>,
 }
 
 #[derive(Default)]
 struct Shared {
-    /// Ticket of the request on the connection; 0 when idle.
-    running: AtomicU64,
-    /// Ticket whose interruption was requested.
-    cancel: AtomicU64,
+    requests: Mutex<Requests>,
+    /// Cancel flag of the request on the connection; `None` when idle.
+    current: Mutex<Option<Arc<AtomicBool>>>,
     closing: AtomicBool,
 }
 
 impl Shared {
-    fn cancelled(&self, ticket: u64) -> bool {
-        ticket != 0 && self.cancel.load(Ordering::Acquire) == ticket
+    /// Progress-handler verdict: false interrupts the running statement.
+    fn keep_running(&self) -> bool {
+        if self.closing.load(Ordering::Acquire) {
+            return false;
+        }
+        !lock(&self.current)
+            .as_ref()
+            .is_some_and(|cancel| cancel.load(Ordering::Acquire))
+    }
+
+    /// Registers a request's cancel flag; `None` when it was cancelled
+    /// before it was submitted.
+    fn admit(&self, ticket: u64) -> Option<Arc<AtomicBool>> {
+        let mut requests = lock(&self.requests);
+        if let Some(position) = requests.early.iter().position(|early| *early == ticket) {
+            requests.early.remove(position);
+            return None;
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        requests.live.insert(ticket, cancel.clone());
+        Some(cancel)
+    }
+
+    fn forget(&self, ticket: u64, cancel: &Arc<AtomicBool>) {
+        let mut requests = lock(&self.requests);
+        if requests
+            .live
+            .get(&ticket)
+            .is_some_and(|live| Arc::ptr_eq(live, cancel))
+        {
+            requests.live.remove(&ticket);
+        }
+    }
+
+    fn cancel(&self, ticket: u64) {
+        let mut requests = lock(&self.requests);
+        if let Some(cancel) = requests.live.get(&ticket) {
+            cancel.store(true, Ordering::Release);
+            return;
+        }
+        // Not submitted yet (or already finished): remember it so a late
+        // submission is refused instead of running.
+        if ticket == 0 || requests.early.contains(&ticket) {
+            return;
+        }
+        if requests.early.len() >= EARLY_CANCELS {
+            requests.early.pop_front();
+        }
+        requests.early.push_back(ticket);
     }
 }
 
@@ -273,7 +353,6 @@ pub struct SqliteSession {
     info: SqliteSessionInfo,
     jobs: Mutex<Option<mpsc::Sender<Job>>>,
     shared: Arc<Shared>,
-    tickets: AtomicU64,
     worker: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
@@ -288,9 +367,12 @@ impl std::fmt::Debug for SqliteSession {
 impl Drop for SqliteSession {
     fn drop(&mut self) {
         // An unclosed session must not leave a worker holding the file.
+        // `closing` makes the progress handler interrupt the running
+        // statement, which SQLite executes off this task and which aborting
+        // the worker alone would not stop.
         self.shared.closing.store(true, Ordering::Release);
-        self.jobs.lock().unwrap().take();
-        if let Some(worker) = self.worker.lock().unwrap().take() {
+        lock(&self.jobs).take();
+        if let Some(worker) = lock(&self.worker).take() {
             worker.abort();
         }
     }
@@ -347,6 +429,10 @@ impl SqliteSession {
             .create_if_missing(false)
             .read_only(config.read_only)
             .busy_timeout(BUSY_TIMEOUT)
+            // sqlx enables foreign keys by default; the sqlite3 shell (and
+            // SQLite itself) does not. Match the shell so scripts behave as
+            // they do there; users opt in with `PRAGMA foreign_keys = ON`.
+            .foreign_keys(false)
             .statement_cache_capacity(32);
         let mut connection =
             tokio::time::timeout(OPEN_TIMEOUT, SqliteConnection::connect_with(&options))
@@ -374,10 +460,7 @@ impl SqliteSession {
                 .lock_handle()
                 .await
                 .map_err(|error| format!("SQLite session failed to start: {error}"))?;
-            handle.set_progress_handler(PROGRESS_OPS, move || {
-                let running = shared.running.load(Ordering::Acquire);
-                !shared.cancelled(running)
-            });
+            handle.set_progress_handler(PROGRESS_OPS, move || shared.keep_running());
         }
         let info = SqliteSessionInfo {
             connection_id: config.connection_id.clone(),
@@ -391,7 +474,6 @@ impl SqliteSession {
             info,
             jobs: Mutex::new(Some(jobs)),
             shared,
-            tickets: AtomicU64::new(0),
             worker: Mutex::new(Some(worker)),
         })
     }
@@ -400,33 +482,41 @@ impl SqliteSession {
         &self.info
     }
 
-    /// A fresh request identity for `cancel`.
+    /// A fresh request identity for `cancel`, unique across every session
+    /// in the process.
     pub fn ticket(&self) -> u64 {
-        self.tickets.fetch_add(1, Ordering::Relaxed) + 1
+        NEXT_TICKET.fetch_add(1, Ordering::Relaxed)
     }
 
-    /// Interrupts `ticket` if it is queued or running; other requests are
-    /// unaffected. Statements already committed stay committed.
+    /// Interrupts `ticket` if it is queued or running, or refuses it if it
+    /// is submitted later; other requests are unaffected. Statements already
+    /// committed stay committed.
     pub fn cancel(&self, ticket: u64) {
-        self.shared.cancel.store(ticket, Ordering::Release);
+        self.shared.cancel(ticket);
     }
 
     pub fn is_closed(&self) -> bool {
         self.shared.closing.load(Ordering::Acquire)
-            || self
-                .worker
-                .lock()
-                .unwrap()
+            || lock(&self.worker)
                 .as_ref()
                 .is_none_or(|worker| worker.is_finished())
     }
 
     fn submit(&self, ticket: u64, work: Work) {
-        let sender = self.jobs.lock().unwrap().clone();
+        let sender = lock(&self.jobs).clone();
         let Some(sender) = sender.filter(|_| !self.shared.closing.load(Ordering::Acquire)) else {
             return work.refuse(SqliteSessionError::Closed);
         };
-        if let Err(error) = sender.try_send(Job { ticket, work }) {
+        let Some(cancel) = self.shared.admit(ticket) else {
+            return work.refuse(SqliteSessionError::Cancelled);
+        };
+        let job = Job {
+            ticket,
+            cancel: cancel.clone(),
+            work,
+        };
+        if let Err(error) = sender.try_send(job) {
+            self.shared.forget(ticket, &cancel);
             match error {
                 mpsc::error::TrySendError::Full(job) => job.work.refuse(SqliteSessionError::Busy),
                 mpsc::error::TrySendError::Closed(job) => {
@@ -507,13 +597,11 @@ impl SqliteSession {
     /// transaction). Past `deadline` the worker is aborted and an error is
     /// returned; the session is closed either way.
     pub async fn close(&self, deadline: Duration) -> Result<(), String> {
+        // The progress handler sees `closing` and interrupts the running
+        // request; the worker refuses everything still queued.
         self.shared.closing.store(true, Ordering::Release);
-        let running = self.shared.running.load(Ordering::Acquire);
-        if running != 0 {
-            self.shared.cancel.store(running, Ordering::Release);
-        }
-        self.jobs.lock().unwrap().take();
-        let worker = self.worker.lock().unwrap().take();
+        lock(&self.jobs).take();
+        let worker = lock(&self.worker).take();
         let Some(mut worker) = worker else {
             return Ok(());
         };
@@ -535,19 +623,27 @@ async fn run_worker(
     shared: Arc<Shared>,
     config: SqliteSessionConfig,
 ) {
-    while let Some(Job { ticket, work }) = jobs.recv().await {
+    while let Some(Job {
+        ticket,
+        cancel,
+        work,
+    }) = jobs.recv().await
+    {
         if shared.closing.load(Ordering::Acquire) {
+            shared.forget(ticket, &cancel);
             work.refuse(SqliteSessionError::Closed);
             continue;
         }
-        if shared.cancelled(ticket) {
+        // Stopped while queued: it never starts.
+        if cancel.load(Ordering::Acquire) {
+            shared.forget(ticket, &cancel);
             work.refuse(SqliteSessionError::Cancelled);
             continue;
         }
-        shared.running.store(ticket, Ordering::Release);
+        *lock(&shared.current) = Some(cancel.clone());
         match work {
             Work::Objects(reply) => {
-                let result = outcome(&shared, ticket, read_objects(&mut connection).await);
+                let result = outcome(&shared, &cancel, read_objects(&mut connection).await);
                 let _ = reply.send(result);
             }
             Work::Execute {
@@ -557,7 +653,7 @@ async fn run_worker(
             } => {
                 let result = outcome(
                     &shared,
-                    ticket,
+                    &cancel,
                     execute(&mut connection, &config, &sql, confirmed).await,
                 );
                 let _ = reply.send(result);
@@ -571,7 +667,7 @@ async fn run_worker(
             } => {
                 let result = outcome(
                     &shared,
-                    ticket,
+                    &cancel,
                     browse(&mut connection, &schema, &name, offset, limit).await,
                 );
                 let _ = reply.send(result);
@@ -583,13 +679,14 @@ async fn run_worker(
             } => {
                 let result = outcome(
                     &shared,
-                    ticket,
+                    &cancel,
                     read_structure(&mut connection, &schema, &name).await,
                 );
                 let _ = reply.send(result);
             }
         }
-        shared.running.store(0, Ordering::Release);
+        *lock(&shared.current) = None;
+        shared.forget(ticket, &cancel);
     }
     let _ = connection.close().await;
 }
@@ -598,13 +695,13 @@ async fn run_worker(
 /// "interrupted".
 fn outcome<T>(
     shared: &Shared,
-    ticket: u64,
+    cancel: &AtomicBool,
     result: Result<T, String>,
 ) -> Result<T, SqliteSessionError> {
     match result {
         Ok(value) => Ok(value),
         Err(_) if shared.closing.load(Ordering::Acquire) => Err(SqliteSessionError::Closed),
-        Err(_) if shared.cancelled(ticket) => Err(SqliteSessionError::Cancelled),
+        Err(_) if cancel.load(Ordering::Acquire) => Err(SqliteSessionError::Cancelled),
         Err(error) => Err(SqliteSessionError::Failed(error)),
     }
 }
@@ -699,6 +796,9 @@ struct Collector {
     bytes: usize,
     byte_limited: bool,
     rows_per_set: usize,
+    /// Keep the first row even past the byte bound, so a table page always
+    /// advances (one row is bounded by the per-cell limits).
+    keep_first_row: bool,
 }
 
 impl Collector {
@@ -710,6 +810,7 @@ impl Collector {
             bytes: 0,
             byte_limited: false,
             rows_per_set,
+            keep_first_row: false,
         }
     }
 
@@ -736,7 +837,8 @@ impl Collector {
             truncated += u64::from(cut);
             values.push(value);
         }
-        if self.bytes.saturating_add(bytes) > SQLITE_MAX_RESULT_BYTES {
+        let first = self.keep_first_row && self.sets.is_empty() && set.rows.is_empty();
+        if !first && self.bytes.saturating_add(bytes) > SQLITE_MAX_RESULT_BYTES {
             self.byte_limited = true;
             set.omitted_rows += 1;
             return;
@@ -788,14 +890,37 @@ pub(crate) async fn execute(
     let started = Instant::now();
     let before = total_changes(connection).await?;
     let mut collector = Collector::new(SQLITE_MAX_ROWS_PER_SET);
+    let mut failure = None;
     {
         let mut stream = sqlx::raw_sql(sql).fetch_many(&mut *connection);
-        while let Some(item) = stream.try_next().await.map_err(database_error)? {
-            match item {
-                Either::Left(_) => collector.finish_statement(),
-                Either::Right(row) => collector.row(&row),
+        loop {
+            match stream.try_next().await {
+                Ok(Some(Either::Left(_))) => collector.finish_statement(),
+                Ok(Some(Either::Right(row))) => collector.row(&row),
+                Ok(None) => break,
+                Err(error) => {
+                    failure = Some(database_error(error));
+                    break;
+                }
             }
         }
+    }
+    // Audit as soon as execution has started, whatever its outcome: earlier
+    // statements may have committed before a later one failed or was
+    // interrupted, and an override that changed data must be on record.
+    if authorization.audit_disposition() == AuditDisposition::RequiredAfterSuccess {
+        if let Some(pool) = &config.audit {
+            crate::safety::gate::record_override(
+                pool,
+                &config.connection_id,
+                "sqlite_execute",
+                &intent,
+            )
+            .await;
+        }
+    }
+    if let Some(error) = failure {
+        return Err(error);
     }
     collector.finish_statement();
     // A single read that returned no rows still shows its column header.
@@ -823,17 +948,6 @@ pub(crate) async fn execute(
         }
     }
     let after = total_changes(connection).await?;
-    if authorization.audit_disposition() == AuditDisposition::RequiredAfterSuccess {
-        if let Some(pool) = &config.audit {
-            crate::safety::gate::record_override(
-                pool,
-                &config.connection_id,
-                "sqlite_execute",
-                &intent,
-            )
-            .await;
-        }
-    }
     Ok(SqliteExecution::Completed {
         sets: collector.sets,
         rows_affected: u64::try_from(after.saturating_sub(before)).unwrap_or(0),
@@ -866,6 +980,7 @@ async fn browse(
         offset.min(i64::MAX as u64)
     );
     let mut collector = Collector::new(limit as usize + 1);
+    collector.keep_first_row = true;
     {
         let mut stream = sqlx::query(&sql).persistent(false).fetch(&mut *connection);
         while let Some(row) = stream.try_next().await.map_err(database_error)? {
@@ -878,12 +993,14 @@ async fn browse(
         // An empty page still names its columns.
         set.columns = read_column_names(connection, schema, name).await?;
     }
-    let has_more = set.row_count > u64::from(limit);
-    if has_more {
-        set.rows.truncate(limit as usize);
-        set.row_count = u64::from(limit);
-        set.omitted_rows = set.omitted_rows.saturating_sub(1);
-    }
+    // The page is the rows kept: the 16 MiB bound may keep fewer than
+    // `limit`. Rows read but not kept are not lost; they start the next
+    // page, which begins at `offset + rows.len()`.
+    set.rows.truncate(limit as usize);
+    let kept = set.rows.len() as u64;
+    let has_more = set.row_count > kept;
+    set.row_count = kept;
+    set.omitted_rows = 0;
     Ok(SqlitePage {
         set,
         offset,

@@ -424,7 +424,10 @@ async fn cancel_interrupts_only_the_named_request() {
         tokio::spawn(async move { session.execute(ticket, ENDLESS.into(), false).await })
     };
     tokio::time::sleep(Duration::from_millis(100)).await;
-    session.cancel(ticket + 1000);
+    // Issued but never submitted: tickets are process-wide, so cancelling a
+    // made-up number could hit a parallel test's request.
+    let unrelated = session.ticket();
+    session.cancel(unrelated);
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert!(
         !running.is_finished(),
@@ -439,6 +442,232 @@ async fn cancel_interrupts_only_the_named_request() {
     let (sets, _) = completed(run(&session, "SELECT 2").await);
     assert_eq!(sets[0].rows[0][0].as_deref(), Some("2"));
     session.close(DEADLINE).await.unwrap();
+}
+
+async fn author_count(session: &SqliteSession) -> Option<String> {
+    let (sets, _) = completed(run(session, "SELECT count(*) FROM authors").await);
+    sets[0].rows[0][0].clone()
+}
+
+#[tokio::test]
+async fn a_request_stopped_while_queued_never_runs_even_after_later_cancels() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(&dir).await;
+    let session = Arc::new(open(&path).await);
+    let blocker = session.ticket();
+    let running = {
+        let session = session.clone();
+        tokio::spawn(async move { session.execute(blocker, ENDLESS.into(), false).await })
+    };
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let insert = session.ticket();
+    let queued = {
+        let session = session.clone();
+        tokio::spawn(async move {
+            session
+                .execute(
+                    insert,
+                    "INSERT INTO authors (name) VALUES ('queued')".into(),
+                    false,
+                )
+                .await
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    session.cancel(insert);
+    // A later request and its own cancel must not revive the stopped one
+    // (a single shared cancel slot used to be overwritten here).
+    let later = session.ticket();
+    let tree = {
+        let session = session.clone();
+        tokio::spawn(async move { session.objects(later).await })
+    };
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    session.cancel(later);
+    session.cancel(blocker);
+    assert_eq!(running.await.unwrap(), Err(SqliteSessionError::Cancelled));
+    assert_eq!(queued.await.unwrap(), Err(SqliteSessionError::Cancelled));
+    assert_eq!(tree.await.unwrap(), Err(SqliteSessionError::Cancelled));
+    assert_eq!(author_count(&session).await.as_deref(), Some("2"));
+    session.close(DEADLINE).await.unwrap();
+}
+
+#[tokio::test]
+async fn a_ticket_cancelled_before_submission_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(&dir).await;
+    let session = open(&path).await;
+    let ticket = session.ticket();
+    session.cancel(ticket);
+    let result = session
+        .execute(
+            ticket,
+            "INSERT INTO authors (name) VALUES ('late')".into(),
+            false,
+        )
+        .await;
+    assert_eq!(result, Err(SqliteSessionError::Cancelled));
+    assert_eq!(author_count(&session).await.as_deref(), Some("2"));
+    session.close(DEADLINE).await.unwrap();
+}
+
+#[tokio::test]
+async fn tickets_are_unique_across_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(&dir).await;
+    let first = open(&path).await;
+    let second = open(&path).await;
+    let old = first.ticket();
+    let new = second.ticket();
+    assert_ne!(old, new);
+    // Stop with a ticket from an older session touches nothing here.
+    second.cancel(old);
+    assert_eq!(author_count(&second).await.as_deref(), Some("2"));
+    first.close(DEADLINE).await.unwrap();
+    second.close(DEADLINE).await.unwrap();
+}
+
+#[tokio::test]
+async fn dropping_a_session_interrupts_its_running_statement() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(&dir).await;
+    let session = open(&path).await;
+    // Reading `authors` holds a shared lock for as long as it runs.
+    let endless = "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n) \
+                   SELECT count(*) FROM n, authors";
+    let started = tokio::time::timeout(
+        Duration::from_millis(100),
+        session.execute(session.ticket(), endless.into(), false),
+    )
+    .await;
+    assert!(started.is_err(), "the statement is still running");
+    drop(session);
+    // A writer needs that lock released; a statement left running would
+    // keep it past the busy timeout.
+    let writer = open(&path).await;
+    completed(run(&writer, "INSERT INTO authors (name) VALUES ('after drop')").await);
+    assert_eq!(author_count(&writer).await.as_deref(), Some("3"));
+    writer.close(DEADLINE).await.unwrap();
+}
+
+#[tokio::test]
+async fn foreign_keys_are_off_like_the_sqlite_shell() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(&dir).await;
+    let session = open(&path).await;
+    let (sets, _) = completed(run(&session, "PRAGMA foreign_keys").await);
+    assert_eq!(sets[0].rows[0][0].as_deref(), Some("0"));
+    let (_, affected) = completed(
+        run(
+            &session,
+            "INSERT INTO books (author_id, title) VALUES (99, 'orphan')",
+        )
+        .await,
+    );
+    assert_eq!(affected, 1);
+    session.close(DEADLINE).await.unwrap();
+}
+
+#[tokio::test]
+async fn byte_bounded_pages_advance_by_the_rows_they_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(&dir).await;
+    let session = open(&path).await;
+    // 300 rows of 64 KiB: more than the 16 MiB bound fits in one page.
+    completed(
+        run(
+            &session,
+            "CREATE TABLE big (id INTEGER PRIMARY KEY, body TEXT); \
+             WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n LIMIT 300) \
+             INSERT INTO big SELECT x, replace(hex(zeroblob(32768)), '0', 'a') FROM n;",
+        )
+        .await,
+    );
+    let mut offset = 0u64;
+    let mut seen = Vec::new();
+    let mut shortened = false;
+    loop {
+        let page = session
+            .browse(
+                session.ticket(),
+                "main".into(),
+                "big".into(),
+                offset,
+                SQLITE_MAX_PAGE_ROWS,
+            )
+            .await
+            .unwrap();
+        assert_eq!(page.offset, offset);
+        assert_eq!(page.set.omitted_rows, 0);
+        assert_eq!(page.set.row_count, page.set.rows.len() as u64);
+        assert!(!page.has_more || !page.set.rows.is_empty(), "a page always advances");
+        shortened |= page.has_more && page.set.rows.len() < SQLITE_MAX_PAGE_ROWS as usize;
+        seen.extend(
+            page.set
+                .rows
+                .iter()
+                .map(|row| row[0].as_deref().unwrap().parse::<u64>().unwrap()),
+        );
+        offset += page.set.rows.len() as u64;
+        if !page.has_more {
+            break;
+        }
+    }
+    assert!(shortened, "the byte bound applied");
+    assert_eq!(seen, (1..=300).collect::<Vec<u64>>(), "no row skipped or repeated");
+    session.close(DEADLINE).await.unwrap();
+}
+
+#[tokio::test]
+async fn confirmed_overrides_are_audited_even_when_a_later_statement_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(&dir).await;
+    let audit = sqlx::SqlitePool::connect_with(
+        SqliteConnectOptions::new()
+            .filename(dir.path().join("audit.db"))
+            .create_if_missing(true),
+    )
+    .await
+    .unwrap();
+    sqlx::raw_sql(
+        "CREATE TABLE safety_overrides (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             connection_id TEXT NOT NULL,
+             command TEXT NOT NULL,
+             classes TEXT NOT NULL,
+             occurred_at TEXT NOT NULL
+         )",
+    )
+    .execute(&audit)
+    .await
+    .unwrap();
+    let mut settings = config(
+        &path,
+        policy(Environment::Production, SafeMode::Inherit, false),
+    );
+    settings.audit = Some(audit.clone());
+    let session = SqliteSession::open(settings).await.unwrap();
+    let error = session
+        .execute(
+            session.ticket(),
+            "UPDATE authors SET name = 'Bee' WHERE id = 2; SELECT * FROM missing;".into(),
+            true,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error,
+        SqliteSessionError::Failed("no such table: missing".into())
+    );
+    let (sets, _) = completed(run(&session, "SELECT name FROM authors WHERE id = 2").await);
+    assert_eq!(sets[0].rows[0][0].as_deref(), Some("Bee"), "the update committed");
+    let audited: i64 = sqlx::query_scalar("SELECT count(*) FROM safety_overrides")
+        .fetch_one(&audit)
+        .await
+        .unwrap();
+    assert_eq!(audited, 1);
+    session.close(DEADLINE).await.unwrap();
+    audit.close().await;
 }
 
 #[tokio::test]
