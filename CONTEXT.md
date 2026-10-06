@@ -109,7 +109,10 @@ kept until the native equivalents are documented.
   enforcement boundary.
 - **Safe Mode** — a Connection policy level: `disabled`, `protected`, or
   `strict`, plus `inherit`. Inherited levels resolve development and test to
-  disabled, staging to protected, and production to strict.
+  disabled, staging to protected, and production to strict. `protected`
+  requires a confirmed override for destructive or unknown writes and for row
+  mutations (staged table edits and legacy row writes); `strict` requires one
+  for every write.
 - **Safety Policy** — the backend-resolved combination of Environment, Safe
   Mode, and relational read-only. It is asserted before every write-capable
   command dispatch. UI warnings explain policy but cannot enforce it.

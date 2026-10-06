@@ -1034,3 +1034,179 @@ fn sampled_table_widths_defer_to_saved_source_names_after_reordering() {
     assert_eq!(columns.width(0), 400.);
     assert_eq!(columns.width(1), 222.);
 }
+
+#[test]
+fn insert_cells_keep_default_null_and_values_distinct_and_refuse_bad_targets() {
+    let mut draft = MutationDraft::new(analysis(MutationIdentityKind::PrimaryKey)).unwrap();
+    let id = draft.stage_insert(0, vec![]).unwrap();
+    assert_eq!(draft.insert_value(id, "name"), Ok(None));
+    let revision = draft.revision();
+    draft.set_insert_value(id, "name", Some(None)).unwrap();
+    assert!(draft.revision() > revision);
+    assert_eq!(draft.insert_value(id, "name"), Ok(Some(None)));
+    draft
+        .set_insert_value(id, "note", Some(Some("x".into())))
+        .unwrap();
+    assert_eq!(draft.insert_value(id, "note"), Ok(Some(Some("x"))));
+    // Default drops the value so the column default applies again.
+    draft.set_insert_value(id, "name", None).unwrap();
+    assert_eq!(draft.insert_value(id, "name"), Ok(None));
+    assert_eq!(
+        draft.changes().next().unwrap().2,
+        &MutationOp::Insert {
+            table: relation(),
+            values: vec![value("note", Some("x"))],
+        }
+    );
+    let revision = draft.revision();
+    draft.set_insert_value(id, "name", None).unwrap();
+    draft
+        .set_insert_value(id, "note", Some(Some("x".into())))
+        .unwrap();
+    assert_eq!(draft.revision(), revision, "no-op writes do not republish");
+
+    assert_eq!(
+        draft.set_insert_value(id, "computed", Some(Some("1".into()))),
+        Err(ModelError::Unavailable)
+    );
+    assert_eq!(
+        draft.insert_value(id, "computed"),
+        Err(ModelError::Unavailable)
+    );
+    assert_eq!(
+        draft.set_insert_value(Uuid::new_v4(), "name", None),
+        Err(ModelError::InvalidInput)
+    );
+    draft
+        .stage_update(0, &row(), None, false, vec![value("name", Some("x"))])
+        .unwrap();
+    let update = draft
+        .changes()
+        .find(|(_, _, op)| matches!(op, MutationOp::Update { .. }))
+        .unwrap()
+        .0;
+    assert_eq!(
+        draft.set_insert_value(update, "name", None),
+        Err(ModelError::InvalidInput)
+    );
+
+    let review = draft.review().unwrap();
+    let ticket = draft.begin_apply(&review).unwrap();
+    assert_eq!(
+        draft.set_insert_value(id, "name", Some(None)),
+        Err(ModelError::Applying)
+    );
+    draft
+        .finish_apply(ticket, Err(ResultMutationError::ConnectionLost))
+        .unwrap();
+    assert_eq!(
+        draft.set_insert_value(id, "name", Some(None)),
+        Err(ModelError::OutcomeUnknown)
+    );
+    assert_eq!(
+        draft.insert_value(id, "name"),
+        Err(ModelError::OutcomeUnknown)
+    );
+}
+
+#[test]
+fn bulk_deletes_are_atomic_and_convert_existing_updates() {
+    let mut draft = MutationDraft::new(analysis(MutationIdentityKind::PrimaryKey)).unwrap();
+    let first = row();
+    let mut second = row();
+    second[0] = Some("2".into());
+    // A NULL primary key cannot identify its row.
+    let mut keyless = row();
+    keyless[0] = None;
+    let revision = draft.revision();
+    assert_eq!(
+        draft.stage_deletes(
+            0,
+            &[(first.as_slice(), None), (keyless.as_slice(), None)],
+            false
+        ),
+        Err(ModelError::Unavailable)
+    );
+    assert_eq!(
+        draft.stage_deletes(0, &[(first.as_slice(), None)], true),
+        Err(ModelError::Unavailable)
+    );
+    assert_eq!(
+        draft.stage_deletes(0, &[], false),
+        Err(ModelError::InvalidInput)
+    );
+    assert!(draft.is_empty());
+    assert_eq!(draft.revision(), revision);
+
+    draft
+        .stage_update(0, &first, None, false, vec![value("name", Some("x"))])
+        .unwrap();
+    let updated = draft.changes().next().unwrap().0;
+    assert_eq!(
+        draft.stage_deletes(
+            0,
+            &[(first.as_slice(), None), (second.as_slice(), None)],
+            false
+        ),
+        Ok(2)
+    );
+    assert_eq!(draft.len(), 2);
+    let (id, included, operation) = draft.changes().next().unwrap();
+    assert_eq!((id, included), (updated, true));
+    assert_eq!(
+        operation,
+        &MutationOp::Delete {
+            table: relation(),
+            identity: vec![value("id", Some("1"))],
+            guards: vec![
+                value("id", Some("1")),
+                value("name", None),
+                value("note", Some("before")),
+                value("computed", Some("derived")),
+            ],
+        }
+    );
+    assert!(
+        draft
+            .changes()
+            .all(|(_, _, op)| matches!(op, MutationOp::Delete { .. }))
+    );
+}
+
+#[test]
+fn bulk_deletes_check_the_change_limit_before_publishing() {
+    let mut draft = MutationDraft::new(analysis(MutationIdentityKind::PrimaryKey)).unwrap();
+    for _ in 0..CHANGE_LIMIT - 1 {
+        draft.stage_insert(0, vec![]).unwrap();
+    }
+    let revision = draft.revision();
+    let first = row();
+    let mut second = row();
+    second[0] = Some("2".into());
+    assert_eq!(
+        draft.stage_deletes(
+            0,
+            &[(first.as_slice(), None), (second.as_slice(), None)],
+            false
+        ),
+        Err(ModelError::Budget)
+    );
+    assert_eq!(draft.len(), CHANGE_LIMIT - 1);
+    assert_eq!(draft.revision(), revision);
+    assert_eq!(
+        draft.stage_deletes(0, &[(first.as_slice(), None)], false),
+        Ok(1)
+    );
+    assert_eq!(draft.len(), CHANGE_LIMIT);
+    let rows = (0..=CHANGE_LIMIT).map(|_| row()).collect::<Vec<_>>();
+    let rows = rows
+        .iter()
+        .map(|row| (row.as_slice(), None))
+        .collect::<Vec<_>>();
+    let mut empty = MutationDraft::new(analysis(MutationIdentityKind::PrimaryKey)).unwrap();
+    assert_eq!(
+        empty.stage_deletes(0, &rows, false),
+        Err(ModelError::Budget)
+    );
+    assert!(empty.is_empty());
+}

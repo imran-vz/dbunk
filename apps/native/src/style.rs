@@ -112,6 +112,14 @@ pub fn ok_fill() -> Rgba {
 pub fn warn_fill() -> Rgba {
     rgba(0xd299221c)
 }
+/// Staged grid edits: edited cells and inserted rows, `warn` at 14 %.
+pub fn edited_fill() -> Rgba {
+    rgba(0xd2992224)
+}
+/// Rows staged for deletion, `bad` at 10 %.
+pub fn deleted_fill() -> Rgba {
+    rgba(0xf851491a)
+}
 /// Row hover in data grids, between `bg` and `panel`.
 pub fn row_hover() -> Rgba {
     rgb(0x14171b)
@@ -246,6 +254,12 @@ mod tests {
         assert_eq!(with_alpha(0x3fb950, 0x0d), rgba(0x3fb9500d));
         assert_eq!(engine_badge("Redis").0, "RD");
         assert_eq!(engine_badge("Unknown").0, "DB");
+    }
+
+    #[test]
+    fn staged_tints_derive_from_their_status_colours() {
+        assert_eq!(edited_fill(), with_alpha(0xd29922, 0x24));
+        assert_eq!(deleted_fill(), with_alpha(0xf85149, 0x1a));
     }
 
     #[test]

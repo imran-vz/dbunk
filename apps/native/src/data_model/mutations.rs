@@ -2,8 +2,10 @@
 use super::*;
 use std::rc::Rc;
 mod batch;
+mod overlay;
 mod retention;
 pub use batch::{BulkOutcome, BulkRow};
+pub use overlay::*;
 
 #[derive(Clone, serde::Serialize)]
 struct CapturedRow {
@@ -81,6 +83,13 @@ impl MutationDraft {
     }
     pub fn len(&self) -> usize {
         self.changes.len()
+    }
+    /// Identifies this draft instance; with `revision` it keys derived caches.
+    pub fn owner(&self) -> Uuid {
+        self.owner
+    }
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
     pub fn is_empty(&self) -> bool {
         self.changes.is_empty()
@@ -457,6 +466,133 @@ impl MutationDraft {
         };
         let mut changes = self.changes.clone();
         replace_change(&mut changes, existing, Some(row), operation);
+        self.publish(changes)
+    }
+    /// Stages every row's delete or none of them. Each row is captured from
+    /// its original page values; an existing update on the same row becomes
+    /// the delete, keeping its original capture. Returns the rows staged.
+    pub fn stage_deletes(
+        &mut self,
+        table_index: usize,
+        rows: &[(&[Option<String>], Option<&[String]>)],
+        truncated: bool,
+    ) -> Result<usize, ModelError> {
+        self.editable()?;
+        if rows.is_empty() {
+            return Err(ModelError::InvalidInput);
+        }
+        if rows.len() > CHANGE_LIMIT {
+            return Err(ModelError::Budget);
+        }
+        let table = self.table(table_index)?;
+        if !table.deletable.allowed {
+            return Err(ModelError::Unavailable);
+        }
+        let mut changes = self.changes.clone();
+        for (row, hidden) in rows {
+            let captured = self.capture(table, row, *hidden, truncated)?;
+            let existing = Self::existing_in(&changes, &captured)?;
+            let captured = existing
+                .and_then(|index| changes[index].row.clone())
+                .unwrap_or(captured);
+            let operation = MutationOp::Delete {
+                table: captured.table.clone(),
+                identity: captured.identity.clone(),
+                guards: captured.originals.clone(),
+            };
+            replace_change(&mut changes, existing, Some(captured), operation);
+            if changes.len() > CHANGE_LIMIT {
+                return Err(ModelError::Budget);
+            }
+        }
+        self.publish(changes)?;
+        Ok(rows.len())
+    }
+    /// The staged insert, its analysed target table and its position.
+    fn insert_change(&self, id: Uuid) -> Result<(usize, &AnalyzedTable), ModelError> {
+        let index = self
+            .changes
+            .iter()
+            .position(|change| change.id == id)
+            .ok_or(ModelError::InvalidInput)?;
+        let MutationOp::Insert { table: target, .. } = &self.changes[index].operation else {
+            return Err(ModelError::InvalidInput);
+        };
+        let table = self
+            .analysis
+            .as_ref()
+            .ok_or(ModelError::Stale)?
+            .tables
+            .iter()
+            .find(|table| table.schema == target.schema && table.table == target.table)
+            .ok_or(ModelError::Stale)?;
+        if !table.insertable.allowed {
+            return Err(ModelError::Unavailable);
+        }
+        Ok((index, table))
+    }
+    /// An insert cell for editing: `None` is omitted (DEFAULT), `Some(None)`
+    /// an explicit NULL. Refuses columns the insert cannot write.
+    pub fn insert_value(
+        &self,
+        id: Uuid,
+        column: &str,
+    ) -> Result<Option<Option<&str>>, ModelError> {
+        self.editable()?;
+        let (index, table) = self.insert_change(id)?;
+        self.writes(
+            table,
+            &[MutationValue {
+                column: column.to_owned(),
+                value: None,
+            }],
+        )?;
+        let MutationOp::Insert { values, .. } = &self.changes[index].operation else {
+            return Err(ModelError::InvalidInput);
+        };
+        Ok(values
+            .iter()
+            .find(|value| value.column == column)
+            .map(|value| value.value.as_deref()))
+    }
+    /// Sets one insert cell: `None` drops the value so the column default
+    /// applies, `Some(None)` writes NULL.
+    pub fn set_insert_value(
+        &mut self,
+        id: Uuid,
+        column: &str,
+        value: Option<Option<String>>,
+    ) -> Result<(), ModelError> {
+        self.editable()?;
+        let (index, table) = self.insert_change(id)?;
+        self.writes(
+            table,
+            &[MutationValue {
+                column: column.to_owned(),
+                value: None,
+            }],
+        )?;
+        let mut changes = self.changes.clone();
+        let MutationOp::Insert { values, .. } = &mut changes[index].operation else {
+            return Err(ModelError::InvalidInput);
+        };
+        let position = values.iter().position(|old| old.column == column);
+        match (position, value) {
+            (None, None) => return Ok(()),
+            (Some(position), None) => {
+                values.remove(position);
+            }
+            (Some(position), Some(value)) => {
+                if values[position].value == value {
+                    return Ok(());
+                }
+                values[position].value = value;
+            }
+            (None, Some(value)) => values.push(MutationValue {
+                column: column.to_owned(),
+                value,
+            }),
+        }
         self.publish(changes)
     }
     /// Missing columns remain omitted (defaults); None is an explicit SQL NULL.
