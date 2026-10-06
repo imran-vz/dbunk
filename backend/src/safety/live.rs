@@ -141,7 +141,7 @@ async fn wait_for_audit_count(state: &AppState, connection_id: &str, expected: u
 
 #[tokio::test]
 #[serial_test::serial]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn safety_live_read_only_guc_covers_pooled_dedicated_and_policy_flip() {
     let (_directory, state) = crate::test_app_state().await;
     let connection_id = format!("safety-guc-{}", uuid::Uuid::new_v4().simple());
@@ -199,7 +199,7 @@ async fn safety_live_read_only_guc_covers_pooled_dedicated_and_policy_flip() {
 
 #[tokio::test]
 #[serial_test::serial]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn safety_live_query_command_core_enforces_policy_and_records_audit() {
     let (_directory, state) = crate::test_app_state().await;
     let connection_id = format!("safety-policy-{}", uuid::Uuid::new_v4().simple());

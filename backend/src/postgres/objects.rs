@@ -2235,7 +2235,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn object_catalog_live_lists_typed_capped_fixture_objects() {
         let connection = test_connection("pg-object-catalog-live-test");
         let mut conn = super::super::connect(&connection).await.expect("connect");
@@ -2370,7 +2370,7 @@ $$;
 
     #[tokio::test]
     #[serial_test::serial]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn object_description_and_drop_impact_live_cover_every_kind() {
         let connection = test_connection("pg-object-description-live-test");
 

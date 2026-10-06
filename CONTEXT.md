@@ -516,32 +516,38 @@ keychain shape applies only when keychain mode is active) plus a lazily
 created `pubsub-captures/` directory of raw JSONL streams from pub/sub
 tabs with **Record to file** on (never auto-pruned; users manage them
 manually). For the current table list, read the migrations in
-`src-tauri/src/storage.rs` rather than a snapshot here.
+`backend/src/storage.rs` rather than a snapshot here. The native app opens an
+explicit profile directory instead (`just run-native` uses
+`~/Library/Application Support/dbunk Native`).
 
 ## Process model
 
-- **Tauri command** — every backend operation is a `#[tauri::command]` async
-  function in `src-tauri/src/lib.rs`. The frontend invokes them via
-  `tauriInvoke<T>("name", payload)` from `src/lib/tauri.ts`. Payloads use
-  camelCase via serde rename rules. The Tauri command itself owns payload
-  validation and activity tracking; it delegates engine-aware work to
-  **Engine Dispatch**.
-- **Host** — the desktop shell that runs the backend. It supplies a Tokio
-  runtime handle, an **Event Sink** per stream and lifecycle inputs (window
-  label, focus, document replacement, teardown), and calls **Services**.
-  Tauri is the only host today; nothing below `commands` and `tauri_host`
-  names it, and a build with `--no-default-features` proves that (ADR-0032).
+- **Backend facade** — `Backend` in `backend/src/backend.rs` (crate
+  `dbunk_lib`, `isolated-profile` feature) is the only surface the native
+  host calls. It is an opaque, cloneable handle over an explicitly opened
+  profile (`open_fixture`, `open_native_profile`); raw `AppState` and storage
+  stay crate-private, and `compile_fail` doctests enforce that. Its async
+  methods run on the host's multi-thread Tokio runtime, take admission,
+  and delegate to **Services** and **Engine Dispatch**. It replaces the
+  retired **Tauri command** layer (`#[tauri::command]` functions in
+  `src-tauri/src/lib.rs`, invoked from React via `tauriInvoke`).
+- **Host** — the desktop shell that runs the backend: the native GPUI app in
+  `apps/native`. It supplies a Tokio runtime handle, an **Event Sink** per
+  stream and lifecycle inputs (window label, focus, document replacement,
+  teardown) and calls the **Backend facade**. Nothing in `backend/` names a
+  UI framework (ADR-0032; `backend/src/host.rs`).
 - **Event Sink** — how the backend delivers one stream's typed events to the
-  **Host** (`src-tauri/src/host.rs`). Synchronous and non-blocking; a refused
-  event means the stream is lost. The Tauri host wraps an IPC channel and
-  serializes inside the sink.
+  **Host** (the `EventSink` trait in `backend/src/host.rs`; any
+  `Fn(T) -> Result<(), SinkClosed>` closure is one). Synchronous and
+  non-blocking; a refused event means the stream is lost. Serialization, if
+  a host needs any, happens inside the sink.
 - **Service** — host-neutral functions over `&AppState` that own connection
   resolution, the safety policy and the audit for one family, so a **Host**
-  cannot skip them. Extracted so far: `query_session::service` and
-  `connections`. For those families the **Tauri command** is a one-line
-  adapter; for the rest it still holds this logic.
+  cannot skip them. Examples: `query_session::service` and `connections`.
+  The **Backend facade** calls them; other families still keep this logic in
+  the facade module itself (`backend/src/backend/`).
 - **Engine Dispatch** — the `dispatch` module
-  (`src-tauri/src/dispatch/mod.rs`) routes engine-aware operations to
+  (`backend/src/dispatch.rs`) routes engine-aware operations to
   the right per-engine implementation. Public functions open with one
   match on `engine.storage_class()`, then delegate to either
   `dispatch::relational::*` (PG/MySQL/SQLite/CH; module
@@ -557,7 +563,8 @@ manually). For the current table list, read the migrations in
   under `dispatch::relational::*`; keyvalue-only operations (`scan_keys`,
   `fetch_key_metadata`, `run_redis_command`, `redis_pubsub_*`,
   `fetch_keyvalue_overview`) live entirely under `dispatch::keyvalue::*`.
-- **Engine UI Policy** — the frontend mirror to Engine Dispatch
+- **Engine UI Policy** (historical: retired React frontend; no native
+  equivalent is documented yet) — the frontend mirror to Engine Dispatch
   (`src/lib/engine-policy.ts`). A pure `Record<DatabaseEngine,
   EnginePolicy>` where `EnginePolicy` is a discriminated union on
   `storageClass` (ADR-0008): shared base `{ engine, connectionForm }`
@@ -566,8 +573,8 @@ manually). For the current table list, read the migrations in
   `rowCountKind` exact/estimate, `hasForeignKeys`, `foreignKeysUnsupportedCopy`,
   `schemaMapNoForeignKeysCopy`) or a `KeyValueEnginePolicy` arm
   (`defaultDbNumber`, `maxDbNumber`, `keyTypeIcons`, `pubSubSupported`,
-  `transactionsSupported`, `destructiveCommands` — the last sourced via
-  codegen from `redis-destructive-commands.toml`, shared with Rust).
+  `transactionsSupported`, `destructiveCommands` — the last a hand-kept
+  mirror of the Rust list in `backend/src/redis/destructive_commands.rs`).
   **Connection-form policy** (`ConnectionFormPolicy`) is itself a
   tagged union on `kind` (ADR-0012): `host-auth` (PG/MySQL — carries
   `defaultPort`, `showSslToggle`), `clickhouse-http` (CH —
@@ -589,7 +596,7 @@ manually). For the current table list, read the migrations in
   site from the connection's auto-read-only state plus the value type
   (keyvalue; see ADR-0009).
 - **Credential Backend** — the `CredentialBackend` enum in
-  `src-tauri/src/credentials.rs` is the single point of dispatch over
+  `backend/src/credentials.rs` is the single point of dispatch over
   the three storage modes (`Keychain`, `PlainSqlite`,
   `EncryptedSqlite`). Each variant owns its per-mode I/O in its own
   struct (`KeychainBackend`, `PlainSqliteBackend`,
@@ -603,12 +610,17 @@ manually). For the current table list, read the migrations in
   Mirrors the **Engine Dispatch** pattern: closed variant set,
   exhaustive dispatch, per-variant logic concentrated, cross-variant
   invariants in one helper.
-- **AppHandle** — Tauri's global handle, threaded through every command that
-  needs to reach the config directory or keychain. Functions that don't need
-  the keychain (e.g. `touch_connection_activity`) take a path-only path so
-  they can stay off the prompt-prone keychain hot path.
-- **App Shell** — the React root component (`src/components/app-shell.tsx`).
-  Owns the top bar, sidebar, and the foreground health-check loop.
+- **AppState** — the crate-private state every **Service** takes
+  (`backend/src/app.rs`): the SQLite pool, the credential context, the
+  profile `Paths` and the per-family managers (query sessions, result
+  mutations, table browse, PostgreSQL tool jobs, transfers, schema
+  comparison). The **Backend facade** owns it; hosts never see it. It
+  replaces Tauri's `AppHandle`, which the retired command layer threaded
+  through to reach the config directory and keychain.
+- **App Shell** (historical) — the retired React root component
+  (`src/components/app-shell.tsx`) that owned the top bar, sidebar and the
+  foreground health-check loop. Its native counterpart lives in
+  `apps/native` and is not documented here yet.
 - **Query Session** — a PostgreSQL-only, tab-scoped backend actor owning one
   dedicated protocol connection. It is separate from the SQLx pool and legacy
   `run_query`, and is fenced by renderer owner, window, and connection generation.

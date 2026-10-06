@@ -10,19 +10,12 @@ shared compose services.
 
 ## Run
 
-```sh
-pnpm run db:postgres
-pnpm run db:postgres-tls
-pnpm run db:clickhouse
-pnpm run db:redis
-pnpm run db:all
-```
-
-Or run from the infrastructure folder:
+From the repository root:
 
 ```sh
 make -C infrastructure/test-db postgres
 make -C infrastructure/test-db postgres-tls
+make -C infrastructure/test-db mysql
 make -C infrastructure/test-db clickhouse
 make -C infrastructure/test-db redis
 make -C infrastructure/test-db postgres-redis
@@ -32,7 +25,6 @@ make -C infrastructure/test-db all
 Stop and remove containers with:
 
 ```sh
-pnpm run db:down
 make -C infrastructure/test-db down
 ```
 

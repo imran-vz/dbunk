@@ -1075,7 +1075,7 @@ fn native_options_supported(row: &sqlx::sqlite::SqliteRow) -> bool {
 /// Fetch a single connection by ID. Returns `None` when the ID doesn't
 /// exist — callers map that to a user-facing "Connection not found" error.
 /// This avoids reading and deserialising every stored connection when
-/// only one is needed (the hot path for every Tauri command).
+/// only one is needed (the hot path for every connection-scoped service).
 pub async fn read_connection_by_id(
     pool: &SqlitePool,
     connection_id: &str,

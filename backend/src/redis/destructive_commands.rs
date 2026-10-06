@@ -1,11 +1,8 @@
-//! Destructive-command list — the two constants below come from
-//! `destructive-commands.toml` (the single source of truth, shared
-//! with the TS mirror at `src/lib/redis/destructive-commands.ts`).
-//!
-//! Edit the TOML, then run `pnpm run generate:redis-commands` to
-//! regenerate the block between the `<generated:destructive-commands>`
-//! sentinels in this file and the TS mirror file. CI re-runs the
-//! generator in --check mode to enforce parity.
+//! Destructive-command list. The two constants below are the source of
+//! truth and are maintained by hand; no generator exists. The
+//! `<generated:destructive-commands>` sentinels are left over from a
+//! removed codegen step. The sibling `destructive-commands.toml` is a
+//! documentation copy only; keep it in step when editing this list.
 //!
 //! Backend enforcement of the list happens in `redis/cli.rs` (Phase
 //! 1.3+).

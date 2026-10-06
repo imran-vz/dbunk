@@ -6,12 +6,13 @@
 //! account `"connection-credentials"` — whose value is a serialized JSON map
 //! `{ connectionId: password }`. macOS prompts the user to unlock the keychain
 //! per-entry, so consolidating into one entry collapses N prompts per session
-//! down to 1. Each store owns its decoded cache. The Tauri store remains a
+//! down to 1. Each store owns its decoded cache. The legacy store (built for
+//! the removed Tauri host, still behind `credentials::Context::legacy`) is a
 //! process-wide `OnceLock`; isolated stores must own a separate instance.
 //!
 //! ## Failure policy
 //!
-//! The legacy Tauri store logs read failures and treats them as an empty map,
+//! The legacy store logs read failures and treats them as an empty map,
 //! preserving ADR-0005. Strict stores distinguish a missing entry from denial,
 //! corruption and other OS errors, and never cache a failed read. Write/delete
 //! failures leave the previous cache intact in both policies.

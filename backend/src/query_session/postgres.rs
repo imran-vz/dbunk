@@ -1509,7 +1509,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_live_plaintext_refusal_results_temp_state_and_cancel() {
         let connection = connect(&live_spec(15432, true))
             .await
@@ -1630,7 +1630,7 @@ mod tests {
         "SELECT (SELECT count(*) FROM pg_cursors) + (SELECT count(*) FROM pg_prepared_statements)";
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_live_text_parameters_infer_types_and_stay_data() {
         let live = LiveDriver::open().await;
         live.execute(
@@ -1687,7 +1687,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_live_wrapper_exit_rules() {
         let live = LiveDriver::open().await;
         let wrapper = || TransactionEntry::Autocommit;
@@ -1801,7 +1801,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_live_wrapper_ends_before_anyone_takes_a_row() {
         let live = LiveDriver::open().await;
         let plan = crate::postgres::sql_params::plan_execution(
@@ -1842,7 +1842,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_live_wrapper_sends_nothing_after_a_close() {
         // Checkpoint 1 is before BEGIN, 2 before DECLARE, 3 before FETCH.
         for (checkpoint, state) in [
@@ -1877,7 +1877,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_live_cursor_inside_a_user_transaction() {
         let live = LiveDriver::open().await;
 
@@ -1951,7 +1951,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_live_bound_command_runs_refuses_and_stops() {
         let live = LiveDriver::open().await;
         live.execute(
@@ -2067,7 +2067,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_live_driver_side_failures_do_not_retire_the_session() {
         let live = LiveDriver::open().await;
         let client = &live.connection.client;
@@ -2096,7 +2096,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres-tls"]
+    #[ignore = "requires make -C infrastructure/test-db postgres-tls"]
     async fn query_session_live_tls_connects_and_cancels() {
         let connection = connect(&live_spec(15433, true))
             .await
@@ -2110,7 +2110,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres-tls"]
+    #[ignore = "requires make -C infrastructure/test-db postgres-tls"]
     async fn query_session_live_tls_cursor_read_bound_command_and_stop() {
         let connection = connect(&live_spec(15433, true))
             .await

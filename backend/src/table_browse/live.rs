@@ -46,7 +46,7 @@ fn browse_payload(connection_id: &str, schema: &str, table: &str) -> BrowseTable
 }
 
 #[tokio::test]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn table_browse_live_typed_filters_casts_and_identity() {
     let spec = live_spec(15432, true, "browse-typed");
     let manager = TableBrowseManager::new();
@@ -101,7 +101,7 @@ async fn table_browse_live_typed_filters_casts_and_identity() {
 }
 
 #[tokio::test]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn table_browse_live_ilike_escape_and_raw_sql_boundaries() {
     let spec = live_spec(15432, true, "browse-raw");
     let manager = TableBrowseManager::new();
@@ -179,7 +179,7 @@ async fn table_browse_live_ilike_escape_and_raw_sql_boundaries() {
 }
 
 #[tokio::test]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn table_browse_live_keyset_offset_counts_and_structure() {
     let spec = live_spec(15432, true, "browse-pages");
     let manager = TableBrowseManager::new();
@@ -361,7 +361,7 @@ async fn table_browse_live_keyset_offset_counts_and_structure() {
 }
 
 #[tokio::test]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn table_browse_live_cancel_supersede_truncation_and_teardown() {
     let spec = live_spec(15432, true, "browse-cancel");
     let manager = TableBrowseManager::new();
@@ -509,7 +509,7 @@ async fn table_browse_live_cancel_supersede_truncation_and_teardown() {
 }
 
 #[tokio::test]
-#[ignore = "requires pnpm db:postgres-tls"]
+#[ignore = "requires make -C infrastructure/test-db postgres-tls"]
 async fn table_browse_live_tls_connects() {
     let spec = live_spec(15433, true, "browse-tls");
     let manager = TableBrowseManager::new();

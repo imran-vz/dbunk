@@ -1,6 +1,6 @@
-//! Pure data shapes used across the Tauri command surface.
+//! Pure data shapes used across the backend's service surface.
 //!
-//! Everything in this module is a serde DTO — payloads the frontend sends,
+//! Everything in this module is a serde DTO — payloads a host sends,
 //! result types it receives, and the persisted shapes for connections,
 //! query history, and saved queries. There is no behaviour here; the
 //! domain glossary in `CONTEXT.md` is the load-bearing reading.

@@ -1191,7 +1191,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn diagnosis_live_wrong_password_lands_on_authentication() {
         let mut pg = pg(15432, None);
         pg.password = "wrong".into();
@@ -1221,7 +1221,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn diagnosis_live_missing_database_lands_on_database() {
         let mut pg = pg(15432, None);
         pg.database = "no_such_db".into();
@@ -1276,7 +1276,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn diagnosis_live_prefer_against_plaintext_reports_not_encrypted() {
         let d = diagnose(pg(15432, None)).await;
         assert!(matches!(d.outcome, DiagnosisOutcome::Reachable { .. }));
@@ -1303,7 +1303,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres-tls"]
+    #[ignore = "requires make -C infrastructure/test-db postgres-tls"]
     async fn diagnosis_live_verify_full_with_ca_verifies_everything() {
         let d = diagnose(pg(
             15433,
@@ -1323,7 +1323,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres-tls"]
+    #[ignore = "requires make -C infrastructure/test-db postgres-tls"]
     async fn diagnosis_live_verify_ca_without_ca_is_untrusted_and_wrong_name_mismatches() {
         let d = diagnose(pg(
             15433,
@@ -1366,7 +1366,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres-tls"]
+    #[ignore = "requires make -C infrastructure/test-db postgres-tls"]
     async fn diagnosis_live_client_certificate_authenticates_and_encrypted_key_is_refused() {
         let mut pg_cert = pg(
             15433,

@@ -32,8 +32,9 @@ VoiceOver check.
 
 `suite.sh <pid> <out-dir> <grid-point>` runs the Plan 024 sequence against a
 running app. `summarize.py <tauri-dir> <native-dir>` prints the comparison
-table. `fixtures/` holds the shared document and the PostgreSQL views;
-`tauri/` sets up the isolated Tauri build.
+table. `fixtures/` holds the shared document and the PostgreSQL views. The
+`tauri/` setup for the Tauri baseline was deleted with the Tauri app
+(ADR-0033) and remains in git history.
 
 ## Before running it
 

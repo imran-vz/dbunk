@@ -31,8 +31,8 @@ pub(crate) struct AppState {
 
 impl AppState {
     /// Builds every manager over an opened pool. The comparison manager is
-    /// passed in because a WebView host has to create it before setup: a
-    /// configured window can commit its first document before setup runs.
+    /// passed in so a host can create it before setup, for hosts where a
+    /// window can commit its first document before setup runs.
     pub(crate) fn new(pool: SqlitePool, paths: Paths, pg_schema_compare: CompareManager) -> Self {
         Self::with_credentials(paths, pg_schema_compare, credentials::Context::legacy(pool))
     }
@@ -217,8 +217,8 @@ pub(crate) async fn test_app_state() -> (tempfile::TempDir, AppState) {
     (directory, state)
 }
 
-/// A stored connection to the disposable PostgreSQL fixture (`pnpm
-/// db:postgres`, or the port in `DBUNK_OBJECT_TEST_PORT`).
+/// A stored connection to the disposable PostgreSQL fixture (`make -C
+/// infrastructure/test-db postgres`, or the port in `DBUNK_OBJECT_TEST_PORT`).
 #[cfg(test)]
 pub(crate) fn test_postgres_connection(
     id: &str,

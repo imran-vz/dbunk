@@ -493,7 +493,7 @@ pub(crate) fn database_error(error: tokio_postgres::Error) -> DedicatedError {
 mod live {
     //! Live TLS behaviour of the dedicated driver against the
     //! `postgres-tls` fixture (real CA, CA-signed server cert, client cert
-    //! role). Run with `pnpm db:postgres-tls` up:
+    //! role). Run with `make -C infrastructure/test-db postgres-tls` up:
     //! `cargo test -- --ignored dedicated_live`.
 
     use std::time::Duration;
@@ -537,7 +537,7 @@ mod live {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres-tls"]
+    #[ignore = "requires make -C infrastructure/test-db postgres-tls"]
     async fn dedicated_live_verify_full_with_ca_connects_and_cancels_over_tls() {
         let mut tls = ResolvedTls::with_mode("127.0.0.1", PgTlsMode::VerifyFull);
         tls.root_cert_path = Some(fixture("ca.crt"));
@@ -562,7 +562,7 @@ mod live {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres-tls"]
+    #[ignore = "requires make -C infrastructure/test-db postgres-tls"]
     async fn dedicated_live_verify_ca_without_ca_is_untrusted() {
         let tls = ResolvedTls::with_mode("127.0.0.1", PgTlsMode::VerifyCa);
         let error = connect(&spec(15433, tls), NoticeSink::Ignore)
@@ -582,7 +582,7 @@ mod live {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres-tls"]
+    #[ignore = "requires make -C infrastructure/test-db postgres-tls"]
     async fn dedicated_live_verify_full_wrong_server_name_is_mismatch() {
         let mut tls = ResolvedTls::with_mode("wrong.example", PgTlsMode::VerifyFull);
         tls.root_cert_path = Some(fixture("ca.crt"));
@@ -609,7 +609,7 @@ mod live {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres-tls"]
+    #[ignore = "requires make -C infrastructure/test-db postgres-tls"]
     async fn dedicated_live_client_certificate_authenticates() {
         let mut tls = ResolvedTls::with_mode("127.0.0.1", PgTlsMode::VerifyFull);
         tls.root_cert_path = Some(fixture("ca.crt"));
@@ -651,7 +651,7 @@ mod live {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn dedicated_live_reported_parameters_follow_parameter_status_without_queries() {
         let connection = connect(
             &spec(15432, ResolvedTls::prefer("127.0.0.1")),
@@ -686,7 +686,7 @@ mod live {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn dedicated_live_prefer_against_plaintext_server_downgrades() {
         let connection = connect(
             &spec(15432, ResolvedTls::prefer("127.0.0.1")),

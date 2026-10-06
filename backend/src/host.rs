@@ -1,6 +1,6 @@
 //! Host seam: what the backend needs from the desktop shell that runs it.
 //!
-//! Nothing below the command layer names a UI framework. A host supplies a
+//! Nothing in the backend names a UI framework. A host supplies a
 //! Tokio runtime handle to each manager's monitor, an event sink per stream,
 //! and lifecycle inputs (window identity, focus, document replacement and
 //! teardown) through the managers' own methods. See ADR-0032.
@@ -33,9 +33,9 @@ where
 
 pub(crate) type SharedSink<T> = Arc<dyn EventSink<T>>;
 
-/// A host document replacing the one that owned earlier replies. A WebView
-/// host reports its page loads; a host whose views cannot reload reports
-/// `Started` once per window and never again.
+/// A host document replacing the one that owned earlier replies. A host whose
+/// views can reload reports each load; a host whose views cannot reload, like
+/// the native GPUI app, reports `Started` once per window and never again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DocumentLoad {
     /// The previous document is gone: its pending replies are retired.

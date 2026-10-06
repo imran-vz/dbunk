@@ -2547,7 +2547,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_stop_settles_cancelled_once() {
         let live = Live::open("stop", None).await;
         live.execute("stopped", "SELECT pg_sleep(30)").await;
@@ -2587,7 +2587,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_statement_timeout_settles_failed() {
         let live = Live::open("timeout", Some(200)).await;
         live.execute("timed-out", "SELECT pg_sleep(30)").await;
@@ -2601,7 +2601,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_close_with_withheld_acks_releases_the_backend() {
         let live = Live::open("withheld", None).await;
         live.execute(
@@ -2636,7 +2636,7 @@ mod tests {
         );
     }
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_row_limit_is_truthful_at_the_boundary() {
         let live = Live::open("limits", None).await;
         let series = "SELECT g FROM generate_series(1, 5) g";
@@ -2721,7 +2721,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_wrapper_always_leaves_the_session_idle() {
         let live = Live::open("wrapper", None).await;
         let idle = QueryTransactionStatus::Idle;
@@ -2818,7 +2818,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_user_transactions_are_never_committed_or_left_with_a_cursor()
     {
         let live = Live::open("owned", None).await;
@@ -2964,7 +2964,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_close_mid_fetch_releases_the_backend() {
         let live = Live::open("mid-fetch", None).await;
         live.execute_with(
@@ -3009,7 +3009,7 @@ mod tests {
     /// COMMIT, or after all of them. Whichever it hits, the execution settles
     /// once and the session is idle afterwards.
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_stop_at_any_moment_settles_once_and_idle() {
         let live = Live::open("stop-any", None).await;
         let sql = "SELECT g FROM generate_series(1, 300) g WHERE g >= :from";
@@ -3059,7 +3059,7 @@ mod tests {
     /// The same for a close: the backend goes away, nothing follows
     /// `sessionClosed`, and the execution never settles twice.
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_close_at_any_moment_releases_the_backend() {
         let mut settled = 0;
         for round in 0..40_u64 {
@@ -3093,7 +3093,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_read_only_and_timeouts_on_the_new_shapes() {
         let read = "SELECT g FROM generate_series(1, 3) g WHERE g > :from";
         let from: &[(&str, Option<&str>)] = &[("from", Some("0"))];
@@ -3208,7 +3208,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_connection_drop_mid_fetch_loses_the_session() {
         let (port, route) = severable_route().await;
         let mut spec = live_spec(None);
@@ -3246,7 +3246,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_a_sink_that_closes_mid_stream_retires_the_session() {
         // SessionState, ExecutionStarted, ResultSetStarted and one row batch
         // are delivered; the second batch is refused.
@@ -3269,7 +3269,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_owner_replacement_closes_the_old_owners_sessions() {
         let live = Live::open("replaced", None).await;
         live.settle("first", "SELECT 1", None, None).await;
@@ -3300,7 +3300,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_an_unfocused_window_keeps_its_lease() {
         let live = Live::open("lease", None).await;
         let expire_liveness = || async {
@@ -3346,7 +3346,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_global_teardown_closes_sessions_before_it_returns() {
         let live = Live::open("shutdown", None).await;
         live.execute("running", "SELECT pg_sleep(30)").await;
@@ -3379,7 +3379,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_a_refused_first_event_fails_the_open_and_releases_the_backend(
     ) {
         // This test's sessions are the only ones on the `postgres` database,
@@ -3426,7 +3426,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "requires pnpm db:postgres"]
+    #[ignore = "requires make -C infrastructure/test-db postgres"]
     async fn query_session_actor_live_a_refused_terminal_event_retires_the_session() {
         // SessionState, ExecutionStarted, ResultSetStarted and
         // ResultSetCompleted are delivered. No row batch needs an ACK, so the

@@ -109,7 +109,7 @@ fn unique_schema() -> String {
 }
 
 #[tokio::test]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn result_mutation_live_idle_close_releases_socket_worker_and_capacity() {
     let connection_id = "result-mutation-idle-close";
     let spec = live_spec(connection_id);
@@ -204,7 +204,7 @@ async fn result_mutation_live_idle_close_releases_socket_worker_and_capacity() {
 }
 
 #[tokio::test]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn result_mutation_live_analysis_matrix() {
     let connection_id = "result-mutation-analysis";
     let spec = live_spec(connection_id);
@@ -629,7 +629,7 @@ async fn result_mutation_live_analysis_matrix() {
 }
 
 #[tokio::test]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn result_mutation_live_virtual_key_drift_and_analysis_expiry() {
     let connection_id = "result-mutation-virtual-key";
     let spec = live_spec(connection_id);
@@ -783,7 +783,7 @@ async fn result_mutation_live_virtual_key_drift_and_analysis_expiry() {
 }
 
 #[tokio::test]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn result_mutation_live_catalog_drift_expires_before_dml() {
     let connection_id = "result-mutation-catalog-drift";
     let spec = live_spec(connection_id);
@@ -1092,7 +1092,7 @@ async fn result_mutation_live_catalog_drift_expires_before_dml() {
 }
 
 #[tokio::test]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn result_mutation_live_preview_apply_conflicts_defaults_and_index_plan() {
     let connection_id = "result-mutation-apply";
     let spec = live_spec(connection_id);
@@ -1424,7 +1424,7 @@ async fn result_mutation_live_preview_apply_conflicts_defaults_and_index_plan() 
 }
 
 #[tokio::test]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn result_mutation_live_virtual_identity_ctid_and_lock_timeout() {
     let connection_id = "result-mutation-guards";
     let spec = live_spec(connection_id);
@@ -1639,7 +1639,7 @@ async fn result_mutation_live_virtual_identity_ctid_and_lock_timeout() {
 }
 
 #[tokio::test]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
     let connection_id = "result-mutation-cancel";
     let spec = live_spec(connection_id);
@@ -1944,7 +1944,7 @@ async fn result_mutation_live_cancel_teardown_rollback_and_recovery() {
 // Applies through the same host-neutral service used by the Tauri adapter.
 #[tokio::test]
 #[serial_test::serial]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn safety_live_apply_strict_confirmation_and_audit() {
     let connection_id = format!("safety-apply-{}", uuid::Uuid::new_v4().simple());
     let schema = unique_schema();
@@ -2084,7 +2084,7 @@ fn native_payload(
 }
 
 #[tokio::test]
-#[ignore = "requires pnpm db:postgres"]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
 async fn result_mutation_live_native_search_path_dates_and_unique_resolution() {
     let connection_id = "result-mutation-native-context";
     let spec = live_spec(connection_id);

@@ -1,11 +1,13 @@
 //! XLSX import (read) and export (write) via native Rust libraries.
 //!
 //! - **Import**: `calamine` reads `.xlsx` / `.xls` / `.ods` files and
-//!   returns sheets as `Vec<Vec<String>>`. The frontend sends the file
+//!   returns sheets as `Vec<Vec<String>>`. The caller sends the file
 //!   as a base64 blob; we decode, parse, and return structured sheets.
 //! - **Export**: `rust_xlsxwriter` builds a proper `.xlsx` file from
-//!   columns + rows and returns raw bytes; the host hands them to its
-//!   UI (the Tauri commands are in `commands/xlsx.rs`).
+//!   columns + rows and returns raw bytes for the host to write out.
+//!
+//! Nothing calls these yet; the native host's bounded XLSX import is
+//! `xlsx_native`.
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use calamine::{open_workbook_from_rs, Reader, Xlsx};
