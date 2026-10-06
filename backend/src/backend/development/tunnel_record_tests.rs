@@ -150,3 +150,28 @@ fn owned_fixture_profiles_never_admit_a_route() {
     assert!(authority.permits(&direct.into_stored("id".into(), None).unwrap()));
     assert!(!authority.permits(&routed.into_stored("id".into(), None).unwrap()));
 }
+
+#[test]
+fn summaries_carry_the_stored_last_activity_and_omit_it_when_unset() {
+    let StoredConnection::PostgreSQL(mut pg) = form(None).into_stored("id".into(), None).unwrap()
+    else {
+        unreachable!()
+    };
+    let unused = summary(&StoredConnection::PostgreSQL(pg.clone()), &general());
+    assert_eq!(unused.last_activity_at, None);
+    assert!(serde_json::to_value(&unused)
+        .unwrap()
+        .get("lastActivityAt")
+        .is_none());
+
+    pg.last_activity_at = Some("2026-08-24T00:00:00Z".into());
+    let used = summary(&StoredConnection::PostgreSQL(pg), &general());
+    assert_eq!(
+        used.last_activity_at.as_deref(),
+        Some("2026-08-24T00:00:00Z")
+    );
+    assert_eq!(
+        serde_json::to_value(&used).unwrap()["lastActivityAt"],
+        "2026-08-24T00:00:00Z"
+    );
+}

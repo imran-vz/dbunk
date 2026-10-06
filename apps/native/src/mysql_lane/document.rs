@@ -375,6 +375,20 @@ impl MySqlDocument {
         cx.notify();
     }
 
+    /// Clears a query tab's result, status and error. A running query is
+    /// left alone, since its result would refill the grid; data, structure
+    /// and definition tabs have no results to clear.
+    pub fn clear_results(&mut self, cx: &mut Context<Self>) {
+        if self.query.is_none() || self.running.is_some() {
+            return;
+        }
+        self.grid.update(cx, |grid, cx| grid.begin(cx));
+        self.has_result = false;
+        self.error = None;
+        self.status.clear();
+        cx.notify();
+    }
+
     fn show(&mut self, result: &MySqlResult, cx: &mut Context<Self>) {
         self.has_result = true;
         self.grid.update(cx, |grid, cx| {

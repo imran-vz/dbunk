@@ -350,6 +350,22 @@ impl SqliteQueryView {
         self.running = None;
         self.retention.release(&self.context, &self.grid, cx);
     }
+
+    /// Clears the results (giving their bytes back) and the last error. A
+    /// running query is left alone: its results would refill the grid, and
+    /// the grid is already empty while it runs. A pending confirmation stays.
+    pub fn clear_results(&mut self, cx: &mut Context<Self>) {
+        if self.running.is_some() {
+            return;
+        }
+        self.retention.release(&self.context, &self.grid, cx);
+        self.error = None;
+        if self.confirmation.is_none() {
+            self.summary = "Ready".into();
+        }
+        cx.emit(SqliteDocEvent::Changed);
+        cx.notify();
+    }
 }
 
 impl Render for SqliteQueryView {

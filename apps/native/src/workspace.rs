@@ -577,7 +577,14 @@ impl Workspace {
                                 }
                             }
                         }
-                        if show_settings || settings.state != DevelopmentCredentialState::Ready {
+                        // An unreadable Keychain leaves storage Ready, but
+                        // saved passwords are unusable: open the page once
+                        // per startup so the reason and a retry are in view.
+                        let keychain_denied = restore && settings.keychain_unavailable.is_some();
+                        if show_settings
+                            || keychain_denied
+                            || settings.state != DevelopmentCredentialState::Ready
+                        {
                             this.form_credentials = true;
                             let form = cx.new(|cx| {
                                 Form::credentials(this.host.clone(), settings, window, cx)
@@ -2442,7 +2449,7 @@ impl Workspace {
                         _ => ("Workspace cleanup failed".into(), false),
                     };
                     this.message = Some(if !resumable && this.drafts_durable {
-                        format!("{error}. Drafts are saved; Retry or ⌘Q quits anyway.")
+                        format!("{error}. Drafts are saved; Quit anyway or ⌘Q closes dbunk.")
                     } else {
                         error
                     });

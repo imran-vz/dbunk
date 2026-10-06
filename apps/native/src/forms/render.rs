@@ -220,6 +220,7 @@ impl Form {
         };
         let state = settings.state;
         let current = settings.mode;
+        let keychain = settings.keychain_unavailable.clone();
         let mut content = div().flex().flex_col().gap(px(14.));
         if state == DevelopmentCredentialState::NeedsRecovery {
             return content.child(self.button(
@@ -259,6 +260,26 @@ impl Form {
                     false,
                     cx,
                 )));
+        }
+        // The Keychain could not be read: say why and offer a retry. Storage
+        // stays Ready, so the rest of the page still changes or resets it.
+        if let Some(reason) = keychain {
+            content = content.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .child(ui::error_banner(
+                        "keychain-unavailable",
+                        super::keychain_notice(&reason),
+                    ))
+                    .child(div().flex().child(self.button(
+                        "Retry keychain access",
+                        FormAction::RetryKeychain,
+                        false,
+                        cx,
+                    ))),
+            );
         }
         let cards = [
             (

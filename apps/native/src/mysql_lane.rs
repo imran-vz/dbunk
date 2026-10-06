@@ -453,6 +453,17 @@ impl MySqlLane {
         }
     }
 
+    /// Clears the active query tab's results.
+    pub fn clear_results(&mut self, cx: &mut Context<Self>) {
+        if let Some(doc) = self
+            .documents
+            .iter()
+            .find(|doc| Some(&doc.id) == self.active.as_ref())
+        {
+            doc.view.update(cx, |view, cx| view.clear_results(cx));
+        }
+    }
+
     pub fn focus_active(&self, window: &mut Window, cx: &mut gpui::App) {
         if let Some(doc) = self
             .documents
