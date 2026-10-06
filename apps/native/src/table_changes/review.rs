@@ -594,8 +594,11 @@ fn env_chip(environment: Option<DevelopmentEnvironment>) -> AnyElement {
         .into_any_element()
 }
 
+/// Display text and whether it is a placeholder (NULL, or `''` for an empty
+/// string, matching the grid) rather than the value itself.
 fn value_text(value: &DiffValue) -> (String, bool) {
     match &value.text {
+        Some(text) if text.is_empty() => ("''".to_owned(), true),
         Some(text) => (
             format!("{text}{}", if value.truncated { "…" } else { "" }),
             false,
@@ -805,6 +808,18 @@ fn sql_list(statements: &[ReviewStatement]) -> AnyElement {
 mod tests {
     use super::*;
     use dbunk_lib::backend::DevelopmentSafeMode;
+
+    #[test]
+    fn diff_values_keep_null_and_empty_string_distinct() {
+        let value = |text: Option<&str>, truncated| DiffValue {
+            text: text.map(str::to_owned),
+            truncated,
+        };
+        assert_eq!(value_text(&value(None, false)), ("NULL".into(), true));
+        assert_eq!(value_text(&value(Some(""), false)), ("''".into(), true));
+        assert_eq!(value_text(&value(Some("a"), false)), ("a".into(), false));
+        assert_eq!(value_text(&value(Some("ab"), true)), ("ab…".into(), false));
+    }
 
     const PHASES: [ReviewPhase; 7] = [
         ReviewPhase::Preparing,

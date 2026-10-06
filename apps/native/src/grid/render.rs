@@ -176,8 +176,9 @@ impl ResultGrid {
             )
             .when_some(cast_type, |header, cast_type| {
                 header.child(
+                    // The type gives way before the column name does.
                     div()
-                        .flex_shrink(1.)
+                        .flex_shrink(1000.)
                         .min_w_0()
                         .truncate()
                         .font_family(style::MONO)

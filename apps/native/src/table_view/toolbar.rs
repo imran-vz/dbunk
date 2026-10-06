@@ -17,7 +17,8 @@ use crate::{
     ui,
 };
 use gpui::{
-    AnyElement, Context, Div, Role, SharedString, Stateful, Window, div, prelude::*, px, svg,
+    AnyElement, Context, Div, Focusable, Role, SharedString, Stateful, Window, div, prelude::*, px,
+    svg,
 };
 use std::rc::Rc;
 
@@ -424,7 +425,12 @@ impl TableView {
                 button,
                 enabled,
                 cx,
-                |this, _, cx| this.delete_checked(cx),
+                |this, window, cx| {
+                    this.delete_checked(cx);
+                    // The button disappears with the checked rows; keep focus
+                    // in the table so ⌘S and the grid keys still work.
+                    window.focus(&this.grid.focus_handle(cx), cx);
+                },
             ));
         }
         bar = bar.child(ui::grow());
