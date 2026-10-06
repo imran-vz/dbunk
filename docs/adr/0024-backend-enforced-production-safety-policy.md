@@ -33,7 +33,7 @@ Every stored Connection has three policy inputs:
   retains its existing independently enforced read-only contract.
 
 `disabled` admits all operations. `protected` requires a confirmed override
-for destructive or unknown writes. `strict` requires one for every write.
+for destructive or unknown writes and, since Plan 032, for row mutations. `strict` requires one for every write.
 Read-only refuses every gated write regardless of confirmation and admits only
 statements proven to be reads on both arbitrary-SQL paths. Cancelling a backend
 is always allowed because it stops work rather than creating it.
@@ -122,6 +122,16 @@ Connection, command kind, Statement Class labels, and occurrence time. It
 never contains SQL, row values, parameter values, or structured database error
 detail. An audit failure is warned about without failing already-authorized
 database work.
+
+## Amendments
+
+- **Plan 032**: `protected` also requires a confirmed override for row
+  mutations (result-mutation apply and legacy row writes); `strict` is
+  unchanged. Staged table edits change user data cell by cell, so a staging
+  Connection now acknowledges them like other destructive writes. The native
+  table grid sends that acknowledgement automatically after the user's single
+  Confirm in its review dialog; the backend token stays the enforcement
+  boundary, and only a `policyNeedsConfirmation` refusal can create it.
 
 ## Consequences
 

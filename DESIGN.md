@@ -54,7 +54,17 @@ destructive actions, `ok_fill` for success notes, `warn_fill` (warn at 11 %)
 for confirmations and policy notes that need a second look.
 
 Data colours in grids: numbers `#79c0ff`, booleans `#d2a8ff`, `NULL` faint
-italic, edited cells `warn` at 14 %.
+italic, empty strings a faint `''`.
+
+Staged grid edits (Plan 032):
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `edited_fill` | `warn` at 14 % (`#d2992224`) | Edited cells (with `warn` text) and every cell of an inserted row |
+| `deleted_fill` | `bad` at 10 % (`#f851491a`) | Rows staged for deletion, with faint strikethrough text |
+
+A change excluded from review shows the same tint at half alpha. The change
+named by the last apply failure gets a 1 px `bad_line` row outline.
 
 Object kinds in sidebar trees (`style::kind_icon`); containers (databases,
 schemas, groups) stay `dim`:
@@ -167,8 +177,40 @@ Radii: 3 px badges, 4 px tool/icon buttons, 5 px buttons, fields and banners,
   icon), info (`dim`, info icon). Live region polite.
 - **Tooltip**: raised panel, line border, 11 px text; shows after 450 ms.
   Every icon-only button has one, including its shortcut where there is one.
-- **Popovers** (palette, menus): `panel`, 8 px radius, line border, large
-  shadow.
+- **`toolbar_strip`**: the table toolbar. Fixed 28 px, never wraps, clips;
+  secondary actions live in its `⋯` overflow menu. `toolbar` (wrapping) stays
+  for other documents.
+- **`icon_button`**: 20 × 20 icon-only button. Its label is the AX name and
+  the hover tooltip.
+- **`tool_button_accent`**: the single primary toolbar action (`Review 3 ⌘S`):
+  primary fill, line and text, optional trailing shortcut.
+- **`count_badge`**: 14 px mono pill in `primary_fill` beside Filter, Sort or
+  Columns.
+- **`segment_group`**: 20 px bordered row of `segment`s (Data | Structure).
+- **`tri_check_box(CheckState)`**: 12 px box, empty, dash (mixed) or check.
+  Row checkboxes and the select-all header; the owning control reports AX
+  toggled (`CheckState::toggled`).
+- **Popovers** (`ui::popover`; palette, menus, selects): `panel`, 8 px
+  radius, line border, large shadow, 4 px vertical padding. They paint in a
+  deferred layer anchored under their trigger (`probe` records its bounds),
+  stay 8 px inside the window and close on a click outside, which still goes
+  through. Menu rows are 22 px, at least 170 px wide, with an optional icon
+  and a trailing faint mono hint (shortcut or SQL badge); `check_item` rows
+  report AX toggled. Keyboard: up/down wrap, home/end, enter or space
+  activate, escape closes (`MenuNav`).
+- **Select** (`popover::select_trigger`): 20 px field-styled button showing
+  the value and a chevron; accent border while open; AX button with expanded
+  state. Its list is a popover menu.
+- **Dialogs** (`ui::dialog`): in-document modals over an occluding 45 % black
+  backdrop. Panel as popovers, AX modal dialog, at most 80 % of the document
+  height; 34 px header (title, optional environment chip), scrolling body,
+  40 px footer with actions right-aligned. Write reviews open with
+  `env_notice`: a 2 px bar in the environment colour beside the policy text,
+  with the `warn_fill` wash when typed confirmation is required.
+- **Typed confirm** (`ui::confirm::TypedConfirm`): a labelled field, "Type
+  confirm to apply". Apply unlocks only on the exact lower-case word
+  (surrounding whitespace ignored); Enter submits once it matches. Created
+  empty for every review and never reused.
 - **`badge`, `crumbs`, `status_line`, `shortcut`, `separator`** as in the
   mock.
 

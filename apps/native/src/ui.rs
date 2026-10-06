@@ -9,6 +9,10 @@ use gpui::{
 };
 use std::time::Duration;
 
+pub mod confirm;
+pub mod dialog;
+pub mod popover;
+
 /// A 28 px document toolbar. Wraps onto further rows instead of clipping
 /// controls when the window is narrow.
 pub fn toolbar() -> Div {
@@ -91,6 +95,160 @@ pub fn tool_button(
         .when(!enabled, |button| {
             button.a11y_synthetic_children(|builder| builder.parent_node().set_disabled())
         })
+}
+
+/// A fixed 28 px toolbar row that never wraps; controls that do not fit are
+/// clipped, so callers move secondary actions into an overflow menu instead.
+pub fn toolbar_strip() -> Div {
+    div()
+        .flex_none()
+        .h(px(style::TOOLBAR))
+        .px(px(8.))
+        .flex()
+        .flex_nowrap()
+        .items_center()
+        .gap(px(4.))
+        .overflow_hidden()
+        .border_b_1()
+        .border_color(style::line_soft())
+        .text_sm()
+        .whitespace_nowrap()
+        .text_color(style::dim())
+}
+
+/// A 20 x 20 icon-only button. `label` is its AX name and hover tooltip.
+pub fn icon_button(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    icon: &'static str,
+    enabled: bool,
+) -> Stateful<Div> {
+    let label = label.into();
+    let color = if enabled { style::dim() } else { style::faint() };
+    div()
+        .id(id)
+        .role(Role::Button)
+        .aria_label(label.clone())
+        .flex_none()
+        .size(px(style::TOOL))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(4.))
+        .border_1()
+        .border_color(gpui::transparent_black())
+        .text_color(color)
+        .when(enabled, |button| {
+            press(
+                button
+                    .cursor_pointer()
+                    .hover(|s| s.bg(style::hover()).text_color(style::text())),
+            )
+        })
+        .focus(|s| {
+            s.bg(style::hover())
+                .text_color(style::text())
+                .border_color(style::accent())
+        })
+        .child(
+            svg()
+                .path(icon)
+                .size(px(style::ICON))
+                .flex_none()
+                .text_color(color),
+        )
+        .tooltip(tooltip(label))
+        .tooltip_show_delay(tooltip_delay())
+        .when(!enabled, |button| {
+            button.a11y_synthetic_children(|builder| builder.parent_node().set_disabled())
+        })
+}
+
+/// The single primary action of a toolbar (`Review 3 ⌘S`): a 20 px tool
+/// button in the primary accent fill, with an optional trailing shortcut.
+pub fn tool_button_accent(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    shortcut_keys: Option<&'static str>,
+    enabled: bool,
+) -> Stateful<Div> {
+    let label = label.into();
+    div()
+        .id(id)
+        .role(Role::Button)
+        .aria_label(label.clone())
+        .flex_none()
+        .h(px(style::TOOL))
+        .px(px(7.))
+        .flex()
+        .items_center()
+        .gap(px(5.))
+        .rounded(px(4.))
+        .border_1()
+        .border_color(if enabled {
+            style::primary_line()
+        } else {
+            style::line()
+        })
+        .bg(if enabled {
+            style::primary_fill()
+        } else {
+            gpui::transparent_black().into()
+        })
+        .text_sm()
+        .whitespace_nowrap()
+        .text_color(if enabled {
+            style::primary_text()
+        } else {
+            style::faint()
+        })
+        .when(enabled, |button| {
+            press(
+                button
+                    .cursor_pointer()
+                    .hover(|s| s.border_color(style::accent())),
+            )
+        })
+        .focus(|s| s.border_color(style::accent()))
+        .child(label)
+        .when_some(shortcut_keys, |button, keys| button.child(shortcut(keys)))
+        .when(!enabled, |button| {
+            button.a11y_synthetic_children(|builder| builder.parent_node().set_disabled())
+        })
+}
+
+/// A 14 px monospace pill counting active filters, sort keys or hidden
+/// columns next to a toolbar button.
+pub fn count_badge(text: impl Into<SharedString>) -> Div {
+    div()
+        .flex_none()
+        .h(px(14.))
+        .min_w(px(14.))
+        .px(px(4.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(7.))
+        .bg(style::primary_fill())
+        .font_family(style::MONO)
+        .text_size(px(style::FONT_SMALL))
+        .text_color(style::accent())
+        .child(text.into())
+}
+
+/// A 20 px bordered row of `segment`s (Data | Structure).
+pub fn segment_group() -> Div {
+    div()
+        .flex_none()
+        .h(px(style::TOOL))
+        .p(px(1.))
+        .flex()
+        .items_center()
+        .gap(px(1.))
+        .rounded(px(4.))
+        .border_1()
+        .border_color(style::line())
+        .bg(style::bg())
 }
 
 /// Raised background and text colour for a pressed toggle or selected tab.
@@ -556,6 +714,57 @@ pub fn check_box(checked: bool) -> Div {
         })
 }
 
+/// State of a tri-state checkbox: a select-all header is `Mixed` while only
+/// some rows are checked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CheckState {
+    Off,
+    Mixed,
+    On,
+}
+
+impl CheckState {
+    /// The AX toggled state callers set on the control that owns the box.
+    pub fn toggled(self) -> gpui::accesskit::Toggled {
+        match self {
+            Self::Off => gpui::accesskit::Toggled::False,
+            Self::Mixed => gpui::accesskit::Toggled::Mixed,
+            Self::On => gpui::accesskit::Toggled::True,
+        }
+    }
+}
+
+/// 12 px tri-state checkbox glyph: empty, dash (mixed) or check. Styling
+/// only; the caller's control carries the role and toggled state.
+pub fn tri_check_box(state: CheckState) -> Div {
+    let icon = match state {
+        CheckState::Off => None,
+        CheckState::Mixed => Some("icons/dash.svg"),
+        CheckState::On => Some("icons/check.svg"),
+    };
+    div()
+        .flex_none()
+        .size(px(12.))
+        .rounded(px(3.))
+        .border_1()
+        .border_color(if icon.is_some() {
+            style::accent()
+        } else {
+            style::faint()
+        })
+        .bg(if icon.is_some() {
+            style::primary_fill()
+        } else {
+            style::bg()
+        })
+        .flex()
+        .items_center()
+        .justify_center()
+        .when_some(icon, |b, path| {
+            b.child(svg().path(path).size(px(9.)).text_color(style::accent()))
+        })
+}
+
 /// A selectable card: title, optional badge and body text. Selected cards
 /// take the accent border and fill.
 pub fn choice_card(
@@ -651,6 +860,14 @@ mod tests {
             .map(|i| shake_offset(i as f32 / 100.).abs())
             .fold(0., f32::max);
         assert!(peak > 1. && peak <= style::SHAKE_PX);
+    }
+
+    #[test]
+    fn check_states_map_to_ax_toggled() {
+        use gpui::accesskit::Toggled;
+        assert_eq!(CheckState::Off.toggled(), Toggled::False);
+        assert_eq!(CheckState::Mixed.toggled(), Toggled::Mixed);
+        assert_eq!(CheckState::On.toggled(), Toggled::True);
     }
 
     #[test]

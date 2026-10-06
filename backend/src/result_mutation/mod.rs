@@ -1836,6 +1836,46 @@ mod tests {
         assert!(state.cancel_pending.is_none());
     }
 
+    /// Plan 032: protected (staging by inheritance) acknowledges row mutations.
+    #[tokio::test]
+    async fn protected_policy_requires_confirmation_for_unconfirmed_apply() {
+        let manager = ResultMutationManager::new();
+        let executor = new_executor(spec("c"));
+        let analysis_id = executor
+            .state
+            .lock()
+            .await
+            .snapshots
+            .insert(AnalysisSnapshot {
+                tab_id: "tab".into(),
+                descriptors: Vec::new(),
+            });
+        manager
+            .inner
+            .lock()
+            .await
+            .executors
+            .insert("c".into(), executor.clone());
+
+        let mut guarded_spec = spec("c");
+        guarded_spec.safety_policy =
+            crate::safety::policy::resolve_policy(crate::ConnectionPolicy {
+                environment: crate::Environment::Staging,
+                safe_mode: crate::SafeMode::Inherit,
+                read_only: false,
+            });
+        let result = manager
+            .apply(guarded_spec, apply_payload("tab", analysis_id))
+            .await;
+        assert!(matches!(
+            result,
+            Err(ResultMutationError::PolicyNeedsConfirmation { .. })
+        ));
+        let state = executor.state.lock().await;
+        assert!(state.active.is_none());
+        assert!(state.cancel_pending.is_none());
+    }
+
     #[tokio::test]
     async fn close_idle_removes_executor_stops_worker_and_releases_capacity() {
         let manager = ResultMutationManager::new();

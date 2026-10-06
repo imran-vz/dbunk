@@ -142,6 +142,20 @@ mod tests {
     }
 
     #[test]
+    fn staging_inherit_refuses_legacy_row_mutations_until_confirmed() {
+        let connection = connection(Environment::Staging, SafeMode::Inherit, false);
+        let refusal = assert_legacy_permitted(&connection, &WriteIntent::RowMutation, false)
+            .expect_err("protected row mutation");
+        assert!(refusal.starts_with(CONFIRM_TAG), "{refusal}");
+        assert!(matches!(
+            assert_legacy_permitted(&connection, &WriteIntent::RowMutation, true)
+                .expect("confirmed override")
+                .audit_disposition(),
+            AuditDisposition::RequiredAfterSuccess
+        ));
+    }
+
+    #[test]
     fn default_policy_is_dark_and_confirmed_does_not_create_an_audit() {
         let connection = connection(Environment::Development, SafeMode::Inherit, false);
         for (command, intent) in write_intents() {

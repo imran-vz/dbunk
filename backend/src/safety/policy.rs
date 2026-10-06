@@ -165,14 +165,18 @@ fn read_only_permits(intent: &WriteIntent) -> bool {
 fn protected_requires_confirmation(intent: &WriteIntent) -> bool {
     match intent {
         WriteIntent::Statement { classes } => classes.iter().any(statement_is_destructive),
-        WriteIntent::Ddl | WriteIntent::Restore | WriteIntent::TerminateBackend => true,
-        WriteIntent::RowMutation
-        | WriteIntent::Import
+        // Plan 032: row mutations change user data cell by cell, so a protected
+        // connection acknowledges them like other destructive writes.
+        WriteIntent::Ddl
+        | WriteIntent::Restore
+        | WriteIntent::TerminateBackend
+        | WriteIntent::RowMutation
+        | WriteIntent::ApplyMutations { .. } => true,
+        WriteIntent::Import
         | WriteIntent::Seed
         | WriteIntent::CopyDestination
         | WriteIntent::Maintenance
         | WriteIntent::RefreshMatView
-        | WriteIntent::ApplyMutations { .. }
         | WriteIntent::CancelBackend => false,
     }
 }
@@ -322,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn protected_requires_only_destructive_overrides() {
+    fn protected_requires_overrides_for_destructive_writes_and_row_mutations() {
         let policy = policy(SafetyLevel::Protected, false);
         let ordinary = [
             statement(StatementClass::Read),
@@ -333,13 +337,11 @@ mod tests {
             statement(StatementClass::Ddl { destructive: false }),
             statement(StatementClass::Transaction),
             statement(StatementClass::Session),
-            WriteIntent::RowMutation,
             WriteIntent::Import,
             WriteIntent::Seed,
             WriteIntent::CopyDestination,
             WriteIntent::Maintenance,
             WriteIntent::RefreshMatView,
-            WriteIntent::ApplyMutations { classes: vec![] },
             WriteIntent::CancelBackend,
         ];
         for intent in ordinary {
@@ -358,12 +360,17 @@ mod tests {
             WriteIntent::Ddl,
             WriteIntent::Restore,
             WriteIntent::TerminateBackend,
+            WriteIntent::RowMutation,
+            WriteIntent::ApplyMutations { classes: vec![] },
         ];
         for intent in destructive {
-            assert!(matches!(
-                assert_permitted(&policy, &intent, false),
-                Err(SafetyRefusal::NeedsConfirmation { .. })
-            ));
+            assert!(
+                matches!(
+                    assert_permitted(&policy, &intent, false),
+                    Err(SafetyRefusal::NeedsConfirmation { .. })
+                ),
+                "{intent:?}"
+            );
             assert!(assert_permitted(&policy, &intent, true).is_ok());
         }
     }
