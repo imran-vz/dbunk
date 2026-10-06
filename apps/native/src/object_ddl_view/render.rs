@@ -334,43 +334,41 @@ impl ObjectDdlView {
         let enabled = self.enabled(action);
         let toggled = self.toggled(action);
         let weak = cx.weak_entity();
-        let text = match toggled {
-            Some(true) => format!("[x] {label}"),
-            Some(false) => format!("[ ] {label}"),
-            None => label.to_owned(),
-        };
-        div()
-            .id(("object-ddl-action", index))
-            .role(if toggled.is_some() {
-                Role::CheckBox
-            } else {
-                Role::Button
-            })
-            .aria_label(label)
-            .track_focus(&self.buttons[index])
-            .tab_stop(enabled)
-            .tab_index(0)
-            .a11y_synthetic_children(move |b| {
-                if !enabled {
-                    b.parent_node().set_disabled();
-                }
-            })
-            .when_some(toggled, |b, on| b.aria_toggled(on.into()))
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .text_color(gpui::rgb(if enabled { 0xffffff } else { 0x888888 }))
-            .focus(|s| s.bg(crate::style::line()))
-            // GPUI activates a focused clickable on Enter/Space key-up through
-            // on_click; no key-down handler, so activation happens once.
-            .on_click(cx.listener(move |this, _, window, cx| this.click(index, window, cx)))
-            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-                weak.update(cx, |this, cx| this.click(index, window, cx))
-                    .ok();
-            })
-            .child(text)
-            .into_any_element()
+        // A toggle shows its state as a pressed face plus a check mark.
+        let icon = (toggled == Some(true)).then_some("icons/check.svg");
+        crate::ui::pressed(
+            crate::ui::tool_button(
+                ("object-ddl-action", index),
+                label.to_owned(),
+                icon,
+                enabled,
+                false,
+            ),
+            toggled == Some(true),
+        )
+        .role(if toggled.is_some() {
+            Role::CheckBox
+        } else {
+            Role::Button
+        })
+        .aria_label(label)
+        .track_focus(&self.buttons[index])
+        .tab_stop(enabled)
+        .tab_index(0)
+        .a11y_synthetic_children(move |b| {
+            if !enabled {
+                b.parent_node().set_disabled();
+            }
+        })
+        .when_some(toggled, |b, on| b.aria_toggled(on.into()))
+        // GPUI activates a focused clickable on Enter/Space key-up through
+        // on_click; no key-down handler, so activation happens once.
+        .on_click(cx.listener(move |this, _, window, cx| this.click(index, window, cx)))
+        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+            weak.update(cx, |this, cx| this.click(index, window, cx))
+                .ok();
+        })
+        .into_any_element()
     }
     fn click(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if !self.enabled(ACTIONS[index].0) {

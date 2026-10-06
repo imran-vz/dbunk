@@ -18,7 +18,7 @@ impl TableDdlView {
                 if cancelled {
                     self.message = "Observation cancelled; late target discarded".into();
                 } else {
-                    self.message = match result {
+                    match result {
                         Ok(target)
                             if target.retained_bytes() <= TOKEN_BYTES
                                 && self
@@ -45,18 +45,17 @@ impl TableDdlView {
                                 Ok(())
                             }) {
                                 Ok(()) => {
-                                    "Rendering exact SQL for the observed target; no change sent"
+                                    self.message = "Rendering exact SQL for the observed target; no change sent"
                                         .into()
                                 }
-                                Err(error) => error.into(),
+                                Err(error) => self.fail(error),
                             }
                         }
-                        Ok(_) => {
-                            "Observed target does not match the selected identity or exceeds bounds"
-                                .into()
-                        }
-                        Err(error) => format!("Observation refused: {error}"),
-                    };
+                        Ok(_) => self.fail(
+                            "Observed target does not match the selected identity or exceeds bounds",
+                        ),
+                        Err(error) => self.fail(format!("Observation refused: {error}")),
+                    }
                 }
             }
             TableMessage::TableDdlReviewed(id, DdlReviewed::Table(result))
@@ -88,15 +87,13 @@ impl TableDdlView {
                                     self.review = Some(review);
                                     self.message="Review the exact target, SQL and deadline below. Apply requires a durable save first.".into();
                                 }
-                                Err(error) => self.message = error.into(),
+                                Err(error) => self.fail(error),
                             }
                         }
-                        Ok(_) => {
-                            self.message =
-                                "Review identity or intent mismatch; no executable token retained"
-                                    .into()
-                        }
-                        Err(error) => self.message = format!("Review refused: {error}"),
+                        Ok(_) => self.fail(
+                            "Review identity or intent mismatch; no executable token retained",
+                        ),
+                        Err(error) => self.fail(format!("Review refused: {error}")),
                     }
                 }
             }
@@ -121,7 +118,7 @@ impl TableDdlView {
                             } else {
                                 self.flow = None;
                                 invalidate = true;
-                                self.message="Confirmation mismatch; recovery remains unknown. Reconcile explicitly.".into();
+                                self.fail("Confirmation mismatch; recovery remains unknown. Reconcile explicitly.");
                             }
                         }
                         TableDdlSubmission::Finished(receipt) => {
@@ -152,7 +149,7 @@ impl TableDdlView {
                                 }
                                 Settlement::Unknown => {
                                     invalidate = true;
-                                    self.message="Outcome or receipt identity unknown. Recovery retained; inspect and reconcile explicitly.".into();
+                                    self.fail("Outcome or receipt identity unknown. Recovery retained; inspect and reconcile explicitly.");
                                 }
                             }
                         }
@@ -161,7 +158,7 @@ impl TableDdlView {
                         self.flow = None;
                         self.recovery.submission_error(&error);
                         invalidate = *error == TableDdlError::OutcomeUnavailable;
-                        self.message = format!("Table change: {error}. Recovery retained.");
+                        self.fail(format!("Table change: {error}. Recovery retained."));
                     }
                 }
             }

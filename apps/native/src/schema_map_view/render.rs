@@ -18,10 +18,7 @@ impl SchemaMapView {
         let label = self.label(action, default);
         let enabled = self.enabled(action);
         let weak = cx.weak_entity();
-        div()
-            .id(("map-control", index))
-            .role(Role::Button)
-            .aria_label(label.clone())
+        crate::ui::tool_button(("map-control", index), label, None, enabled, false)
             .a11y_synthetic_children(move |b| {
                 if !enabled {
                     b.parent_node().set_disabled();
@@ -30,11 +27,6 @@ impl SchemaMapView {
             .track_focus(&self.buttons[index])
             .tab_index(0)
             .tab_stop(enabled)
-            .px_2()
-            .py_1()
-            .text_color(gpui::rgb(if enabled { 0xffffff } else { 0x777777 }))
-            .focus(|s| s.bg(crate::style::line()))
-            .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(action, window, cx))
@@ -51,10 +43,8 @@ impl SchemaMapView {
         let enabled = self.enabled(Action::Scope(scope));
         let selected = self.scope == scope;
         let weak = cx.weak_entity();
-        div()
-            .id(("map-scope", index))
+        crate::ui::segment(("map-scope", index), label, selected, enabled)
             .role(Role::Tab)
-            .aria_label(label)
             .aria_selected(selected)
             .a11y_synthetic_children(move |b| {
                 if !enabled {
@@ -64,11 +54,6 @@ impl SchemaMapView {
             .track_focus(&self.scope_buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
-            .px_2()
-            .py_1()
-            .when(selected, |s| s.bg(crate::style::select()))
-            .focus(|s| s.bg(crate::style::line()))
-            .child(label)
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.activate(Action::Scope(scope), window, cx)
             }))
@@ -117,9 +102,12 @@ impl SchemaMapView {
                             .role(Role::ListBoxOption)
                             .aria_label(label.clone())
                             .aria_selected(is_selected)
-                            .h(px(25.))
-                            .px_2()
+                            .h(px(crate::style::ROW))
+                            .px(px(8.))
+                            .line_height(px(crate::style::ROW))
                             .truncate()
+                            .font_family(crate::style::MONO)
+                            .hover(|row| row.bg(crate::style::hover()))
                             .when(is_selected, |row| row.bg(crate::style::select()))
                             .child(label)
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -148,7 +136,9 @@ impl SchemaMapView {
         div().id("map-objects").role(Role::ListBox)
             .aria_label(format!("{count} tables and foreign keys. Arrows select; Shift+Arrow moves a selected table 10 world units and saves; Enter inspects; Open selected table rechecks its OID."))
             .track_focus(&self.list).tab_stop(self.scene.is_some()).tab_index(0)
-            .w(px(380.)).min_h_0().child(rows)
+            .w(px(380.)).min_h_0().border_r_1().border_color(crate::style::line_soft())
+            .focus(|s| s.border_color(crate::style::accent()))
+            .child(rows)
     }
 }
 impl Render for SchemaMapView {
@@ -176,15 +166,12 @@ impl Render for SchemaMapView {
                 )
             })
             .unwrap_or_else(|| "No captured map".into());
-        let toolbar = div()
-            .flex()
-            .flex_wrap()
-            .children((0..ACTIONS.len()).map(|i| self.button(i, cx)));
-        let scopes = div()
+        let failure = self.failure.shown(&self.status);
+        let toolbar = crate::ui::toolbar().children((0..ACTIONS.len()).map(|i| self.button(i, cx)));
+        let scopes = crate::ui::segmented()
             .id("map-scopes")
             .role(Role::TabList)
             .aria_label("Map setup scope")
-            .flex()
             .children(
                 [
                     (Scope::Database, "Database"),
@@ -210,18 +197,23 @@ impl Render for SchemaMapView {
             .min_w_0()
             .overflow_scroll()
             .track_scroll(&self.detail_scroll)
-            .p_2()
+            .p(px(8.))
+            .font_family(crate::style::MONO)
+            .focus(|s| s.bg(crate::style::row_hover()))
             .child(self.detail_text.clone());
         let inspection = div()
             .flex()
             .h(px(170.))
             .min_h_0()
+            .border_t_1()
+            .border_color(crate::style::line())
             .child(self.object_list(cx))
             .child(details);
         div().id("schema-map-tool").role(Role::Group)
             .aria_label(format!("PostgreSQL schema map for {}", self.connection.as_deref().unwrap_or("unbound connection")))
             .track_focus(&self.root).size_full().flex().flex_col()
-            .bg(crate::style::bg()).text_color(crate::style::text()).key_context("SchemaMap")
+            .bg(crate::style::bg()).text_color(crate::style::text()).text_size(px(crate::style::FONT))
+            .key_context("SchemaMap")
             .on_action(cx.listener(|this, _: &NextControl, window, cx| {
                 if !this.composing(window, cx) {
                     this.focus_control(false, window, cx);
@@ -237,22 +229,39 @@ impl Render for SchemaMapView {
             .capture_key_down(cx.listener(Self::key))
             .child(toolbar).child(scopes)
             .when(self.scope != Scope::Database, |view| {
-                view.child(div().flex().gap_2().px_2()
-                    .child(div().flex_1().min_w_0().child("Schema").children(self.fields.first().cloned()))
+                let field_label = |text: &'static str| {
+                    div()
+                        .text_size(px(crate::style::FONT_SMALL))
+                        .text_color(crate::style::dim())
+                        .child(text)
+                };
+                view.child(div().flex().gap(px(8.)).px(px(8.)).py(px(6.))
+                    .child(div().flex_1().min_w_0().flex().flex_col().gap(px(4.))
+                        .child(field_label("Schema")).children(self.fields.first().cloned()))
                     .when(self.scope == Scope::Relation, |row| {
-                        row.child(div().flex_1().min_w_0().child("Table").children(self.fields.get(1).cloned()))
+                        row.child(div().flex_1().min_w_0().flex().flex_col().gap(px(4.))
+                            .child(field_label("Table")).children(self.fields.get(1).cloned()))
                     }))
             })
-            .child(div().id("map-status").role(Role::Status)
-                .aria_label(self.status.clone()).px_2().child(self.status.clone()))
             .child(div().id("map-captured-scope").role(Role::Label)
-                .aria_label(captured.clone()).px_2().child(captured))
+                .aria_label(captured.clone()).px(px(8.)).py(px(4.))
+                .font_family(crate::style::MONO).text_size(px(crate::style::FONT_SMALL))
+                .text_color(if self.current { crate::style::faint() } else { crate::style::warn() })
+                .child(captured))
             .when(self.dirty, |view| view.child(div().id("map-unsaved").role(Role::Status)
                 .aria_label("Unsaved map settings. Save or explicitly clear before Refresh.")
-                .px_2().child("Unsaved map settings. Save or explicitly clear before Refresh.")))
+                .px(px(8.)).py(px(4.)).bg(crate::style::warn_fill()).text_color(crate::style::warn())
+                .child("Unsaved map settings. Save or explicitly clear before Refresh.")))
             .child(self.canvas(cx)).child(inspection)
             .child(div().id("map-coverage").role(Role::Label)
                 .aria_label("Read-only table graph, including partitioned tables. Inherited foreign-key and trigger copies are omitted. Direct-neighbor scope shows only focal edges. SVG and PNG save the current viewport on white; no row data or DDL is executed.")
-                .px_2().text_xs().child("Read-only table graph. Inherited FK/trigger copies omitted. Direct-neighbor scope keeps focal edges. SVG/PNG export this viewport on white."))
+                .px(px(8.)).pb(px(4.)).text_size(px(crate::style::FONT_SMALL)).text_color(crate::style::faint())
+                .child("Read-only table graph. Inherited FK/trigger copies omitted. Direct-neighbor scope keeps focal edges. SVG/PNG export this viewport on white."))
+            .when_some(failure, |view, seq| {
+                view.child(crate::ui::error_strip("map-error", seq, self.status.clone()))
+            })
+            .child(crate::ui::status_line().id("map-status").role(Role::Status)
+                .aria_label(self.status.clone())
+                .when(failure.is_none(), |status| status.child(self.status.clone())))
     }
 }

@@ -206,6 +206,8 @@ pub struct SchemaMapView {
     detail_next: bool,
     glossary: bool,
     status: String,
+    /// Marks `status` as an error so it renders as a shaking banner.
+    failure: crate::ui::Failure,
     root: FocusHandle,
     list: FocusHandle,
     canvas_focus: FocusHandle,
@@ -267,6 +269,7 @@ impl SchemaMapView {
             detail_next: false,
             glossary: false,
             status: "Disconnected. Connect, then Refresh to read the map".into(),
+            failure: crate::ui::Failure::default(),
             root: cx.focus_handle(),
             list: cx.focus_handle(),
             canvas_focus: cx.focus_handle(),
@@ -289,7 +292,7 @@ impl SchemaMapView {
         match Lease::new(self.budget.clone(), 4 * 1024 * 1024) {
             Ok(lease) => self._ui_lease = Some(lease),
             Err(error) => {
-                self.status = error.into();
+                self.report(error);
                 return;
             }
         }
@@ -416,7 +419,13 @@ impl SchemaMapView {
             .ok_or("Map request identity exhausted; reopen this tab")?;
         Ok(self.sequence)
     }
+    /// Reports a failure: bounded status shown as a shaking error banner.
     fn report(&mut self, text: impl AsRef<str>) {
+        self.note(text);
+        self.failure.record(&self.status);
+    }
+    /// A bounded, non-error status.
+    fn note(&mut self, text: impl AsRef<str>) {
         self.status = text.as_ref().chars().take(1024).collect();
     }
 }

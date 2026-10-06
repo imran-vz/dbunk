@@ -18,10 +18,8 @@ impl MaintenanceView {
         let label = self.label(action, fallback);
         let enabled = self.enabled(action);
         let weak = cx.entity().downgrade();
-        div()
-            .id(("maintenance-action", index))
-            .role(Role::Button)
-            .aria_label(label)
+        let primary = enabled && matches!(action, Action::Apply | Action::Confirm);
+        crate::ui::tool_button(("maintenance-action", index), label, None, enabled, primary)
             .a11y_synthetic_children(move |builder| {
                 if !enabled {
                     builder.parent_node().set_disabled();
@@ -30,17 +28,6 @@ impl MaintenanceView {
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.bg(crate::style::hover()))
-            .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(action, window, cx))
@@ -108,6 +95,7 @@ impl Focusable for MaintenanceView {
 impl Render for MaintenanceView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let text = self.text();
+        let failure = self.failure.shown(&self.message);
         div()
             .id("maintenance-review")
             .role(Role::Group)
@@ -119,22 +107,9 @@ impl Render for MaintenanceView {
             .min_h_0()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
+            .text_size(px(crate::style::FONT))
             .capture_key_down(cx.listener(Self::key))
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .children((0..ACTIONS.len()).map(|i| self.button(i, cx))),
-            )
-            .child(
-                div()
-                    .id("maintenance-status")
-                    .role(Role::Status)
-                    .aria_label(self.message.clone())
-                    .px_2()
-                    .py_1()
-                    .child(self.message.clone()),
-            )
+            .child(crate::ui::toolbar().children((0..ACTIONS.len()).map(|i| self.button(i, cx))))
             .child(
                 div()
                     .id("maintenance-details")
@@ -148,8 +123,24 @@ impl Render for MaintenanceView {
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
-                    .p_2()
+                    .p(px(8.))
+                    .font_family(crate::style::MONO)
+                    .focus(|s| s.bg(crate::style::row_hover()))
                     .child(text),
+            )
+            .when_some(failure, |v, seq| {
+                v.child(crate::ui::error_strip(
+                    "maintenance-error",
+                    seq,
+                    self.message.clone(),
+                ))
+            })
+            .child(
+                crate::ui::status_line()
+                    .id("maintenance-status")
+                    .role(Role::Status)
+                    .aria_label(self.message.clone())
+                    .when(failure.is_none(), |v| v.child(self.message.clone())),
             )
     }
 }

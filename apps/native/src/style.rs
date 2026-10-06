@@ -8,6 +8,8 @@ use gpui::{Rgba, rgb, rgba};
 pub const REM: f32 = 12.6;
 pub const FONT: f32 = 11.;
 pub const FONT_SMALL: f32 = 10.;
+/// Page titles (forms, setup, managed servers), set semibold.
+pub const FONT_TITLE: f32 = 15.;
 pub const ROW: f32 = 20.;
 pub const BAR: f32 = 34.;
 pub const STATUS: f32 = 22.;
@@ -106,6 +108,10 @@ pub fn bad_text() -> Rgba {
 pub fn ok_fill() -> Rgba {
     rgba(0x3fb9501f)
 }
+/// Caution surfaces: confirmations and policy notes that need a second look.
+pub fn warn_fill() -> Rgba {
+    rgba(0xd299221c)
+}
 /// Row hover in data grids, between `bg` and `panel`.
 pub fn row_hover() -> Rgba {
     rgb(0x14171b)
@@ -116,6 +122,74 @@ pub fn number() -> Rgba {
 }
 pub fn boolean() -> Rgba {
     rgb(0xd2a8ff)
+}
+
+/// Object-kind colours in sidebar trees. Kinds stay apart at a glance while
+/// containers and notes keep the quiet text steps.
+pub fn kind_table() -> Rgba {
+    accent()
+}
+pub fn kind_view() -> Rgba {
+    rgb(0xb392f0)
+}
+pub fn kind_materialized() -> Rgba {
+    rgb(0xd2a8ff)
+}
+/// Types, domains, dictionaries, foreign tables and triggers.
+pub fn kind_type() -> Rgba {
+    rgb(0x79c0ff)
+}
+/// Functions, procedures and aggregates.
+pub fn kind_routine() -> Rgba {
+    rgb(0x56d4dd)
+}
+
+/// What a sidebar tree row shows, independent of engine.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TreeKind {
+    Database,
+    Schema,
+    /// A kind group (`Tables`, `Views`).
+    Group,
+    /// A folder-style group (MySQL).
+    Folder,
+    ShowMore,
+    Warning,
+    Info,
+    Table,
+    View,
+    MaterializedView,
+    ForeignTable,
+    Routine,
+    Sequence,
+    Type,
+    Dictionary,
+    Extension,
+    Event,
+    Trigger,
+    Other,
+}
+
+/// Icon and colour for a tree row of `kind`.
+pub fn kind_icon(kind: TreeKind) -> (&'static str, Rgba) {
+    match kind {
+        TreeKind::Database => ("icons/database_zap.svg", dim()),
+        TreeKind::Schema | TreeKind::Folder => ("icons/folder.svg", dim()),
+        TreeKind::Group => ("icons/list_tree.svg", dim()),
+        TreeKind::ShowMore => ("icons/plus.svg", faint()),
+        TreeKind::Warning => ("icons/warning.svg", warn()),
+        TreeKind::Info => ("icons/info.svg", faint()),
+        TreeKind::Table => ("icons/table.svg", kind_table()),
+        TreeKind::View => ("icons/eye.svg", kind_view()),
+        TreeKind::MaterializedView => ("icons/table.svg", kind_materialized()),
+        TreeKind::ForeignTable | TreeKind::Trigger => ("icons/link.svg", kind_type()),
+        TreeKind::Routine => ("icons/code.svg", kind_routine()),
+        TreeKind::Sequence => ("icons/hash.svg", warn()),
+        TreeKind::Type | TreeKind::Dictionary => ("icons/box.svg", kind_type()),
+        TreeKind::Extension => ("icons/box_open.svg", dim()),
+        TreeKind::Event => ("icons/play_outlined.svg", warn()),
+        TreeKind::Other => ("icons/circle.svg", dim()),
+    }
 }
 
 /// Environment signal colour. `None` (no connection) is neutral.
@@ -172,5 +246,22 @@ mod tests {
         assert_eq!(with_alpha(0x3fb950, 0x0d), rgba(0x3fb9500d));
         assert_eq!(engine_badge("Redis").0, "RD");
         assert_eq!(engine_badge("Unknown").0, "DB");
+    }
+
+    #[test]
+    fn tree_kinds_keep_containers_quiet_and_objects_distinct() {
+        for container in [TreeKind::Database, TreeKind::Schema, TreeKind::Group] {
+            assert_eq!(kind_icon(container).1, dim());
+        }
+        let objects = [
+            TreeKind::Table,
+            TreeKind::View,
+            TreeKind::MaterializedView,
+            TreeKind::Routine,
+            TreeKind::Type,
+        ];
+        for (i, a) in objects.iter().enumerate() {
+            assert!(objects[i + 1..].iter().all(|b| kind_icon(*a).1 != kind_icon(*b).1));
+        }
     }
 }

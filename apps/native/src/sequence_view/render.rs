@@ -14,49 +14,42 @@ impl SequenceView {
             _ => None,
         };
         let weak = cx.entity().downgrade();
-        let text = match toggle {
-            Some(true) => format!("[x] {label}"),
-            Some(false) => format!("[ ] {label}"),
-            None => label.to_owned(),
-        };
-        div()
-            .id(("sequence-action", index))
-            .role(if toggle.is_some() {
-                Role::CheckBox
-            } else {
-                Role::Button
-            })
-            .aria_label(label)
-            .a11y_synthetic_children(move |builder| {
-                if !enabled {
-                    builder.parent_node().set_disabled();
-                }
-                if let Some(checked) = toggle {
-                    builder
-                        .parent_node()
-                        .set_toggled(gpui::accesskit::Toggled::from(checked));
-                }
-            })
-            .track_focus(&self.buttons[index])
-            .tab_stop(enabled)
-            .tab_index(0)
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .focus(|style| style.bg(crate::style::hover()))
-            .child(text)
-            .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
-            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-                weak.update(cx, |this, cx| this.activate(action, window, cx))
-                    .ok();
-            })
-            .into_any_element()
+        let primary = enabled && matches!(action, Action::Apply | Action::Confirm);
+        crate::ui::pressed(
+            crate::ui::tool_button(
+                ("sequence-action", index),
+                label,
+                (toggle == Some(true)).then_some("icons/check.svg"),
+                enabled,
+                primary,
+            ),
+            toggle == Some(true),
+        )
+        .role(if toggle.is_some() {
+            Role::CheckBox
+        } else {
+            Role::Button
+        })
+        .aria_label(label)
+        .a11y_synthetic_children(move |builder| {
+            if !enabled {
+                builder.parent_node().set_disabled();
+            }
+            if let Some(checked) = toggle {
+                builder
+                    .parent_node()
+                    .set_toggled(gpui::accesskit::Toggled::from(checked));
+            }
+        })
+        .track_focus(&self.buttons[index])
+        .tab_stop(enabled)
+        .tab_index(0)
+        .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
+        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+            weak.update(cx, |this, cx| this.activate(action, window, cx))
+                .ok();
+        })
+        .into_any_element()
     }
     fn composing(&self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.set_value
@@ -124,6 +117,14 @@ impl SequenceView {
 impl Render for SequenceView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let text = self.text();
+        let failure = self.failure.shown(&self.message);
+        let label = |text: &'static str| {
+            div()
+                .flex_none()
+                .text_size(px(crate::style::FONT_SMALL))
+                .text_color(crate::style::dim())
+                .child(text)
+        };
         div()
             .id("sequence-tool")
             .role(Role::Group)
@@ -135,39 +136,26 @@ impl Render for SequenceView {
             .min_h_0()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
+            .text_size(px(crate::style::FONT))
             .border_t_1()
             .border_color(crate::style::line())
             .capture_key_down(cx.listener(Self::key))
             .child(
                 div()
                     .flex()
-                    .gap_2()
-                    .px_2()
-                    .child("Set value")
+                    .flex_wrap()
+                    .items_center()
+                    .gap(px(8.))
+                    .px(px(8.))
+                    .py(px(6.))
+                    .child(label("Set value"))
                     .child(div().w(px(220.)).child(self.set_value.clone()))
                     .when(self.restart_with, |row| {
-                        row.child("Restart value")
+                        row.child(label("Restart value"))
                             .child(div().w(px(220.)).child(self.restart_value.clone()))
                     }),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_1()
-                    .children((0..ACTIONS.len()).map(|i| self.button(i, cx))),
-            )
-            .child(
-                div()
-                    .id("sequence-status")
-                    .role(Role::Status)
-                    .aria_label(self.message.clone())
-                    .px_2()
-                    .py_1()
-                    .max_h(px(64.))
-                    .overflow_y_scroll()
-                    .child(self.message.clone()),
-            )
+            .child(crate::ui::toolbar().children((0..ACTIONS.len()).map(|i| self.button(i, cx))))
             .child(
                 div()
                     .id("sequence-details")
@@ -181,8 +169,26 @@ impl Render for SequenceView {
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
-                    .p_2()
+                    .p(px(8.))
+                    .font_family(crate::style::MONO)
+                    .focus(|s| s.bg(crate::style::row_hover()))
                     .child(text),
+            )
+            .when_some(failure, |v, seq| {
+                v.child(crate::ui::error_strip(
+                    "sequence-error",
+                    seq,
+                    self.message.clone(),
+                ))
+            })
+            .child(
+                crate::ui::status_line()
+                    .id("sequence-status")
+                    .role(Role::Status)
+                    .aria_label(self.message.clone())
+                    .max_h(px(64.))
+                    .overflow_y_scroll()
+                    .when(failure.is_none(), |v| v.child(self.message.clone())),
             )
     }
 }

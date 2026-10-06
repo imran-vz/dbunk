@@ -90,6 +90,8 @@ pub struct TableDdlView {
     flow: Option<ApplyFlow<Token>>,
     armed: bool,
     message: String,
+    /// Marks `message` as an error so it renders as a shaking banner.
+    failure: crate::ui::Failure,
     receipt: String,
     root: FocusHandle,
     details: FocusHandle,
@@ -174,6 +176,7 @@ impl TableDdlView {
             flow: None,
             armed: false,
             message,
+            failure: crate::ui::Failure::default(),
             receipt: String::new(),
             root: cx.focus_handle(),
             details: cx.focus_handle(),
@@ -240,6 +243,11 @@ impl TableDdlView {
             .ok_or("Request identity exhausted; reopen the workspace")?;
         self.next.set(id);
         Ok(id)
+    }
+    /// Sets an error status, shown as a banner that shakes on every failure.
+    fn fail(&mut self, message: impl Into<String>) {
+        self.message = message.into();
+        self.failure.record(&self.message);
     }
     fn publish(&mut self, cx: &mut Context<Self>) {
         self.sync_field(cx);

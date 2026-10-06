@@ -92,6 +92,8 @@ pub struct SchemaAlterView {
     flow: Option<ApplyFlow<Token>>,
     armed: bool,
     message: String,
+    /// Marks `message` as an error so it renders as a shaking banner.
+    failure: crate::ui::Failure,
     receipt: String,
     root: FocusHandle,
     details: FocusHandle,
@@ -174,6 +176,7 @@ impl SchemaAlterView {
             flow: None,
             armed: false,
             message,
+            failure: crate::ui::Failure::default(),
             receipt: String::new(),
             root: cx.focus_handle(),
             details: cx.focus_handle(),
@@ -240,6 +243,11 @@ impl SchemaAlterView {
             .ok_or("Request identity exhausted; reopen the workspace")?;
         self.next.set(id);
         Ok(id)
+    }
+    /// Sets an error status, shown as a banner that shakes on every failure.
+    fn fail(&mut self, message: impl Into<String>) {
+        self.message = message.into();
+        self.failure.record(&self.message);
     }
     fn publish(&mut self, cx: &mut Context<Self>) {
         self.sync_field(cx);
@@ -310,12 +318,12 @@ impl SchemaAlterView {
             return;
         }
         if self.composing(window, cx) {
-            self.message = "Finish text composition before changing this review".into();
+            self.fail("Finish text composition before changing this review");
             cx.notify();
             return;
         }
         if let Err(error) = self.act(action, cx) {
-            self.message = error.into();
+            self.fail(error);
         }
         self.publish(cx);
     }
@@ -422,10 +430,10 @@ impl SchemaAlterView {
         }
         if let Err(error) = result {
             self.not_sent();
-            self.message = format!("Schema change not sent: {error}");
+            self.fail(format!("Schema change not sent: {error}"));
         } else if !self.recovery.unknown() {
             self.not_sent();
-            self.message = "Exact uncertain recovery was not preserved; nothing dispatched".into();
+            self.fail("Exact uncertain recovery was not preserved; nothing dispatched");
         } else if let Some(token) = self.flow.as_mut().and_then(|f| f.saved(id)) {
             let exact = match &token {
                 Token::Review(review) => self.recovery.matches_review(review),
@@ -435,7 +443,7 @@ impl SchemaAlterView {
             };
             if !exact {
                 self.flow = None;
-                self.message = "Saved intent no longer matches authority; no dispatch, recovery remains unknown".into();
+                self.fail("Saved intent no longer matches authority; no dispatch, recovery remains unknown");
                 self.publish(cx);
                 return;
             }
@@ -457,7 +465,7 @@ impl SchemaAlterView {
                 Err(error) => {
                     self.flow = None;
                     self.recovery.not_sent();
-                    self.message = format!("Schema change not sent: {error}");
+                    self.fail(format!("Schema change not sent: {error}"));
                 }
             }
         }
@@ -478,8 +486,8 @@ impl SchemaAlterView {
                 else {
                     unreachable!()
                 };
-                self.message = if cancelled {
-                    "Observation cancelled; late target discarded".into()
+                if cancelled {
+                    self.message = "Observation cancelled; late target discarded".into();
                 } else {
                     match result {
                         Ok(target)
@@ -508,19 +516,18 @@ impl SchemaAlterView {
                                 Ok(())
                             }) {
                                 Ok(()) => {
-                                    "Rendering exact SQL for the observed schema; no change sent"
+                                    self.message = "Rendering exact SQL for the observed schema; no change sent"
                                         .into()
                                 }
-                                Err(error) => error.into(),
+                                Err(error) => self.fail(error),
                             }
                         }
-                        Ok(_) => {
-                            "Observed schema does not match the selected identity or exceeds bounds"
-                                .into()
-                        }
-                        Err(error) => format!("Observation refused: {error}"),
+                        Ok(_) => self.fail(
+                            "Observed schema does not match the selected identity or exceeds bounds",
+                        ),
+                        Err(error) => self.fail(format!("Observation refused: {error}")),
                     }
-                };
+                }
             }
             TableMessage::TableDdlReviewed(id, DdlReviewed::Schema(result))
                 if self
@@ -551,15 +558,13 @@ impl SchemaAlterView {
                                     self.review = Some(review);
                                     self.message = "Review the exact schema, SQL and deadline below. Apply requires a durable save first.".into();
                                 }
-                                Err(error) => self.message = error.into(),
+                                Err(error) => self.fail(error),
                             }
                         }
-                        Ok(_) => {
-                            self.message =
-                                "Review identity or intent mismatch; no executable token retained"
-                                    .into()
-                        }
-                        Err(error) => self.message = format!("Review refused: {error}"),
+                        Ok(_) => self.fail(
+                            "Review identity or intent mismatch; no executable token retained",
+                        ),
+                        Err(error) => self.fail(format!("Review refused: {error}")),
                     }
                 }
             }
@@ -601,7 +606,7 @@ impl SchemaAlterView {
                         false
                     } else {
                         self.flow = None;
-                        self.message = "Confirmation mismatch; recovery remains unknown. Reconcile explicitly.".into();
+                        self.fail("Confirmation mismatch; recovery remains unknown. Reconcile explicitly.");
                         true
                     }
                 }
@@ -630,7 +635,7 @@ impl SchemaAlterView {
                             matches!(receipt.outcome, SchemaAlterOutcome::RolledBack { .. })
                         }
                         Settlement::Unknown => {
-                            self.message = "Outcome or receipt identity unknown. Recovery retained; inspect and reconcile explicitly.".into();
+                            self.fail("Outcome or receipt identity unknown. Recovery retained; inspect and reconcile explicitly.");
                             true
                         }
                     }
@@ -639,7 +644,7 @@ impl SchemaAlterView {
             Err(error) => {
                 self.flow = None;
                 self.recovery.submission_error(&error);
-                self.message = format!("Schema change: {error}. Recovery retained.");
+                self.fail(format!("Schema change: {error}. Recovery retained."));
                 *error == SchemaAlterError::OutcomeUnavailable
             }
         }

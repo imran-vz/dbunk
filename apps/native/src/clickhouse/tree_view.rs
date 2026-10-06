@@ -354,19 +354,20 @@ impl ClickHouseTree {
     }
 }
 
-fn row_icon(row: &Row) -> (&'static str, u32) {
-    match row.kind {
-        RowKind::Database { .. } => ("icons/database_zap.svg", 0x8a929c),
-        RowKind::Group { .. } => ("icons/list_tree.svg", 0x8a929c),
-        RowKind::Note { warning: true } => ("icons/warning.svg", 0xd29922),
-        RowKind::Note { warning: false } => ("icons/info.svg", 0x5b626c),
+fn row_icon(row: &Row) -> (&'static str, gpui::Rgba) {
+    use crate::style::TreeKind as T;
+    style::kind_icon(match row.kind {
+        RowKind::Database { .. } => T::Database,
+        RowKind::Group { .. } => T::Group,
+        RowKind::Note { warning: true } => T::Warning,
+        RowKind::Note { warning: false } => T::Info,
         RowKind::Object { kind, .. } => match kind {
-            ObjectKind::Table => ("icons/table.svg", 0x6aa6ff),
-            ObjectKind::View => ("icons/eye.svg", 0xb392f0),
-            ObjectKind::MaterializedView => ("icons/table.svg", 0xd2a8ff),
-            ObjectKind::Dictionary => ("icons/box.svg", 0x79c0ff),
+            ObjectKind::Table => T::Table,
+            ObjectKind::View => T::View,
+            ObjectKind::MaterializedView => T::MaterializedView,
+            ObjectKind::Dictionary => T::Dictionary,
         },
-    }
+    })
 }
 
 fn row_label(row: &Row) -> String {
@@ -551,7 +552,7 @@ impl Render for ClickHouseTree {
                                                     .path(path)
                                                     .size(px(style::ICON))
                                                     .flex_none()
-                                                    .text_color(gpui::rgb(color)),
+                                                    .text_color(color),
                                             )
                                             .child(
                                                 div()

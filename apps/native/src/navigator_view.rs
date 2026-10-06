@@ -569,30 +569,28 @@ impl Focusable for NavigatorView {
     }
 }
 /// Icon and colour for a tree row; colours separate object kinds at a glance.
-fn row_icon(row: &Row, catalog: Option<&Catalog>) -> (&'static str, u32) {
+fn row_icon(row: &Row, catalog: Option<&Catalog>) -> (&'static str, gpui::Rgba) {
+    use crate::catalog::Kind;
     use dbunk_lib::backend::objects::PgObjectKind as K;
-    match row.kind {
-        RowKind::Schema { .. } => ("icons/folder.svg", 0x8a929c),
-        RowKind::Database => ("icons/database_zap.svg", 0x8a929c),
-        RowKind::Group { .. } => ("icons/list_tree.svg", 0x8a929c),
-        RowKind::ShowMore { .. } => ("icons/plus.svg", 0x5b626c),
-        RowKind::Truncated => ("icons/warning.svg", 0xd29922),
+    use crate::style::TreeKind as T;
+    style::kind_icon(match row.kind {
+        RowKind::Schema { .. } => T::Schema,
+        RowKind::Database => T::Database,
+        RowKind::Group { .. } => T::Group,
+        RowKind::ShowMore { .. } => T::ShowMore,
+        RowKind::Truncated => T::Warning,
         RowKind::Object(index) => match catalog.map(|catalog| catalog.rows[index].kind) {
-            Some(crate::catalog::Kind::Object(K::Table)) => ("icons/table.svg", 0x6aa6ff),
-            Some(crate::catalog::Kind::Object(K::View)) => ("icons/eye.svg", 0xb392f0),
-            Some(crate::catalog::Kind::Object(K::MaterializedView)) => {
-                ("icons/table.svg", 0xd2a8ff)
-            }
-            Some(crate::catalog::Kind::Object(K::ForeignTable)) => ("icons/link.svg", 0x79c0ff),
-            Some(crate::catalog::Kind::Object(K::Function | K::Procedure | K::Aggregate)) => {
-                ("icons/code.svg", 0x56d4dd)
-            }
-            Some(crate::catalog::Kind::Object(K::Sequence)) => ("icons/hash.svg", 0xd29922),
-            Some(crate::catalog::Kind::Object(K::Type | K::Domain)) => ("icons/box.svg", 0x79c0ff),
-            Some(crate::catalog::Kind::Object(K::Extension)) => ("icons/box_open.svg", 0x8a929c),
-            _ => ("icons/circle.svg", 0x8a929c),
+            Some(Kind::Object(K::Table)) => T::Table,
+            Some(Kind::Object(K::View)) => T::View,
+            Some(Kind::Object(K::MaterializedView)) => T::MaterializedView,
+            Some(Kind::Object(K::ForeignTable)) => T::ForeignTable,
+            Some(Kind::Object(K::Function | K::Procedure | K::Aggregate)) => T::Routine,
+            Some(Kind::Object(K::Sequence)) => T::Sequence,
+            Some(Kind::Object(K::Type | K::Domain)) => T::Type,
+            Some(Kind::Object(K::Extension)) => T::Extension,
+            _ => T::Other,
         },
-    }
+    })
 }
 impl Render for NavigatorView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -752,7 +750,7 @@ impl Render for NavigatorView {
                                                     .path(path)
                                                     .size(px(style::ICON))
                                                     .flex_none()
-                                                    .text_color(gpui::rgb(color)),
+                                                    .text_color(color),
                                             )
                                             .child(
                                                 div()

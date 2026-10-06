@@ -391,6 +391,38 @@ pub fn error_banner(id: impl Into<ElementId>, message: impl Into<SharedString>) 
         .child(div().flex_1().min_w_0().child(message))
 }
 
+/// Marks which status message of a document is an error, so it renders as a
+/// shaking `error_strip`. The strip shows only while the document's message
+/// still equals the recorded error; any later status quietly replaces it.
+#[derive(Default)]
+pub struct Failure {
+    seq: u64,
+    text: String,
+}
+
+impl Failure {
+    /// Records `message` as the current error; each call replays the shake.
+    pub fn record(&mut self, message: &str) {
+        self.seq = self.seq.wrapping_add(1);
+        self.text.clear();
+        self.text.push_str(message);
+    }
+
+    /// The shake key while `message` is still the recorded error.
+    pub fn shown(&self, message: &str) -> Option<u64> {
+        (self.seq != 0 && !message.is_empty() && self.text == message).then_some(self.seq)
+    }
+}
+
+/// A document's inline error: `error_banner` that shakes once per `seq`.
+pub fn error_strip(id: &'static str, seq: u64, message: impl Into<SharedString>) -> Div {
+    div()
+        .flex_none()
+        .px(px(8.))
+        .py(px(6.))
+        .child(shake((id, seq), error_banner(id, message)))
+}
+
 /// A hover tooltip that fades in; no scale, no slide.
 pub struct Tooltip {
     text: SharedString,
@@ -619,5 +651,17 @@ mod tests {
             .map(|i| shake_offset(i as f32 / 100.).abs())
             .fold(0., f32::max);
         assert!(peak > 1. && peak <= style::SHAKE_PX);
+    }
+
+    #[test]
+    fn failure_shows_only_while_its_message_stands_and_replays_on_repeat() {
+        let mut failure = Failure::default();
+        assert_eq!(failure.shown(""), None);
+        assert_eq!(failure.shown("Ready"), None);
+        failure.record("Review refused: timeout");
+        let first = failure.shown("Review refused: timeout").unwrap();
+        assert_eq!(failure.shown("Observing; no change sent"), None);
+        failure.record("Review refused: timeout");
+        assert!(failure.shown("Review refused: timeout").unwrap() != first);
     }
 }
