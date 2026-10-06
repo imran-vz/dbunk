@@ -144,6 +144,12 @@ pub fn query_summary(rows: &ClickHouseRows) -> String {
     }
 }
 
+/// Appended to a data page's footer when the table has no sorting key and no
+/// column is chosen: ClickHouse returns rows in no fixed order, so offset
+/// pages may repeat or skip rows.
+pub const APPROXIMATE_ORDER_NOTE: &str =
+    " · Order is approximate (no sorting key); sort a column for stable pages";
+
 /// Footer text for a data page.
 pub fn page_summary(paging: &Paging, shown: usize, has_more: bool, runtime_ms: u64) -> String {
     if shown == 0 {
