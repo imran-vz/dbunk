@@ -1,39 +1,6 @@
 use super::*;
 
 #[test]
-fn duplicate_editor_json_preserves_exact_text_null_and_omission() {
-    let values = vec![
-        MutationValue {
-            column: "quote\"key".into(),
-            value: Some("9223372036854775807\n雪".into()),
-        },
-        MutationValue {
-            column: "null".into(),
-            value: None,
-        },
-        MutationValue {
-            column: "empty".into(),
-            value: Some(String::new()),
-        },
-    ];
-    let text = duplicate_json(&values).unwrap();
-    let actual = insert_values(&text).unwrap();
-    for value in values {
-        assert!(actual.contains(&value));
-    }
-    assert_eq!(duplicate_json(&[]).unwrap(), "{}");
-}
-
-#[test]
-fn duplicate_editor_counts_escaped_json_before_allocating_it() {
-    let values = [MutationValue {
-        column: "text".into(),
-        value: Some("\0".repeat(cell_value::MAX_VALUE_BYTES / 5)),
-    }];
-    assert_eq!(duplicate_json(&values), Err(ModelError::Budget));
-}
-
-#[test]
 fn captured_edit_requires_the_same_page_owner_and_analysis() {
     let page = Rc::new(BrowseTableResult {
         request_id: 1,
@@ -69,11 +36,16 @@ fn captured_edit_requires_the_same_page_owner_and_analysis() {
         columns: vec![],
         tables: vec![],
     };
-    let context = EditContext::Duplicate(Capture {
-        page: page.clone(),
-        analysis_id: 2,
+    let context = EditContext::Bulk(BulkEdit {
+        capture: Capture {
+            page: page.clone(),
+            analysis_id: 2,
+        },
+        rows: vec![0],
+        column: 0,
     });
     assert!(context.current(Some(&page), Some(&analysis)));
+    assert!(EditContext::Ordinary.current(None, None));
     let replacement = Rc::new((*page).clone());
     assert!(!context.current(Some(&replacement), Some(&analysis)));
     analysis.analysis_id = 3;
