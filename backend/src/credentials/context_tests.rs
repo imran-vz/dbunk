@@ -305,6 +305,85 @@ async fn strict_profile_read_failure_is_retryable_without_caching_an_empty_store
     );
 }
 
+#[tokio::test]
+async fn same_mode_encrypted_change_rekeys_under_the_new_password() {
+    let (_directory, context) = fixture().await;
+    let mode = CredentialStorageMode::EncryptedSqlite;
+    configure(&context, mode, Some("old-password"))
+        .await
+        .unwrap();
+    write_all(&context, mode, &entries("rekeyed-secret"))
+        .await
+        .unwrap();
+    change_mode(&context, mode, mode, Some("new-password"))
+        .await
+        .unwrap();
+    assert!(is_unlocked(&context));
+    assert_eq!(
+        read_all_cached(&context, mode).await.unwrap(),
+        entries("rekeyed-secret")
+    );
+    let reopened = Context::fixture(context.pool.clone());
+    assert!(unlock(&reopened, "old-password")
+        .await
+        .unwrap_err()
+        .contains("Incorrect"));
+    unlock(&reopened, "new-password").await.unwrap();
+    assert_eq!(
+        read_all(&reopened, mode).await.unwrap(),
+        entries("rekeyed-secret")
+    );
+    // A locked profile cannot be re-keyed: its secrets are unreadable.
+    let locked = Context::fixture(context.pool.clone());
+    assert!(change_mode(&locked, mode, mode, Some("third-password"))
+        .await
+        .unwrap_err()
+        .contains("locked"));
+}
+
+#[tokio::test]
+async fn a_load_that_raced_a_mutation_never_refills_the_cache() {
+    let (_directory, context) = fixture().await;
+    let mode = CredentialStorageMode::PlainSqlite;
+    configure(&context, mode, None).await.unwrap();
+    write_all(&context, mode, &entries("old")).await.unwrap();
+    context.invalidate_cache();
+
+    // A reader sees "not loaded" and loads the old secrets without the lock...
+    let generation = context.cached().unwrap_err();
+    let stale = read_all(&context, mode).await.unwrap();
+    // ...while a mutation commits and publishes the new secrets.
+    write_all(&context, mode, &entries("new")).await.unwrap();
+    assert!(!context.fill_cache(generation, &stale));
+    assert_eq!(read_all_cached(&context, mode).await.unwrap(), entries("new"));
+
+    // Invalidation fences a racing load the same way.
+    context.invalidate_cache();
+    let generation = context.cached().unwrap_err();
+    context.invalidate_cache();
+    assert!(!context.fill_cache(generation, &stale));
+    assert_eq!(read_all_cached(&context, mode).await.unwrap(), entries("new"));
+}
+
+#[tokio::test]
+async fn an_empty_store_is_a_loaded_cache_state() {
+    let (_directory, context) = fixture().await;
+    let mode = CredentialStorageMode::PlainSqlite;
+    configure(&context, mode, None).await.unwrap();
+    assert!(read_all_cached(&context, mode).await.unwrap().is_empty());
+    // Rows written behind the cache are not observed: empty means loaded,
+    // not "reload on every read".
+    sqlite::replace(&context.pool, &entries("out-of-band"), None)
+        .await
+        .unwrap();
+    assert!(read_all_cached(&context, mode).await.unwrap().is_empty());
+    context.invalidate_cache();
+    assert_eq!(
+        read_all_cached(&context, mode).await.unwrap(),
+        entries("out-of-band")
+    );
+}
+
 #[test]
 fn malformed_nonce_is_an_error_instead_of_a_panic() {
     for length in [0, 1, 11, 13, 32] {

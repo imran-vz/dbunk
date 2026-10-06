@@ -526,3 +526,67 @@ async fn maximum_name_duplicates_remain_supported_and_preserve_original_secret()
     assert!(calls.lock().unwrap().is_empty());
     backend.shutdown().await.unwrap();
 }
+
+fn staging_dirs(root: &Path) -> Vec<PathBuf> {
+    let mut found = std::fs::read_dir(root)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.contains(STAGING_TAG))
+        })
+        .collect::<Vec<_>>();
+    found.sort();
+    found
+}
+
+/// Staging only; no process profile claim, endpoint or OS credential store.
+#[tokio::test]
+async fn interrupted_creation_never_publishes_a_partial_profile() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap();
+    let path = root.join("general");
+    let staging = |name: &str| {
+        root.join(format!(
+            ".{name}{STAGING_TAG}{}{STAGING_SUFFIX}",
+            uuid::Uuid::new_v4()
+        ))
+    };
+    // A crash during an earlier first launch: staging holding only a marker.
+    let abandoned = staging("general");
+    files::create_directory(&abandoned).unwrap();
+    files::write_new(&abandoned.join(MARKER), b"{}").unwrap();
+    // A concurrent creator's staging (lock held) and another profile's
+    // staging must both survive cleanup.
+    let live = staging("general");
+    files::create_directory(&live).unwrap();
+    let live_lock = files::lock(&live).unwrap();
+    let unrelated = staging("other");
+    files::create_directory(&unrelated).unwrap();
+    let mut survivors = vec![live.clone(), unrelated.clone()];
+    survivors.sort();
+
+    // Failure after the staged profile is complete but before publishing.
+    let error = stage_and_publish(&path, |staged| {
+        assert!(staged.join(MARKER).is_file());
+        assert!(staged.join("dbunk.sqlite").is_file());
+        Err("injected failure before publish".into())
+    })
+    .await
+    .unwrap_err();
+    assert!(error.contains("injected"), "{error}");
+    assert!(std::fs::symlink_metadata(&path).is_err());
+    assert_eq!(staging_dirs(&root), survivors);
+
+    let lock = stage_and_publish(&path, |_| Ok(())).await.unwrap();
+    drop(lock);
+    assert_eq!(staging_dirs(&root), survivors);
+    let (encoded, _) = read_identity(&path, &path).unwrap();
+    verify_database(&path, &encoded).await.unwrap();
+    drop(files::validate_files(&path, MARKER).unwrap());
+    // An existing profile is never replaced.
+    assert!(stage_and_publish(&path, |_| Ok(())).await.is_err());
+    assert_eq!(read_identity(&path, &path).unwrap().0, encoded);
+    drop(live_lock);
+}

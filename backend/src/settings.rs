@@ -126,7 +126,7 @@ pub(crate) async fn change_credential_storage_inner(
     }
     crate::socket_lifecycle::with_global_fence(state, async {
         let current = crate::app::current_credential_mode(state).await?;
-        if current == payload.mode {
+        if current == payload.mode && !rekeys(payload.mode, payload.password.as_deref()) {
             return Ok(());
         }
         credentials::change_mode(
@@ -138,6 +138,15 @@ pub(crate) async fn change_credential_storage_inner(
         .await
     })
     .await
+}
+
+/// Staying in Encrypted SQLite with a new password is a password change:
+/// same-mode `change_mode` re-encrypts every secret under a fresh verifier and
+/// key (atomically for native and fixture profiles). Other same-mode requests
+/// remain no-ops.
+fn rekeys(mode: CredentialStorageMode, password: Option<&str>) -> bool {
+    mode == CredentialStorageMode::EncryptedSqlite
+        && password.is_some_and(|value| !value.is_empty())
 }
 
 pub async fn reset_credential_storage(state: &AppState) -> Result<AppSettingsSnapshot, String> {

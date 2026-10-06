@@ -37,15 +37,15 @@ pub(super) async fn configure(
     ensure_settled(context).await?;
     ensure_onboarding_empty(context).await?;
     if mode == CredentialStorageMode::Keychain {
-        ensure_keychain_empty(context)?;
+        ensure_keychain_empty(context).await?;
         // A successful strict read proves accessibility without creating or
         // deleting anything. There are no secrets to transfer during onboarding.
     }
     sqlite::commit_configuration(context, Some(mode), password, &HashMap::new(), None).await
 }
 
-fn ensure_keychain_empty(context: &Context) -> Result<(), String> {
-    if !context.keychain.get_all()?.is_empty() {
+async fn ensure_keychain_empty(context: &Context) -> Result<(), String> {
+    if !keychain::load(&context.keychain).await?.is_empty() {
         return Err("Inactive Keychain contains credentials; entry preserved for recovery".into());
     }
     Ok(())
@@ -69,16 +69,13 @@ pub(super) async fn change_mode(
         if from == to {
             return Ok(());
         }
-        ensure_keychain_empty(context)?;
+        ensure_keychain_empty(context).await?;
         storage::set_setting(&context.pool, JOURNAL_KEY, ROLLBACK_KEYCHAIN).await?;
-        context.keychain.replace_all(&existing)?;
+        keychain::replace(&context.keychain, existing.clone()).await?;
         // Commit selects the new authoritative store and removes old rows,
         // verifier and recovery intent atomically. Failure keeps the old store.
         sqlite::commit_configuration(context, Some(to), None, &HashMap::new(), None).await?;
-        *context
-            .password_cache
-            .lock()
-            .expect("credential password cache poisoned") = existing;
+        context.publish_cache(existing);
         return Ok(());
     }
     let pending = (from == CredentialStorageMode::Keychain).then_some(CLEANUP_KEYCHAIN);
@@ -96,13 +93,13 @@ pub(super) async fn reset(context: &Context) -> Result<(), String> {
         // Persist explicit reset intent before removing any password. After a
         // crash recovery finishes that admitted reset instead of claiming Ready.
         storage::set_setting(&context.pool, JOURNAL_KEY, RESET_KEYCHAIN).await?;
-        context.keychain.replace_all(&HashMap::new())?;
+        keychain::replace(&context.keychain, HashMap::new()).await?;
     }
     sqlite::commit_configuration(context, None, None, &HashMap::new(), None).await
 }
 
 async fn finish_cleanup(context: &Context) -> Result<(), String> {
-    context.keychain.replace_all(&HashMap::new())?;
+    keychain::replace(&context.keychain, HashMap::new()).await?;
     sqlx::query("DELETE FROM app_settings WHERE key = ?")
         .bind(JOURNAL_KEY)
         .execute(&context.pool)
@@ -134,7 +131,7 @@ pub(crate) async fn recover(context: &Context) -> Result<(), String> {
             finish_cleanup(context).await
         }
         Some(RESET_KEYCHAIN) if mode == Some(CredentialStorageMode::Keychain) => {
-            context.keychain.replace_all(&HashMap::new())?;
+            keychain::replace(&context.keychain, HashMap::new()).await?;
             sqlite::commit_configuration(context, None, None, &HashMap::new(), None).await
         }
         Some(_) => {

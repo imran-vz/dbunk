@@ -221,6 +221,49 @@ impl Store {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Async adapters
+// ---------------------------------------------------------------------------
+
+const INTERRUPTED: &str = "Credential Keychain operation did not complete; retry the operation";
+
+/// Keychain I/O can block on an OS authorization prompt or on IPC with the
+/// security daemon. Async callers run it on Tokio's blocking pool so runtime
+/// workers (and anything waiting behind a held lifecycle gate) stay responsive.
+/// The synchronous methods remain for blocking contexts and tests.
+async fn off_thread<T: Send + 'static>(
+    store: &Arc<Store>,
+    operation: impl FnOnce(&Store) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let store = Arc::clone(store);
+    tokio::task::spawn_blocking(move || operation(&store))
+        .await
+        .map_err(|_| INTERRUPTED.to_string())?
+}
+
+pub(crate) async fn load(store: &Arc<Store>) -> Result<Credentials, String> {
+    off_thread(store, |store| store.get_all()).await
+}
+
+pub(crate) async fn replace(store: &Arc<Store>, next: Credentials) -> Result<(), String> {
+    off_thread(store, move |store| store.replace_all(&next)).await
+}
+
+#[cfg(feature = "isolated-profile")]
+pub(crate) async fn write_backup(store: &Arc<Store>, previous: Credentials) -> Result<(), String> {
+    off_thread(store, move |store| store.write_connection_backup(&previous)).await
+}
+
+#[cfg(feature = "isolated-profile")]
+pub(crate) async fn read_backup(store: &Arc<Store>) -> Result<Credentials, String> {
+    off_thread(store, |store| store.read_connection_backup()).await
+}
+
+#[cfg(feature = "isolated-profile")]
+pub(crate) async fn clear_backup(store: &Arc<Store>) -> Result<(), String> {
+    off_thread(store, |store| store.clear_connection_backup()).await
+}
+
 /// Stage 03 has no Keychain capability, even if a later caller accidentally
 /// requests one. It must never construct an OS entry.
 #[cfg(any(test, feature = "isolated-profile"))]

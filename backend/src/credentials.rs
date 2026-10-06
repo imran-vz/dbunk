@@ -84,9 +84,57 @@ pub(crate) struct Context {
     pool: SqlitePool,
     keychain: Arc<keychain::Store>,
     session_key: Mutex<Option<[u8; 32]>>,
-    password_cache: Mutex<HashMap<String, String>>,
+    password_cache: Mutex<PasswordCache>,
     mutation_lock: tokio::sync::Mutex<()>,
     lifecycle: LifecyclePolicy,
+}
+
+/// Decoded secrets for the active mode. `entries == None` means "not loaded";
+/// an empty map is a valid loaded store. Every publish or invalidation bumps
+/// `generation`, so a reader that loaded from the backend without holding the
+/// mutation lock can only fill the cache if no mutation happened meanwhile.
+#[derive(Default)]
+struct PasswordCache {
+    generation: u64,
+    entries: Option<HashMap<String, String>>,
+}
+
+impl Context {
+    fn cache(&self) -> std::sync::MutexGuard<'_, PasswordCache> {
+        self.password_cache
+            .lock()
+            .expect("credential password cache poisoned")
+    }
+
+    /// Records the authoritative post-mutation secrets.
+    fn publish_cache(&self, entries: HashMap<String, String>) {
+        let mut cache = self.cache();
+        cache.generation = cache.generation.wrapping_add(1);
+        cache.entries = Some(entries);
+    }
+
+    /// Forces the next cached read to load from the backend.
+    fn invalidate_cache(&self) {
+        let mut cache = self.cache();
+        cache.generation = cache.generation.wrapping_add(1);
+        cache.entries = None;
+    }
+
+    /// Returns the cached entries, or the generation a backend load must match.
+    fn cached(&self) -> Result<HashMap<String, String>, u64> {
+        let cache = self.cache();
+        cache.entries.clone().ok_or(cache.generation)
+    }
+
+    /// Fills only if nothing was published or invalidated since `generation`.
+    fn fill_cache(&self, generation: u64, entries: &HashMap<String, String>) -> bool {
+        let mut cache = self.cache();
+        if cache.generation != generation || cache.entries.is_some() {
+            return false;
+        }
+        cache.entries = Some(entries.clone());
+        true
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -131,7 +179,7 @@ impl Context {
             keychain,
             lifecycle,
             session_key: Mutex::new(None),
-            password_cache: Mutex::new(HashMap::new()),
+            password_cache: Mutex::new(PasswordCache::default()),
             mutation_lock: tokio::sync::Mutex::new(()),
         })
     }
@@ -210,11 +258,7 @@ pub(crate) fn lock_for_tests(context: &Context) {
         .session_key
         .lock()
         .expect("credential session key poisoned") = None;
-    context
-        .password_cache
-        .lock()
-        .expect("credential password cache poisoned")
-        .clear();
+    context.invalidate_cache();
 }
 
 pub fn is_unlocked(context: &Context) -> bool {
@@ -264,11 +308,11 @@ pub(crate) struct KeychainBackend {
 
 impl KeychainBackend {
     async fn read_all(&self) -> Result<HashMap<String, String>, String> {
-        self.store.get_all()
+        keychain::load(&self.store).await
     }
 
     async fn write_all(&self, credentials: &HashMap<String, String>) -> Result<(), String> {
-        self.store.replace_all(credentials)
+        keychain::replace(&self.store, credentials.clone()).await
     }
 }
 
@@ -380,7 +424,7 @@ async fn clear_inactive_storage(
             if context.lifecycle != LifecyclePolicy::Legacy {
                 Ok(())
             } else {
-                context.keychain.replace_all(&HashMap::new())
+                keychain::replace(&context.keychain, HashMap::new()).await
             }
         }
     }
@@ -404,12 +448,15 @@ pub async fn write_all(
     credentials: &HashMap<String, String>,
 ) -> Result<(), String> {
     native::ensure_settled(context).await?;
+    // A failed backend write leaves the active store unchanged (SQLite rolls
+    // back; the Keychain store keeps its previous blob), so the cache stays.
     backend_for(mode, context).write_all(credentials).await?;
-    clear_inactive_storage(mode, context).await?;
-    *context
-        .password_cache
-        .lock()
-        .expect("credential password cache poisoned") = credentials.clone();
+    if let Err(error) = clear_inactive_storage(mode, context).await {
+        // The active store already holds `credentials`; drop the old view.
+        context.invalidate_cache();
+        return Err(error);
+    }
+    context.publish_cache(credentials.clone());
     Ok(())
 }
 
@@ -609,11 +656,7 @@ pub async fn configure(
     for backend_mode in ALL_MODES {
         let _ = clear_storage_for(backend_mode, context).await;
     }
-    context
-        .password_cache
-        .lock()
-        .expect("credential password cache poisoned")
-        .clear();
+    context.invalidate_cache();
     set_credential_mode(pool, mode).await?;
     mark_onboarding_completed(pool).await
 }
@@ -627,11 +670,7 @@ pub async fn unlock(context: &Context, password: &str) -> Result<(), String> {
         .session_key
         .lock()
         .expect("credential session key poisoned") = Some(key);
-    context
-        .password_cache
-        .lock()
-        .expect("credential password cache poisoned")
-        .clear();
+    context.invalidate_cache();
     Ok(())
 }
 
@@ -645,13 +684,9 @@ pub async fn reset(context: &Context) -> Result<(), String> {
     let pool = &context.pool;
     storage::clear_sqlite_credentials(pool).await?;
     storage::clear_verifier(pool).await?;
-    context.keychain.replace_all(&HashMap::new())?;
+    keychain::replace(&context.keychain, HashMap::new()).await?;
     storage::set_setting(pool, SETTING_ONBOARDING_COMPLETED, "false").await?;
-    context
-        .password_cache
-        .lock()
-        .expect("credential password cache poisoned")
-        .clear();
+    context.invalidate_cache();
     *context
         .session_key
         .lock()
@@ -692,20 +727,15 @@ pub(crate) async fn read_all_cached(
     mode: CredentialStorageMode,
 ) -> Result<HashMap<String, String>, String> {
     native::ensure_settled(context).await?;
-    {
-        let cache = context
-            .password_cache
-            .lock()
-            .expect("credential password cache poisoned");
-        if !cache.is_empty() {
-            return Ok(cache.clone());
-        }
-    }
+    let generation = match context.cached() {
+        Ok(entries) => return Ok(entries),
+        Err(generation) => generation,
+    };
+    // Loaded without the mutation lock (callers such as `upsert` already hold
+    // it). A concurrent mutation bumps the generation, so a stale load is
+    // returned to this caller only and never published to the shared cache.
     let all = read_all(context, mode).await?;
-    *context
-        .password_cache
-        .lock()
-        .expect("credential password cache poisoned") = all.clone();
+    context.fill_cache(generation, &all);
     Ok(all)
 }
 
@@ -746,7 +776,9 @@ async fn setup_mode(
 async fn clear_storage_for(mode: CredentialStorageMode, context: &Context) -> Result<(), String> {
     let pool = &context.pool;
     match mode {
-        CredentialStorageMode::Keychain => context.keychain.replace_all(&HashMap::new()),
+        CredentialStorageMode::Keychain => {
+            keychain::replace(&context.keychain, HashMap::new()).await
+        }
         CredentialStorageMode::PlainSqlite | CredentialStorageMode::EncryptedSqlite => {
             storage::clear_sqlite_credentials(pool).await
         }
@@ -760,7 +792,7 @@ async fn clear_storage_for(mode: CredentialStorageMode, context: &Context) -> Re
 async fn create_verifier(pool: &SqlitePool, password: &str) -> Result<[u8; 32], String> {
     let mut salt = [0u8; 16];
     OsRng.fill_bytes(&mut salt);
-    let key = derive_key(password, &salt)?;
+    let key = derive_key_off_thread(password, salt.to_vec()).await?;
     let encrypted = encrypt_text(&key, VERIFIER_TEXT)?;
     storage::write_verifier(
         pool,
@@ -781,12 +813,21 @@ async fn verify_password(pool: &SqlitePool, password: &str) -> Result<[u8; 32], 
         return Err(format!("Unsupported credential KDF '{kdf}'"));
     }
     let salt = B64.decode(salt).map_err(|error| error.to_string())?;
-    let key = derive_key(password, &salt)?;
+    let key = derive_key_off_thread(password, salt).await?;
     let verifier = decrypt_bytes(&key, &nonce, &ciphertext)?;
     if verifier != VERIFIER_TEXT {
         return Err("Incorrect credential password".to_string());
     }
     Ok(key)
+}
+
+/// Argon2id deliberately costs tens of milliseconds of CPU and ~19 MiB. Async
+/// callers run it on Tokio's blocking pool so runtime workers stay responsive.
+async fn derive_key_off_thread(password: &str, salt: Vec<u8>) -> Result<[u8; 32], String> {
+    let password = password.to_owned();
+    tokio::task::spawn_blocking(move || derive_key(&password, &salt))
+        .await
+        .map_err(|_| "Credential key derivation did not complete; retry".to_string())?
 }
 
 fn derive_key(password: &str, salt: &[u8]) -> Result<[u8; 32], String> {
@@ -914,11 +955,7 @@ mod tests {
             .session_key
             .lock()
             .expect("credential session key poisoned") = None;
-        context
-            .password_cache
-            .lock()
-            .expect("credential password cache poisoned")
-            .clear();
+        context.invalidate_cache();
     }
 
     #[tokio::test]
