@@ -1,7 +1,7 @@
 //! Explicit retained-result export. The immutable selection and all derived
 //! buffers reserve shared retention until the joined job has finished.
 use crate::{
-    accessible_editor::AccessibleEditor,
+    accessible_editor::{AccessibleEditor, fresh_editor},
     controller::Host,
     result_export::{self, Completeness, Encoding, ExportTable, Format, Options, Scope, SqlTarget},
     results::encoded_size,
@@ -69,9 +69,7 @@ fn field_editor(
     cx: &mut Context<ExportView>,
 ) -> (Entity<Editor>, Entity<AccessibleEditor>) {
     let editor = cx.new(|cx| {
-        let buffer = cx.new(|cx| language::Buffer::local(value, cx));
-        let mut editor = Editor::for_buffer(buffer, None, window, cx);
-        editor.set_mode(EditorMode::SingleLine);
+        let mut editor = fresh_editor(value, EditorMode::SingleLine, window, cx);
         editor.set_read_only(read_only);
         editor
     });
