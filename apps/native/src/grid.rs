@@ -1,26 +1,34 @@
-//! Read-only results, virtualized by row and column. Layout switching reuses
-//! this entity; per-result selection and scroll handles survive reflow.
+//! Results virtualized by row and column. Layout switching reuses this
+//! entity; per-result selection and scroll handles survive reflow. In table
+//! mode (PostgreSQL table tabs) the grid also paints staged edits, hosts the
+//! inline editor and reports edit intent; it never owns or applies values.
 
+mod checked;
+mod editing;
 mod frozen;
 mod keyboard;
 mod navigation;
 mod render;
+mod resize;
 
-use dbunk_lib::backend::data::BrowseTableResult;
+use dbunk_lib::backend::data::{BrowseSortKey, BrowseTableResult};
 use std::{cell::Cell, ops::Range, rc::Rc};
 
 use dbunk_lib::backend::QueryEvent;
 use gpui::{
-    App, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    ListHorizontalSizingBehavior, MouseButton, MouseDownEvent, Pixels, Role, ScrollStrategy,
-    SharedString, Subscription, UniformListScrollHandle, Window, actions, div, prelude::*, px,
-    uniform_list,
+    App, Bounds, ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable,
+    ListHorizontalSizingBehavior, MouseButton, MouseDownEvent, Pixels, Point, Role, ScrollHandle,
+    ScrollStrategy, SharedString, Subscription, UniformListScrollHandle, Window, actions, div,
+    prelude::*, px, uniform_list,
 };
 
+use crate::data_model::{Advance, CellRef, DraftOverlay, EditSeed};
+pub use crate::grid_columns::ColumnEntry;
 use crate::grid_columns::{ColumnAction, GridColumns};
 use crate::result_export::{self, Completeness, ExportTable, Format, Options, Scope, SqlTarget};
 use crate::results::{ResultModel, TerminalStatus, cell_text, display_text};
 use crate::value_inspector::{Inspection, ValueInspector};
+pub use editing::{InlineEditorSlot, TableEditing};
 
 actions!(
     native,
@@ -90,11 +98,49 @@ pub struct ResultGrid {
     inspection_budget: Rc<Cell<usize>>,
     inspector: Option<Entity<ValueInspector>>,
     inspector_events: Option<Subscription>,
+    /// `Some` once TableView drives this grid: bare chrome, header menu,
+    /// overlay tints and edit gestures.
+    editing: Option<TableEditing>,
+    overlay: Rc<DraftOverlay>,
+    sort_keys: Vec<BrowseSortKey>,
+    inline_editor: Option<InlineEditorSlot>,
+    checked: checked::CheckedRows,
+    resize: Option<resize::ResizeState>,
+    band_scroll: ScrollHandle,
+    /// Window bounds of the body (insert band + rows) and header strip from
+    /// the last prepaint; anchors for popovers.
+    body_probe: Rc<Cell<Option<Bounds<Pixels>>>>,
+    header_probe: Rc<Cell<Option<Bounds<Pixels>>>>,
 }
 
 pub enum GridEvent {
-    Sort { column: String, append: bool },
+    /// Shift-click on a header: append or cycle a sort key.
+    Sort {
+        column: String,
+        append: bool,
+    },
     Preferences(crate::browse_preferences::PreferencePatch),
+    /// Plain click (or AX press) on a table-mode header.
+    HeaderMenu {
+        source: usize,
+        anchor: Bounds<Pixels>,
+    },
+    ContextMenu {
+        cell: CellRef,
+        source: usize,
+        position: Point<Pixels>,
+    },
+    EditCell {
+        cell: CellRef,
+        source: usize,
+        seed: EditSeed,
+    },
+    RemoveInsert {
+        change: uuid::Uuid,
+    },
+    CheckedRowsChanged,
+    /// Replaces the grid status row in table mode.
+    Status(SharedString),
 }
 impl EventEmitter<GridEvent> for ResultGrid {}
 
@@ -119,14 +165,126 @@ impl ResultGrid {
             inspection_budget: Rc::new(Cell::new(0)),
             inspector: None,
             inspector_events: None,
+            editing: None,
+            overlay: Rc::new(DraftOverlay::empty(0)),
+            sort_keys: Vec::new(),
+            inline_editor: None,
+            checked: checked::CheckedRows::default(),
+            resize: None,
+            band_scroll: ScrollHandle::new(),
+            body_probe: Rc::new(Cell::new(None)),
+            header_probe: Rc::new(Cell::new(None)),
         }
     }
 
+    /// A browse grid for one relation. ClickHouse data tabs use this too, so
+    /// table-mode chrome starts with the first `set_table_editing`.
     pub fn new_table(schema: String, table: String, cx: &mut Context<Self>) -> Self {
         let mut grid = Self::new(cx);
         grid.sortable = true;
         grid.sql_target = Some((schema, table));
         grid
+    }
+
+    /// Bare chrome reports status to TableView's footer instead of painting
+    /// its own status row.
+    fn set_status(&mut self, status: impl Into<String>, cx: &mut Context<Self>) {
+        let status = status.into();
+        if self.table_mode() {
+            self.copy_status = None;
+            cx.emit(GridEvent::Status(status.into()));
+        } else {
+            self.copy_status = Some(status);
+        }
+        cx.notify();
+    }
+
+    pub fn set_sort_indicators(&mut self, sort: Vec<BrowseSortKey>, cx: &mut Context<Self>) {
+        if self.sort_keys != sort {
+            self.sort_keys = sort;
+            cx.notify();
+        }
+    }
+    /// Checked page rows in ascending order.
+    pub fn checked_rows(&self) -> Vec<usize> {
+        self.checked.rows()
+    }
+    pub fn clear_checked(&mut self, cx: &mut Context<Self>) {
+        self.reset_checked(cx);
+        cx.notify();
+    }
+    /// Window bounds of one cell from the last frame. `None` before the first
+    /// paint, or when the row or column is not in the current layout.
+    pub fn cell_bounds(&self, cell: CellRef, source: usize) -> Option<Bounds<Pixels>> {
+        let body = self.body_probe.get()?;
+        let (rect, _) = self.body_cell_rect(cell, source)?;
+        Some(Bounds::new(body.origin + rect.origin, rect.size))
+    }
+    /// Window bounds of one visible header cell from the last frame.
+    pub fn header_bounds(&self, source: usize) -> Option<Bounds<Pixels>> {
+        let header = self.header_probe.get()?;
+        let display = self.display_of(source)?;
+        let height = self.header_height() / px(1.);
+        let rect = frozen::cell_rect(
+            self.cell_geometry(display, height),
+            0.,
+            display < self.pinned_count(),
+        );
+        Some(Bounds::new(header.origin + rect.origin, rect.size))
+    }
+    /// Every source column of the table page, hidden ones included.
+    pub fn column_entries(&self) -> Vec<ColumnEntry> {
+        let Some(page) = &self.table else {
+            return Vec::new();
+        };
+        let mut entries = self.columns.entries();
+        for entry in &mut entries {
+            if let Some(column) = page.columns.get(entry.source) {
+                entry.cast_type.clone_from(&column.cast_type);
+            }
+        }
+        entries
+    }
+    /// A column action for one source column, independent of the selection.
+    pub fn column_patch(
+        &self,
+        source: usize,
+        action: ColumnAction,
+    ) -> Result<crate::browse_preferences::PreferencePatch, &'static str> {
+        if matches!(action, ColumnAction::ShowAll) {
+            return self.columns.patch(None, action);
+        }
+        let display = self
+            .columns
+            .display(source)
+            .ok_or("Show the column before changing it")?;
+        self.columns.patch(Some(display), action)
+    }
+    pub fn visibility_patch(
+        &self,
+        source: usize,
+        visible: bool,
+    ) -> Result<crate::browse_preferences::PreferencePatch, &'static str> {
+        self.columns.visibility_patch(source, visible)
+    }
+    /// Drops unsaved drag widths, e.g. after their preference save failed.
+    pub fn clear_width_overrides(&mut self, cx: &mut Context<Self>) {
+        if self.columns.clear_overrides() {
+            self.clamp_horizontal_scroll();
+            cx.notify();
+        }
+    }
+    /// Moves the selection after a staged inline edit.
+    pub fn advance(&mut self, advance: Advance, cx: &mut Context<Self>) {
+        match advance {
+            Advance::Stay => cx.notify(),
+            Advance::Left => self.move_cell(0, -1, false, cx),
+            Advance::Right => self.move_cell(0, 1, false, cx),
+        }
+    }
+    /// Opens the export panel (selection, or all retained rows).
+    pub fn open_export(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.export(&ExportCells, window, cx);
     }
 
     pub fn set_inspection_budget(&mut self, budget: Rc<Cell<usize>>) {
@@ -184,10 +342,18 @@ impl ResultGrid {
         } else if let Some(column) = selected {
             column..column + 1
         } else {
-            self.copy_status = Some("Select a column to auto-fit".into());
-            cx.notify();
+            self.set_status("Select a column to auto-fit", cx);
             return;
         };
+        self.auto_fit_range(range, cx);
+    }
+    /// Auto-fits one source column (header handle double-click, header menu).
+    pub fn auto_fit_source(&mut self, source: usize, cx: &mut Context<Self>) {
+        if let Some(display) = self.display_of(source) {
+            self.auto_fit_range(display..display + 1, cx);
+        }
+    }
+    fn auto_fit_range(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
         if let Some(page) = &self.table {
             // Preflight names before allocating the patch. Its eventual merge
             // also checks the complete latest preference record atomically.
@@ -203,8 +369,7 @@ impl ResultGrid {
                 )
             });
             if bytes.is_none_or(|bytes| bytes > crate::browse_preferences::PREFS_BYTES) {
-                self.copy_status = Some("Auto-fit column names exceed the preference limit".into());
-                cx.notify();
+                self.set_status("Auto-fit column names exceed the preference limit", cx);
                 return;
             }
             let widths = range
@@ -253,14 +418,13 @@ impl ResultGrid {
             return;
         };
         let Some((_, selected)) = view.head else {
-            self.copy_status = Some("Select a column to pin or unpin".into());
-            cx.notify();
+            self.set_status("Select a column to pin or unpin", cx);
             return;
         };
         if self.table.is_some() {
             match self.change_columns(ColumnAction::TogglePin) {
                 Ok(patch) => cx.emit(GridEvent::Preferences(patch)),
-                Err(error) => self.copy_status = Some(error.into()),
+                Err(error) => self.set_status(error, cx),
             }
         } else if let Some(set) = self.model.sets.get_mut(self.model.active) {
             let anchor = view
@@ -380,6 +544,8 @@ impl ResultGrid {
         self.table = None;
         self.views.clear();
         self.copy_status = None;
+        self.resize = None;
+        self.reset_checked(cx);
         cx.notify();
     }
 
@@ -389,6 +555,12 @@ impl ResultGrid {
         self.inspector = None;
         self.inspector_events = None;
         self.model = ResultModel::default();
+        self.reset_checked(cx);
+        // Overlay rows are page-relative; never paint one page's tints on
+        // another while TableView recomputes them.
+        if self.overlay.key.page != Rc::as_ptr(&page) as usize {
+            self.overlay = Rc::new(DraftOverlay::empty(page.rows.len()));
+        }
         self.columns.table_columns(&page);
         self.table = Some(page);
         self.copy_status = None;
@@ -539,7 +711,12 @@ impl ResultGrid {
         }
     }
     fn gutter(&self) -> f32 {
-        render::gutter_width(self.row_count())
+        let check = if self.checkboxes() {
+            checked::CHECK_WIDTH
+        } else {
+            0.
+        };
+        render::gutter_width(self.row_count()) + check
     }
     fn panes(&self) -> frozen::Panes {
         let pinned = self.pinned_count();
@@ -717,7 +894,7 @@ impl ResultGrid {
                 inspector.update(cx, |inspector, cx| inspector.focus(window, cx));
                 self.inspector = Some(inspector);
             }
-            Err(error) => self.copy_status = Some(format!("Inspection refused: {error}")),
+            Err(error) => self.set_status(format!("Inspection refused: {error}"), cx),
         }
         cx.notify();
     }
@@ -771,8 +948,7 @@ impl ResultGrid {
         ) {
             Ok(view) => view,
             Err(error) => {
-                self.copy_status = Some(error.into());
-                cx.notify();
+                self.set_status(error, cx);
                 return;
             }
         };
@@ -898,13 +1074,13 @@ impl ResultGrid {
                 window.focus(&view.read(cx).focus(), cx);
                 self.exporter = Some(view);
             }
-            Err(error) => self.copy_status = Some(format!("Export refused: {error}")),
+            Err(error) => self.set_status(format!("Export refused: {error}"), cx),
         }
         cx.notify();
     }
 
     fn copy_as(&mut self, format: Format, cx: &mut Context<Self>) {
-        self.copy_status = Some(match self.selected_export(format) {
+        let status = match self.selected_export(format) {
             Ok(export) => {
                 let partial = export.completeness == Completeness::Partial;
                 let rows = export.row_count;
@@ -924,8 +1100,8 @@ impl ResultGrid {
                 }
             }
             Err(error) => format!("Copy refused: {error}"),
-        });
-        cx.notify();
+        };
+        self.set_status(status, cx);
     }
 }
 
@@ -994,6 +1170,10 @@ impl Render for ResultGrid {
             .as_ref()
             .map_or(status.clone(), |copy| format!("{status} · {copy}"));
         let header = (columns > 0).then(|| self.render_header(cx));
+        let bare = self.table_mode();
+        let band = self.render_insert_band(cx);
+        let editor = self.render_editor_layer();
+        let body_probe = self.body_probe.clone();
         let selected_value = self
             .views
             .get(self.model.active)
@@ -1003,10 +1183,14 @@ impl Render for ResultGrid {
         div()
             .id("result-grid")
             .role(Role::Table)
-            .aria_label(if self.sortable {
-                "Table rows"
-            } else {
-                "Query results"
+            .aria_label(match &self.editing {
+                Some(TableEditing {
+                    editable: false,
+                    reason: Some(reason),
+                    ..
+                }) => SharedString::from(format!("Table rows. {reason}")),
+                _ if self.sortable => "Table rows".into(),
+                _ => "Query results".into(),
             })
             .when_some(selected_value, |grid, value| {
                 grid.aria_value(value.to_owned())
@@ -1041,6 +1225,14 @@ impl Render for ResultGrid {
             .on_action(cx.listener(|this, _: &SelectDown, _, cx| this.move_cell(1, 0, true, cx)))
             .on_action(cx.listener(|this, _: &SelectLeft, _, cx| this.move_cell(0, -1, true, cx)))
             .on_action(cx.listener(|this, _: &SelectRight, _, cx| this.move_cell(0, 1, true, cx)))
+            // Column resize: follow the handle's drag anywhere, finish once on
+            // drop, on a release outside the grid, or on the next press.
+            .on_drag_move(cx.listener(Self::drag_resize))
+            .on_drop(cx.listener(Self::drop_resize))
+            .on_mouse_up_out(MouseButton::Left, cx.listener(Self::release_outside))
+            .capture_any_mouse_down(
+                cx.listener(|this, _: &MouseDownEvent, _, cx| this.finish_resize(cx)),
+            )
             .flex()
             .flex_col()
             .size_full()
@@ -1049,66 +1241,100 @@ impl Render for ResultGrid {
             .bg(crate::style::bg())
             .text_color(crate::style::text())
             .text_sm()
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .h(px(crate::style::FOOTER))
-                    .px_2()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .border_b_1()
-                    .border_color(crate::style::line_soft())
-                    .child(
-                        div()
-                            .id("grid-status")
-                            .role(Role::Label)
-                            .aria_label(status.clone())
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .font_family(crate::style::MONO)
-                            .text_size(px(crate::style::FONT_SMALL))
-                            .text_color(crate::style::faint())
-                            .child(status),
-                    )
-                    .when(self.export_host.is_some(), |row| {
-                        row.child(
-                            crate::ui::tool_button(
-                                "open-result-export",
-                                "Export retained rows",
-                                Some("icons/download.svg"),
-                                true,
-                                false,
-                            )
-                            .aria_label(
-                                "Export selected cells, or all retained rows when no selection",
-                            )
-                            .track_focus(&self.export_focus)
-                            .tab_stop(true)
-                            .tab_index(0)
-                            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-                                export_weak
-                                    .update(cx, |this, cx| this.export(&ExportCells, window, cx))
-                                    .ok();
-                            })
-                            .on_click(cx.listener(
-                                |this, _, window, cx| this.export(&ExportCells, window, cx),
-                            )),
+            .when(!bare, |grid| {
+                grid.child(
+                    div()
+                        .flex_shrink_0()
+                        .h(px(crate::style::FOOTER))
+                        .px_2()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .border_b_1()
+                        .border_color(crate::style::line_soft())
+                        .child(
+                            div()
+                                .id("grid-status")
+                                .role(Role::Label)
+                                .aria_label(status.clone())
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .font_family(crate::style::MONO)
+                                .text_size(px(crate::style::FONT_SMALL))
+                                .text_color(crate::style::faint())
+                                .child(status),
                         )
-                    }),
-            )
+                        .when(self.export_host.is_some(), |row| {
+                            row.child(
+                                crate::ui::tool_button(
+                                    "open-result-export",
+                                    "Export retained rows",
+                                    Some("icons/download.svg"),
+                                    true,
+                                    false,
+                                )
+                                .aria_label(
+                                    "Export selected cells, or all retained rows when no selection",
+                                )
+                                .track_focus(&self.export_focus)
+                                .tab_stop(true)
+                                .tab_index(0)
+                                .on_a11y_action(
+                                    gpui::accesskit::Action::Click,
+                                    move |_, window, cx| {
+                                        export_weak
+                                            .update(cx, |this, cx| {
+                                                this.export(&ExportCells, window, cx)
+                                            })
+                                            .ok();
+                                    },
+                                )
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| this.export(&ExportCells, window, cx),
+                                )),
+                            )
+                        }),
+                )
+            })
             .children(header)
             .child(
-                uniform_list(
-                    "rows",
-                    rows,
-                    cx.processor(|this, rows: Range<usize>, _, cx| this.render_rows(rows, cx)),
-                )
-                .with_horizontal_sizing_behavior(ListHorizontalSizingBehavior::Unconstrained)
-                .track_scroll(self.scroll())
-                .flex_1()
-                .min_h_0(),
+                // Body: draft-row band, virtualized rows and the editor layer,
+                // clipped together so the editor never paints over the header.
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .overflow_hidden()
+                    .child(
+                        gpui::canvas(
+                            move |bounds, _, _| body_probe.set(Some(bounds)),
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full(),
+                    )
+                    .children(band)
+                    .child(
+                        uniform_list(
+                            "rows",
+                            rows,
+                            cx.processor(|this, rows: Range<usize>, _, cx| {
+                                this.render_rows(rows, cx)
+                            }),
+                        )
+                        .with_horizontal_sizing_behavior(
+                            ListHorizontalSizingBehavior::Unconstrained,
+                        )
+                        .track_scroll(self.scroll())
+                        .flex_1()
+                        .min_h_0(),
+                    )
+                    .children(editor),
             )
             .children(self.inspector.clone())
             .into_any_element()

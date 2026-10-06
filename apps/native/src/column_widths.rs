@@ -111,6 +111,27 @@ impl ColumnWidths {
             self.explicit[column] = true;
         }
     }
+    /// A dragged width. Wider bounds than auto-fit: the user chose it.
+    /// Returns whether the width changed; offsets are rebuilt when it did.
+    pub fn set_resized(&mut self, column: usize, width: f32) -> bool {
+        if !width.is_finite() {
+            return false;
+        }
+        let width = width.clamp(
+            crate::grid_columns::RESIZE_MIN,
+            crate::grid_columns::RESIZE_MAX,
+        );
+        let Some(current) = self.widths.get_mut(column) else {
+            return false;
+        };
+        self.explicit[column] = true;
+        if *current == width {
+            return false;
+        }
+        *current = width;
+        self.rebuild_offsets();
+        true
+    }
     pub fn rebuild_offsets(&mut self) {
         self.offsets.clear();
         self.offsets.push(0.);
@@ -222,6 +243,21 @@ mod tests {
             + widths.explicit.capacity() * size_of::<bool>()
             + widths.order.capacity() * size_of::<usize>();
         assert!(actual <= ColumnWidths::storage_bytes(2));
+    }
+    #[test]
+    fn dragged_query_width_is_clamped_explicit_and_rebuilds_offsets() {
+        let mut widths = ColumnWidths::new(&[Some("a".into()), Some("b".into())]);
+        assert!(widths.set_resized(0, 900.));
+        assert_eq!(widths.width(0), 900.);
+        assert_eq!(widths.offset(1), 900.);
+        assert!(widths.set_resized(1, 1.));
+        assert_eq!(widths.width(1), crate::grid_columns::RESIZE_MIN);
+        assert!(!widths.set_resized(1, 2.));
+        assert!(!widths.set_resized(0, f32::NAN));
+        assert!(!widths.set_resized(7, 100.));
+        // Later stream samples never overwrite a dragged width.
+        widths.sample(&[None, Some("x".repeat(60))], 1);
+        assert_eq!(widths.width(1), crate::grid_columns::RESIZE_MIN);
     }
     #[test]
     fn duplicate_query_headings_pin_by_source_and_width_sampling_keeps_identity() {
