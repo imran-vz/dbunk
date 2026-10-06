@@ -567,7 +567,10 @@ pub(super) fn authorize(
     sql: &str,
     confirmed: bool,
 ) -> Result<(WriteIntent, AuditDisposition, bool), MySqlSessionError> {
-    let classes = crate::postgres::sql_class::classify_script(sql);
+    let classes = crate::postgres::sql_class::classify_script_dialect(
+        sql,
+        crate::postgres::sql_class::SqlDialect::MySql,
+    );
     let single_read = classes.len() == 1
         && matches!(classes[0], crate::postgres::sql_class::StatementClass::Read);
     let intent = WriteIntent::Statement { classes };

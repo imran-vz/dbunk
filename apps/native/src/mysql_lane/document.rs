@@ -762,7 +762,7 @@ impl MySqlDocument {
                 .rounded(px(5.))
                 .border_1()
                 .border_color(style::warn())
-                .bg(style::with_alpha(0xd29922, 0x1f))
+                .bg(style::warn_fill())
                 .text_color(style::text())
                 .child(div().flex_1().child(confirmation_text(statements)))
                 .child(
