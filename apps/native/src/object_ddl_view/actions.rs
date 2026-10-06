@@ -5,7 +5,9 @@ impl ObjectDdlView {
             Action::Back => !self.has_pending(),
             Action::Cancel => self.pending.is_some() || self.flow.is_some(),
             _ if !self.editable => false,
-            Action::Mode => self.editable_recipe() && self.purpose.is_some(),
+            Action::Mode => {
+                self.editable_recipe() && self.purpose.is_some() && !self.uses_form()
+            }
             Action::Option => self.editable_recipe() && self.creating(),
             Action::Review => self.ready && self.editable_recipe() && self.purpose.is_some(),
             Action::Edit => {
@@ -90,10 +92,17 @@ impl ObjectDdlView {
                 });
                 self.armed = false;
                 self.receipt.clear();
-                self.message = if matches!(self.purpose, Some(Purpose::Drop(_))) {
-                    "Observing the exact identity and its drop impact; no change sent"
-                } else {
-                    "Observing the target schema and name; no change sent"
+                self.message = match self.purpose {
+                    Some(Purpose::Drop(_)) => {
+                        "Observing the exact identity and its drop impact; no change sent"
+                    }
+                    Some(Purpose::CreateIndex { .. }) => {
+                        "Observing the table and confirming the index name is free; no change sent"
+                    }
+                    Some(Purpose::AddEnumValue { .. }) => {
+                        "Observing the exact enum type; no change sent"
+                    }
+                    _ => "Observing the target schema and name; no change sent",
                 }
                 .into();
             }
