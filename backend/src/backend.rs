@@ -793,13 +793,18 @@ async fn open_native_session(
 ) -> Result<QueryTransactionSnapshot, QuerySessionError> {
     let connection_id = payload.connection_id.clone();
     let session_id = payload.session_id.clone();
-    let (connection, mode, fingerprint) = {
+    let (connection, mode, fingerprint, generation) = {
         let _admission = inner.development_gate.lock().await;
         if inner.closing.load(Ordering::SeqCst) || ticket.cancelled() {
             return Err(QuerySessionError::ConnectionClosing);
         }
         admit_connection(state, development, &connection_id).await?;
-        admission_snapshot(state, &connection_id).await?
+        let (connection, mode, fingerprint) = admission_snapshot(state, &connection_id).await?;
+        let generation = state
+            .query_sessions
+            .connection_generation(&connection_id)
+            .await;
+        (connection, mode, fingerprint, generation)
     };
     if connection.engine() != DatabaseEngine::PostgreSQL {
         return Err(QuerySessionError::UnsupportedEngine);
@@ -852,7 +857,14 @@ async fn open_native_session(
         Ok::<_, QuerySessionError>(admission_snapshot(state, &connection_id).await?.2)
     }
     .await;
-    let unchanged = matches!(&current, Ok(current) if *current == fingerprint);
+    // A teardown that began and ended while this open was connecting leaves
+    // the record unchanged but moves the generation.
+    let unchanged = matches!(&current, Ok(current) if *current == fingerprint)
+        && state
+            .query_sessions
+            .connection_generation(&connection_id)
+            .await
+            == generation;
     let alive = unchanged
         && state
             .query_sessions

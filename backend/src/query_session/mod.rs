@@ -340,6 +340,19 @@ impl QuerySessionManager {
             }
         })
     }
+    /// Moves whenever a teardown of the connection completes. Native open
+    /// reads it before connecting and refuses to finish if it moved, so a
+    /// disconnect that starts and ends during the connect still wins.
+    #[cfg(feature = "isolated-profile")]
+    pub(crate) async fn connection_generation(&self, connection_id: &str) -> u64 {
+        self.inner
+            .lock()
+            .await
+            .generations
+            .get(connection_id)
+            .copied()
+            .unwrap_or_default()
+    }
     #[cfg(feature = "isolated-profile")]
     pub(crate) async fn session_alive(
         &self,
