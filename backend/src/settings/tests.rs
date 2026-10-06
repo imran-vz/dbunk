@@ -294,3 +294,65 @@ async fn ui_service_keeps_namespace_validation_and_atomic_batch_writes() {
     delete_ui_state(&state, payload).await.unwrap();
     assert!(load_ui_state(&state).await.unwrap().is_empty());
 }
+
+#[tokio::test]
+#[serial_test::serial]
+async fn changing_the_encryption_password_rekeys_saved_secrets() {
+    let (_directory, state) = fresh_state().await;
+    let encrypted = CredentialStorageMode::EncryptedSqlite;
+    configure_credential_storage(
+        &state,
+        ConfigureCredentialStoragePayload {
+            mode: encrypted,
+            password: Some("old test-only password".into()),
+        },
+    )
+    .await
+    .unwrap();
+    let secrets = std::collections::HashMap::from([(
+        "rekey-fixture".to_string(),
+        "saved-secret".to_string(),
+    )]);
+    credentials::write_all(&state.credentials, encrypted, &secrets)
+        .await
+        .unwrap();
+    let change = |password: Option<&str>| ChangeCredentialStoragePayload {
+        mode: encrypted,
+        password: password.map(str::to_string),
+        confirm: true,
+    };
+    let snapshot = change_credential_storage(&state, change(Some("new test-only password")))
+        .await
+        .unwrap();
+    assert!(matches!(snapshot.credential_state, CredentialState::Ready));
+    // Staying in the same mode without a new password remains a no-op.
+    change_credential_storage(&state, change(None))
+        .await
+        .unwrap();
+
+    credentials::lock_for_tests(&state.credentials);
+    let rejected = unlock_credentials(
+        &state,
+        UnlockCredentialsPayload {
+            password: "old test-only password".into(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(rejected.contains("Incorrect"), "{rejected}");
+    unlock_credentials(
+        &state,
+        UnlockCredentialsPayload {
+            password: "new test-only password".into(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        credentials::read_all(&state.credentials, encrypted)
+            .await
+            .unwrap(),
+        secrets
+    );
+    credentials::lock_for_tests(&state.credentials);
+}

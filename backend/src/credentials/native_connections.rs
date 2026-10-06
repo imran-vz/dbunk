@@ -138,12 +138,15 @@ pub(crate) async fn mutate(
         storage::set_setting(&context.pool, JOURNAL, "preparing")
             .await
             .map_err(|_| SAVE_FAILED)?;
-        context.keychain.write_connection_backup(&old_secrets)?;
+        keychain::write_backup(&context.keychain, old_secrets).await?;
         storage::set_setting(&context.pool, JOURNAL, "prepared")
             .await
             .map_err(|_| SAVE_FAILED)?;
         // Leave the marker even on denial: the OS outcome may be uncertain.
-        context.keychain.replace_all(&secrets)?;
+        if let Err(error) = keychain::replace(&context.keychain, secrets.clone()).await {
+            context.invalidate_cache();
+            return Err(error);
+        }
     }
     let write = async {
         let mut tx = context.pool.begin().await.map_err(|_| SAVE_FAILED)?;
@@ -209,16 +212,14 @@ pub(crate) async fn mutate(
     }
     .await;
     if let Err(error) = write {
+        context.invalidate_cache();
         if mode == CredentialStorageMode::Keychain {
             // Rollback failure remains explicit and durable for next launch.
             recover_locked(context).await?;
         }
         return Err(error);
     }
-    *context
-        .password_cache
-        .lock()
-        .expect("credential password cache poisoned") = secrets;
+    context.publish_cache(secrets);
     if mode == CredentialStorageMode::Keychain {
         finish_journal(context)
             .await
@@ -272,20 +273,14 @@ async fn recover_locked(context: &Context) -> Result<(), String> {
     }
     match phase.as_str() {
         "prepared" => {
-            let previous = context.keychain.read_connection_backup()?;
-            context.keychain.replace_all(&previous)?;
-            *context
-                .password_cache
-                .lock()
-                .expect("credential password cache poisoned") = previous;
+            let previous = keychain::read_backup(&context.keychain).await?;
+            keychain::replace(&context.keychain, previous.clone()).await?;
+            context.publish_cache(previous);
             storage::set_setting(&context.pool, JOURNAL, "rolled-back").await?;
         }
         "preparing" | "committed" | "rolled-back" => {
-            let current = context.keychain.get_all()?;
-            *context
-                .password_cache
-                .lock()
-                .expect("credential password cache poisoned") = current;
+            let current = keychain::load(&context.keychain).await?;
+            context.publish_cache(current);
         }
         _ => return Err("Connection recovery journal is unreadable; profile preserved".into()),
     }
@@ -295,7 +290,7 @@ async fn recover_locked(context: &Context) -> Result<(), String> {
 async fn finish_journal(context: &Context) -> Result<(), String> {
     // Only committed/rolled-back phases reach here. Cleanup failure retains
     // its phase so a retry never needs a backup that was already removed.
-    context.keychain.clear_connection_backup()?;
+    keychain::clear_backup(&context.keychain).await?;
     sqlx::query("DELETE FROM app_settings WHERE key = ?")
         .bind(JOURNAL)
         .execute(&context.pool)

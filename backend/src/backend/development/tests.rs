@@ -421,11 +421,14 @@ async fn corrupt_settings_and_denied_keychain_never_look_empty() {
     storage::set_setting(&state.pool, "credentialStorageMode", "keychain")
         .await
         .unwrap();
-    assert!(backend
-        .development_settings()
-        .await
-        .unwrap_err()
-        .contains("denied or locked"));
+    // A denied Keychain is reported, never treated as an empty store, and no
+    // longer fails the whole workspace load.
+    let settings = backend.development_settings().await.unwrap();
+    assert_eq!(settings.mode, Some(Mode::Keychain));
+    assert!(settings
+        .keychain_unavailable
+        .as_deref()
+        .is_some_and(|reason| reason.contains("denied or locked")));
     assert_eq!(
         calls.lock().unwrap().len(),
         1,

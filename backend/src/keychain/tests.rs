@@ -102,3 +102,45 @@ fn legacy_read_policy_still_caches_failures_as_empty() {
     store.replace_all(&entries("explicitly-saved")).unwrap();
     assert_eq!(store.get_all().unwrap(), entries("explicitly-saved"));
 }
+
+#[tokio::test]
+async fn async_adapters_run_os_io_off_the_runtime_thread_and_keep_errors() {
+    struct ThreadProbe(Mutex<Vec<std::thread::ThreadId>>);
+    impl BlobStore for ThreadProbe {
+        fn read(&self, _: &Identity) -> Result<Option<String>, keyring::Error> {
+            self.0.lock().unwrap().push(std::thread::current().id());
+            Ok(None)
+        }
+        fn write(&self, _: &Identity, _: Option<&str>) -> Result<(), keyring::Error> {
+            self.0.lock().unwrap().push(std::thread::current().id());
+            Ok(())
+        }
+    }
+    let probe = Arc::new(ThreadProbe(Mutex::new(Vec::new())));
+    let probed = Arc::new(Store {
+        identity: Identity {
+            service: "probe".into(),
+            account: "probe".into(),
+        },
+        policy: ReadPolicy::Strict,
+        io: probe.clone(),
+        cache: Mutex::new(None),
+    });
+    assert!(load(&probed).await.unwrap().is_empty());
+    replace(&probed, entries("saved")).await.unwrap();
+    assert_eq!(load(&probed).await.unwrap(), entries("saved"));
+    let caller = std::thread::current().id();
+    let threads = probe.0.lock().unwrap().clone();
+    assert_eq!(threads.len(), 2, "cached read must not reach the OS");
+    assert!(threads.iter().all(|thread| *thread != caller));
+
+    let io = Arc::new(RecordingStore::default());
+    let denied = Arc::new(store(&io, "async-denied", ReadPolicy::Strict));
+    io.state.lock().unwrap().deny_read = true;
+    assert!(load(&denied)
+        .await
+        .unwrap_err()
+        .contains("denied or locked"));
+    io.state.lock().unwrap().deny_write = true;
+    assert!(replace(&denied, entries("refused")).await.is_err());
+}

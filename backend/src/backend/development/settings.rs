@@ -49,6 +49,11 @@ pub struct DevelopmentSettings {
     pub profile_id: String,
     pub mode: Option<DevelopmentStorageMode>,
     pub state: DevelopmentCredentialState,
+    /// Set when the active OS Keychain could not be read (denied, locked,
+    /// unavailable or unreadable). The workspace still loads and the entry is
+    /// preserved; saved passwords stay unusable until access is granted and
+    /// settings reload. The text is a fixed, secret-free message.
+    pub keychain_unavailable: Option<String>,
 }
 
 impl Backend {
@@ -286,8 +291,10 @@ async fn snapshot(state: &AppState, authority: &Authority) -> Result<Development
             profile_id: authority.profile_id.clone(),
             mode,
             state: DevelopmentCredentialState::NeedsRecovery,
+            keychain_unavailable: None,
         });
     }
+    let mut keychain_unavailable = None;
     if !settings.onboarding_completed {
         credentials::ensure_onboarding_empty(&state.credentials).await?;
     } else {
@@ -298,13 +305,11 @@ async fn snapshot(state: &AppState, authority: &Authority) -> Result<Development
             );
         }
         if matches!(settings.credential_state, crate::CredentialState::Ready) {
-            credentials::read_all(
-                &state.credentials,
-                settings
-                    .credential_storage_mode
-                    .ok_or("Credential storage is not configured")?,
-            )
-            .await?;
+            let active = settings
+                .credential_storage_mode
+                .ok_or("Credential storage is not configured")?;
+            let read = credentials::read_all(&state.credentials, active).await;
+            keychain_unavailable = keychain_unavailable_from(active, read)?;
         }
     }
     let status = match settings.credential_state {
@@ -316,5 +321,47 @@ async fn snapshot(state: &AppState, authority: &Authority) -> Result<Development
         profile_id: authority.profile_id.clone(),
         mode,
         state: status,
+        keychain_unavailable,
     })
+}
+
+/// A Keychain read failure must not fail the whole workspace load: connections
+/// and drafts stay usable, and the snapshot reports it so the UI can ask the
+/// user to grant access and retry. SQLite read failures still fail the load
+/// because they indicate local profile damage rather than an OS access policy.
+fn keychain_unavailable_from<T>(
+    mode: CredentialStorageMode,
+    read: Result<T, String>,
+) -> Result<Option<String>, String> {
+    match read {
+        Ok(_) => Ok(None),
+        Err(error) if mode == CredentialStorageMode::Keychain => Ok(Some(error)),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(test)]
+mod keychain_unavailable_tests {
+    use super::*;
+
+    #[test]
+    fn only_keychain_read_failures_degrade_to_a_reported_state() {
+        const DENIED: &str = "Credential Keychain access was denied or locked";
+        let denied = || Err::<(), _>(DENIED.to_string());
+        assert_eq!(
+            keychain_unavailable_from(CredentialStorageMode::Keychain, denied()),
+            Ok(Some(DENIED.to_string()))
+        );
+        assert_eq!(
+            keychain_unavailable_from(CredentialStorageMode::Keychain, Ok(())),
+            Ok(None)
+        );
+        for mode in [
+            CredentialStorageMode::PlainSqlite,
+            CredentialStorageMode::EncryptedSqlite,
+        ] {
+            assert!(keychain_unavailable_from(mode, denied()).is_err());
+            assert_eq!(keychain_unavailable_from(mode, Ok(())), Ok(None));
+        }
+    }
 }

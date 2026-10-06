@@ -90,28 +90,13 @@ impl Backend {
     }
 
     /// Creates only a NEW private directory. No endpoint or OS credential store
-    /// is opened. Failed initialization preserves the directory for inspection.
+    /// is opened. The profile is built in a private sibling staging directory
+    /// and appears at `path` only through an atomic no-replace rename, so an
+    /// interrupted first launch never leaves a partial profile at `path`.
     pub async fn create_native_profile(path: &Path) -> Result<Self, String> {
         development::check_runtime()?;
         development::ensure_process_profile(path)?;
-        let marker = Marker {
-            version: 1,
-            kind: MarkerKind::GeneralPostgres,
-            profile_id: uuid::Uuid::new_v4().to_string(),
-            credential_namespace: uuid::Uuid::new_v4().to_string(),
-            path: path.to_owned(),
-        };
-        let encoded = marker.encoded()?;
-        files::create_directory(path)?;
-        let lock = files::lock(path)?;
-        files::write_new(&path.join(MARKER), encoded.as_bytes())?;
-        files::write_new(&path.join("dbunk.sqlite"), &[])?;
-        let paths = storage::Paths::from_dir(path.to_owned());
-        let pool = storage::open_native_profile_pool(&paths).await?;
-        let initialized = storage::set_setting(&pool, IDENTITY_KEY, &encoded).await;
-        pool.close().await;
-        initialized?;
-        files::sync_directory(path)?;
+        let lock = stage_and_publish(path, |_| Ok(())).await?;
         drop(lock);
         Self::open_native_profile(path).await
     }
@@ -141,6 +126,132 @@ impl Backend {
                 profile_id: marker.profile_id,
             })),
         ))
+    }
+}
+
+const STAGING_TAG: &str = ".dbunk-create-";
+const STAGING_SUFFIX: &str = ".tmp";
+
+/// Returns the canonical parent and UTF-8 name of a new profile path.
+fn profile_parts(path: &Path) -> Result<(&Path, &str), String> {
+    let invalid = || "Native profile needs a new absolute path with a canonical parent".to_string();
+    let parent = path.parent().ok_or_else(invalid)?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(invalid)?;
+    if !path.is_absolute()
+        || parent.canonicalize().map_err(|_| invalid())? != parent
+        || path.components().any(|part| {
+            matches!(
+                part,
+                std::path::Component::ParentDir | std::path::Component::CurDir
+            )
+        })
+    {
+        return Err(invalid());
+    }
+    Ok((parent, name))
+}
+
+/// Builds the marker and identity-bearing database in a fresh staging
+/// directory, commits both to disk, then publishes the directory at `path`
+/// without ever replacing an existing entry. `before_publish` is a test seam
+/// for failure injection. Any failure removes this attempt's staging
+/// directory, so `path` either holds a complete profile or does not exist.
+/// Returns the lock taken on the staging directory; it moves with the rename.
+async fn stage_and_publish(
+    path: &Path,
+    before_publish: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<std::fs::File, String> {
+    let (parent, name) = profile_parts(path)?;
+    if std::fs::symlink_metadata(path).is_ok() {
+        return Err("Development profile creation requires a new directory".into());
+    }
+    discard_abandoned_staging(parent, name);
+    let staging = parent.join(format!(
+        ".{name}{STAGING_TAG}{}{STAGING_SUFFIX}",
+        uuid::Uuid::new_v4()
+    ));
+    files::create_directory(&staging)?;
+    let staged = async {
+        let lock = files::lock(&staging)?;
+        let (encoded, _) = new_identity(path)?;
+        files::write_new(&staging.join(MARKER), encoded.as_bytes())?;
+        files::write_new(&staging.join("dbunk.sqlite"), &[])?;
+        let paths = storage::Paths::from_dir(staging.clone());
+        let pool = storage::open_native_profile_pool(&paths).await?;
+        let initialized = storage::set_setting(&pool, IDENTITY_KEY, &encoded).await;
+        pool.close().await;
+        initialized?;
+        files::sync_directory(&staging)?;
+        before_publish(&staging)?;
+        rename_no_replace(&staging, path)?;
+        Ok::<_, String>(lock)
+    }
+    .await;
+    match staged {
+        Ok(lock) => {
+            files::sync_directory(parent)?;
+            Ok(lock)
+        }
+        Err(error) => {
+            // The failed attempt is discarded, never published. A crash before
+            // this point leaves only staging, which the next creation removes.
+            let _ = std::fs::remove_dir_all(&staging);
+            Err(error)
+        }
+    }
+}
+
+/// Removes staging directories left by an interrupted creation of `name`.
+/// A directory whose lock is held belongs to a live creator and is skipped;
+/// anything that is not a plain directory is left untouched. Best effort:
+/// leftovers never block creating a new profile.
+fn discard_abandoned_staging(parent: &Path, name: &str) {
+    let prefix = format!(".{name}{STAGING_TAG}");
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let Some(file_name) = file_name.to_str() else {
+            continue;
+        };
+        if !file_name.starts_with(&prefix) || !file_name.ends_with(STAGING_SUFFIX) {
+            continue;
+        }
+        let candidate = entry.path();
+        if !std::fs::symlink_metadata(&candidate).is_ok_and(|metadata| metadata.is_dir()) {
+            continue;
+        }
+        if let Ok(lock) = files::lock(&candidate) {
+            let _ = std::fs::remove_dir_all(&candidate);
+            drop(lock);
+        }
+    }
+}
+
+/// Publishes without ever replacing an existing path.
+fn rename_no_replace(from: &Path, to: &Path) -> Result<(), String> {
+    let failed = || "Native profile could not be published without replacing a path".to_string();
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let from = std::ffi::CString::new(from.as_os_str().as_bytes()).map_err(|_| failed())?;
+        let to = std::ffi::CString::new(to.as_os_str().as_bytes()).map_err(|_| failed())?;
+        // SAFETY: both arguments are valid NUL-terminated paths for the call.
+        if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) } != 0 {
+            return Err(failed());
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        if std::fs::symlink_metadata(to).is_ok() {
+            return Err(failed());
+        }
+        std::fs::rename(from, to).map_err(|_| failed())
     }
 }
 

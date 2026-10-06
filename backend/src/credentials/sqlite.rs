@@ -112,7 +112,7 @@ pub(super) async fn commit_configuration(
             .ok_or_else(|| "Encryption password is required".to_string())?;
         let mut salt = [0u8; 16];
         OsRng.fill_bytes(&mut salt);
-        let key = derive_key(password, &salt)?;
+        let key = derive_key_off_thread(password, salt.to_vec()).await?;
         Some((key, B64.encode(salt), encrypt_text(&key, VERIFIER_TEXT)?))
     } else {
         None
@@ -166,10 +166,13 @@ pub(super) async fn commit_configuration(
         .session_key
         .lock()
         .expect("credential session key poisoned") = key.copied();
-    *context
-        .password_cache
-        .lock()
-        .expect("credential password cache poisoned") = credentials.clone();
+    // SQLite modes own the rows just written. A Keychain target's secrets live
+    // in the OS store, so its caller publishes them; until then reads reload.
+    if mode == Some(CredentialStorageMode::Keychain) {
+        context.invalidate_cache();
+    } else {
+        context.publish_cache(credentials.clone());
+    }
     Ok(())
 }
 
