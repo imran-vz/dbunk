@@ -49,6 +49,9 @@ pub struct ClickHouseRows {
     pub runtime_ms: u64,
     /// From `X-ClickHouse-Summary` when the server reports writes.
     pub written_rows: Option<u64>,
+    /// Set on a table-browse page that has no stable order (no chosen sort
+    /// and no sorting key): offset pages may repeat or skip rows.
+    pub approximate_order: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -237,6 +240,9 @@ pub(crate) struct RowReader {
     limits: Limits,
     stage: Stage,
     pending: Vec<u8>,
+    /// Bytes of `pending` already known to hold no newline, so a long line
+    /// split across many chunks is scanned once, not once per chunk.
+    scanned: usize,
     consumed: usize,
     result: ClickHouseRows,
     done: bool,
@@ -248,6 +254,7 @@ impl RowReader {
             limits,
             stage: Stage::Names,
             pending: Vec::new(),
+            scanned: 0,
             consumed: 0,
             result: ClickHouseRows::default(),
             done: false,
@@ -260,8 +267,9 @@ impl RowReader {
         }
         self.pending.extend_from_slice(chunk);
         let mut start = 0;
-        while let Some(offset) = self.pending[start..].iter().position(|&b| b == b'\n') {
-            let end = start + offset;
+        let mut search = self.scanned;
+        while let Some(offset) = self.pending[search..].iter().position(|&b| b == b'\n') {
+            let end = search + offset;
             if self.consumed + end + 1 > self.limits.max_bytes {
                 return Ok(self.stop(ClickHouseTruncation::Bytes));
             }
@@ -272,9 +280,11 @@ impl RowReader {
                 return Ok(Flow::Stop);
             }
             start = end + 1;
+            search = start;
         }
         self.consumed += start;
         self.pending.drain(..start);
+        self.scanned = self.pending.len();
         if self.consumed + self.pending.len() > self.limits.max_bytes {
             return Ok(self.stop(ClickHouseTruncation::Bytes));
         }
@@ -293,6 +303,7 @@ impl RowReader {
         self.done = true;
         self.result.truncated = Some(reason);
         self.pending.clear();
+        self.scanned = 0;
         Flow::Stop
     }
 
@@ -436,6 +447,31 @@ mod tests {
         let rows = read(&[header, b"[\"", &huge, &huge], limits(100, 1024)).unwrap();
         assert_eq!(rows.rows, vec![vec![Some("short".into())]]);
         assert_eq!(rows.truncated, Some(ClickHouseTruncation::Bytes));
+    }
+
+    #[test]
+    fn a_line_split_across_many_chunks_is_scanned_once() {
+        let value = "v".repeat(5_000);
+        let body = format!("[\"s\"]\n[\"String\"]\n[\"{value}\"]\n[\"tail\"]\n");
+        let mut reader = RowReader::new(limits(10, 1 << 20));
+        for byte in body.as_bytes() {
+            assert_eq!(reader.push(std::slice::from_ref(byte)).unwrap(), Flow::Continue);
+            // Everything still pending was already searched for a newline.
+            assert_eq!(reader.scanned, reader.pending.len());
+        }
+        let rows = reader.finish().unwrap();
+        assert_eq!(
+            rows.rows,
+            vec![vec![Some(value)], vec![Some("tail".into())]]
+        );
+        assert_eq!(rows.truncated, None);
+
+        // Uneven chunks that end mid-line and mid-newline-run still decode.
+        let mut reader = RowReader::new(limits(10, 1 << 20));
+        for chunk in body.as_bytes().chunks(7) {
+            reader.push(chunk).unwrap();
+        }
+        assert_eq!(reader.finish().unwrap().rows.len(), 2);
     }
 
     #[test]

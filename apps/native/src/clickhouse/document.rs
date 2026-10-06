@@ -73,7 +73,9 @@ pub enum DocumentEvent {
 }
 
 struct Run {
-    query_id: Option<String>,
+    /// Every run (query, data page, structure) carries a query id so a stop,
+    /// close or session end can `KILL` it on the server.
+    query_id: String,
     session: ClickHouseSession,
     abort: tokio::task::AbortHandle,
     _task: Task<()>,
@@ -112,9 +114,8 @@ impl EventEmitter<DocumentEvent> for ClickHouseDocument {}
 
 impl Drop for ClickHouseDocument {
     fn drop(&mut self) {
-        if let Some(run) = self.run.take() {
-            run.abort.abort();
-        }
+        // Closing the tab also stops the statement on the server.
+        self.stop_run(true);
     }
 }
 
@@ -148,7 +149,10 @@ impl ClickHouseDocument {
             Some((database, name, _)) => ResultGrid::new_table(database.into(), name.into(), cx),
             None => ResultGrid::new(cx),
         });
-        grid.update(cx, |grid, _| grid.set_inspection_budget(budget));
+        grid.update(cx, |grid, _| {
+            grid.set_inspection_budget(budget);
+            grid.set_export_host(host.clone());
+        });
         let grid_events = cx.subscribe(&grid, |this, _, event: &GridEvent, cx| {
             if let GridEvent::Sort { column, .. } = event
                 && matches!(this.mode, Mode::Data { .. })
@@ -238,7 +242,9 @@ impl ClickHouseDocument {
                 .session(&self.connection)
                 .is_none_or(|current| !current.same(&run.session))
         {
-            self.stop_run(false);
+            // Best-effort KILL while the old session's route may still be
+            // up; closing the session also kills what it still runs.
+            self.stop_run(true);
             self.status = "Stopped: the session ended".into();
         }
         let current = self.sessions.read(cx).session(&self.connection);
@@ -269,11 +275,14 @@ impl ClickHouseDocument {
         session
     }
 
+    /// Aborts the current request. With `kill`, also sends the best-effort
+    /// `KILL QUERY` for its id; the backend sends at most one per id, so an
+    /// abort that already triggered one sends nothing more.
     fn stop_run(&mut self, kill: bool) {
         if let Some(run) = self.run.take() {
             run.abort.abort();
-            if kill && let Some(query_id) = run.query_id {
-                let session = run.session;
+            if kill {
+                let (session, query_id) = (run.session, run.query_id);
                 self.host
                     .runtime
                     .spawn(async move { session.cancel(&query_id).await });
@@ -314,6 +323,8 @@ impl ClickHouseDocument {
         self.next_request += 1;
         let request = self.next_request;
         let reader = session.clone();
+        let query_id = uuid::Uuid::new_v4().to_string();
+        let id = query_id.clone();
         match self.mode {
             Mode::Data { .. } => {
                 let paging = self.paging.clone();
@@ -324,7 +335,7 @@ impl ClickHouseDocument {
                         .as_ref()
                         .map(|(column, desc)| (column.as_str(), *desc));
                     reader
-                        .browse(&database, &name, order, paging.offset, PAGE_ROWS + 1)
+                        .browse(&database, &name, order, paging.offset, PAGE_ROWS + 1, &id)
                         .await
                 });
                 let abort = read.abort_handle();
@@ -345,7 +356,7 @@ impl ClickHouseDocument {
                     .ok();
                 });
                 self.run = Some(Run {
-                    query_id: None,
+                    query_id,
                     session,
                     abort,
                     _task: task,
@@ -356,7 +367,7 @@ impl ClickHouseDocument {
                 let read = self
                     .host
                     .runtime
-                    .spawn(async move { reader.structure(&database, &name).await });
+                    .spawn(async move { reader.structure(&database, &name, &id).await });
                 let abort = read.abort_handle();
                 let task = cx.spawn(async move |this, cx| {
                     let result = read.await;
@@ -382,7 +393,7 @@ impl ClickHouseDocument {
                     .ok();
                 });
                 self.run = Some(Run {
-                    query_id: None,
+                    query_id,
                     session,
                     abort,
                     _task: task,
@@ -398,6 +409,9 @@ impl ClickHouseDocument {
         self.has_more = has_more;
         self.status =
             document_model::page_summary(&self.paging, rows.rows.len(), has_more, rows.runtime_ms);
+        if rows.approximate_order {
+            self.status.push_str(document_model::APPROXIMATE_ORDER_NOTE);
+        }
         let page = document_model::grid_page(
             rows,
             request,
@@ -484,7 +498,7 @@ impl ClickHouseDocument {
         });
         self.status = "Running…".into();
         self.run = Some(Run {
-            query_id: Some(query_id),
+            query_id,
             session,
             abort,
             _task: task,

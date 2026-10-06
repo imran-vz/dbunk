@@ -26,7 +26,7 @@
 //! - [`url`] composes the connection's HTTP endpoint with `default_format`
 //!   and an optional `database` query param. Honours `useHttps` and
 //!   `urlPath` from the stored connection.
-//! - [`escape`] doubles single quotes for embedding into SQL string
+//! - [`escape`] doubles backslashes and single quotes for embedding into SQL string
 //!   literals (CH catalog queries use string-literal database names rather
 //!   than parameter binding).
 //! - [`parse_response`] decodes the `JSONCompact` envelope into the shared
@@ -87,8 +87,12 @@ fn database(connection: &StoredConnection) -> Result<String, String> {
     })
 }
 
+/// Escapes a value for the inside of a ClickHouse `'…'` literal. ClickHouse
+/// treats `\` as an escape character in string literals, so it is doubled
+/// first (a name ending in `\` would otherwise escape the closing quote);
+/// single quotes are doubled.
 fn escape(value: &str) -> String {
-    value.replace('\'', "''")
+    value.replace('\\', "\\\\").replace('\'', "''")
 }
 
 fn url(connection: &StoredConnection) -> Result<reqwest::Url, String> {
@@ -310,11 +314,81 @@ fn parse_int(value: &str) -> i64 {
 /// Indexes come from `system.data_skipping_indices` (minmax / set /
 /// bloom_filter / ngrambf — these are CH's secondary indices, not
 /// uniqueness indexes).
+///
+/// Every read is bounded ([`bounded::run`]) and all of them share one
+/// [`STRUCTURE_TIMEOUT`] deadline.
 pub async fn fetch_table_structure(
     connection: &StoredConnection,
     schema: &str,
     table: &str,
 ) -> Result<TableStructure, String> {
+    let deadline = tokio::time::Instant::now() + STRUCTURE_TIMEOUT;
+    fetch_table_structure_bounded(connection, schema, table, None, deadline)
+        .await
+        .map_err(|error| error.message)
+}
+
+/// Deadline shared by every read of one structure fetch.
+const STRUCTURE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// Rows read from one structure catalog query (columns, indexes).
+const STRUCTURE_MAX_ROWS: usize = 20_000;
+/// Bytes read from one structure catalog query.
+const STRUCTURE_MAX_BYTES: usize = 16 * 1024 * 1024;
+
+/// One bounded catalog read for a structure fetch, decoded into the
+/// string-cell [`QueryResult`] the structure helpers use (`NULL` cells read
+/// as `"NULL"`, as `JSONCompact` did). A result cut short by a bound is an
+/// error rather than a silently partial structure.
+async fn structure_read(
+    connection: &StoredConnection,
+    sql: &str,
+    query_id: Option<&str>,
+    deadline: tokio::time::Instant,
+) -> Result<QueryResult, bounded::ClickHouseError> {
+    let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+    if left.is_zero() {
+        return Err(bounded::ClickHouseError::new(
+            bounded::ClickHouseErrorKind::Timeout,
+            "Structure read timed out",
+        ));
+    }
+    let limits = bounded::Limits {
+        max_rows: STRUCTURE_MAX_ROWS,
+        max_bytes: STRUCTURE_MAX_BYTES,
+        timeout: left,
+    };
+    let rows = bounded::run(connection, sql, query_id, limits).await?;
+    if rows.truncated.is_some() {
+        return Err(bounded::ClickHouseError::new(
+            bounded::ClickHouseErrorKind::Protocol,
+            "Structure is larger than dbunk reads",
+        ));
+    }
+    Ok(QueryResult {
+        columns: rows.columns.into_iter().map(|column| column.name).collect(),
+        row_count: rows.rows.len() as u64,
+        rows: rows
+            .rows
+            .into_iter()
+            .map(|row| {
+                row.into_iter()
+                    .map(|cell| cell.unwrap_or_else(|| "NULL".to_string()))
+                    .collect()
+            })
+            .collect(),
+        runtime_ms: rows.runtime_ms,
+    })
+}
+
+/// [`fetch_table_structure`] with an optional `query_id` (so a stop can
+/// `KILL` it) and a caller-owned deadline shared by every read.
+pub(crate) async fn fetch_table_structure_bounded(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    query_id: Option<&str>,
+    deadline: tokio::time::Instant,
+) -> Result<TableStructure, bounded::ClickHouseError> {
     let escaped_schema = escape(schema);
     let escaped_table = escape(table);
 
@@ -326,7 +400,7 @@ pub async fn fetch_table_structure(
          WHERE database = '{}' AND name = '{}'",
         escaped_schema, escaped_table
     );
-    let table_meta = run_query(connection, &table_meta_sql).await?;
+    let table_meta = structure_read(connection, &table_meta_sql, query_id, deadline).await?;
     let sorting_key_idx = column_index(&table_meta, "sorting_key");
     let partition_key_idx = column_index(&table_meta, "partition_key");
     let sampling_key_idx = column_index(&table_meta, "sampling_key");
@@ -356,7 +430,7 @@ pub async fn fetch_table_structure(
          ORDER BY position",
         escaped_schema, escaped_table
     );
-    let columns_result = run_query(connection, &columns_sql).await?;
+    let columns_result = structure_read(connection, &columns_sql, query_id, deadline).await?;
     let name_idx = column_index(&columns_result, "name");
     let type_idx = column_index(&columns_result, "type");
     let default_kind_idx = column_index(&columns_result, "default_kind");
@@ -405,7 +479,7 @@ pub async fn fetch_table_structure(
          ORDER BY name",
         escaped_schema, escaped_table
     );
-    let indices_result = run_query(connection, &indices_sql).await?;
+    let indices_result = structure_read(connection, &indices_sql, query_id, deadline).await?;
     let idx_name = column_index(&indices_result, "name");
     let idx_expr = column_index(&indices_result, "expr");
     let idx_type = column_index(&indices_result, "type");
@@ -426,9 +500,19 @@ pub async fn fetch_table_structure(
     // CHECK constraints — only present on more recent CH versions, so
     // best-effort: a missing column makes the request error and we
     // suppress that.
-    let constraints = fetch_constraints(connection, &escaped_schema, &escaped_table)
-        .await
-        .unwrap_or_default();
+    let constraints = match fetch_constraints(
+        connection,
+        &escaped_schema,
+        &escaped_table,
+        query_id,
+        deadline,
+    )
+    .await
+    {
+        Ok(constraints) => constraints,
+        Err(error) if error.kind == bounded::ClickHouseErrorKind::Server => Vec::new(),
+        Err(error) => return Err(error),
+    };
 
     let primary_key = if sorting_key_cols.is_empty() {
         None
@@ -484,7 +568,9 @@ async fn fetch_constraints(
     connection: &StoredConnection,
     escaped_schema: &str,
     escaped_table: &str,
-) -> Result<Vec<ConstraintInfo>, String> {
+    query_id: Option<&str>,
+    deadline: tokio::time::Instant,
+) -> Result<Vec<ConstraintInfo>, bounded::ClickHouseError> {
     // `system.tables` exposes a `constraints` Map(String, String) on
     // versions that support CHECK constraints. If the column is missing
     // (older CH) the query 500s and we return an empty list — the caller
@@ -493,7 +579,7 @@ async fn fetch_constraints(
         "SELECT constraints FROM system.tables WHERE database = '{}' AND name = '{}'",
         escaped_schema, escaped_table
     );
-    let result = run_query(connection, &sql).await?;
+    let result = structure_read(connection, &sql, query_id, deadline).await?;
     let idx = column_index(&result, "constraints");
     let raw = result
         .rows
@@ -1193,6 +1279,14 @@ mod tests {
         assert_eq!(escape("plain"), "plain");
         assert_eq!(escape("o'brien"), "o''brien");
         assert_eq!(escape("''"), "''''");
+    }
+
+    #[test]
+    fn escape_keeps_trailing_backslashes_inside_the_literal() {
+        // `'name\'` would escape the closing quote; `'name\\'` does not.
+        assert_eq!(escape("name\\"), "name\\\\");
+        assert_eq!(escape("a\\'b"), "a\\\\''b");
+        assert_eq!(ch_literal(Some("x\\")), "'x\\\\'");
     }
 
     #[test]
