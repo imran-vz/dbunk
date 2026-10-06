@@ -611,6 +611,30 @@ pub enum TlsFailureKind {
     HandshakeFailed,
 }
 
+/// What sits between dbunk and the PostgreSQL server, as observed on connect.
+/// A transaction pooler hands each transaction to any server process, so
+/// session state (SET, temporary tables, LISTEN, session locks) does not
+/// persist between transactions.
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ConnectionPooling {
+    /// No pooler was detected; the client owns its server process.
+    Direct,
+    /// A pooler that keeps one server process per client connection.
+    SessionPooler,
+    TransactionPooler,
+    /// A pooler whose mode could not be determined. It is treated as a
+    /// transaction pooler: that is safe under either mode.
+    Pooler,
+}
+
+impl ConnectionPooling {
+    /// Session state may not persist between transactions.
+    pub fn pools_transactions(self) -> bool {
+        matches!(self, Self::TransactionPooler | Self::Pooler)
+    }
+}
+
 /// TLS material for a PostgreSQL connection, persisted as one JSON blob
 /// (migration 18, `tls_options`). Paths, never contents: the client key
 /// stays on disk under the user's control and never enters the SQLite

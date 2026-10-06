@@ -135,6 +135,8 @@ pub enum NativeDiagnosisWarning {
     NotEncrypted,
     PoolHostnameVerificationCaOnly,
     ProductionWithoutVerification,
+    TransactionPooler,
+    SessionOptionsNotApplied,
 }
 
 macro_rules! same_enum {
@@ -165,7 +167,9 @@ impl NativeDiagnosis {
                         NativeDiagnosisWarning,
                         NotEncrypted,
                         PoolHostnameVerificationCaOnly,
-                        ProductionWithoutVerification
+                        ProductionWithoutVerification,
+                        TransactionPooler,
+                        SessionOptionsNotApplied
                     )
                 })
                 .collect(),

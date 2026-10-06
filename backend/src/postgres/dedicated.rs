@@ -1,7 +1,7 @@
 //! Canonical dedicated tokio-postgres socket used by Query Session, Table
 //! Browse, and Result Mutation. TLS comes from `super::tls` (ADR-0025).
 
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,8 +10,10 @@ use futures_util::{
     future::{poll_fn, BoxFuture, Shared},
     FutureExt,
 };
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio_postgres::error::ErrorPosition;
+use tokio_postgres::tls::MakeTlsConnect;
 use tokio_postgres::{AsyncMessage, Client, NoTls};
 use tokio_postgres_rustls::MakeRustlsConnect;
 
@@ -19,10 +21,14 @@ use super::connect_error::{self, ConnectFailure};
 use super::connect_spec::ResolvedPostgresConnectSpec;
 use super::options::driver_option_sql;
 use super::tls;
-use crate::TlsFailureKind;
+use crate::{ConnectionPooling, TlsFailureKind};
 
+mod pooling;
+pub(crate) use pooling::known as known_pooling;
 pub(crate) mod reported;
+pub(crate) mod wire;
 use reported::ReportedParameters;
+use wire::{Observed, ObservedTls, WireState};
 
 #[derive(Debug)]
 pub(crate) struct Notice {
@@ -73,11 +79,24 @@ pub(crate) type TlsConfig = Option<Arc<rustls::ClientConfig>>;
 
 pub(crate) struct DedicatedConnection {
     pub client: Arc<Client>,
-    pub cancel: tokio_postgres::CancelToken,
+    pub cancel: CancelHandle,
     pub tls: TlsConfig,
     /// GUC_REPORT values as last applied by this socket's driver.
     pub reported: Arc<ReportedParameters>,
+    /// Transaction status and cancel identity as sent by the server.
+    pub wire: Arc<WireState>,
+    pub pooling: ConnectionPooling,
     _driver: DriverTask,
+}
+
+/// The socket is opened by dbunk, not tokio-postgres, so a cancel request
+/// carries its own address: the same endpoint and TLS name as the session.
+#[derive(Clone)]
+pub(crate) struct CancelHandle {
+    token: tokio_postgres::CancelToken,
+    host: String,
+    port: u16,
+    server_name: String,
 }
 
 type DriverJoin = Shared<BoxFuture<'static, ()>>;
@@ -225,8 +244,11 @@ impl DedicatedConnection {
             cancel,
             tls,
             reported,
+            wire,
+            pooling: _,
             _driver,
         } = self;
+        drop(wire);
         drop(reported);
         drop(client);
         drop(cancel);
@@ -248,71 +270,125 @@ pub(crate) async fn connect_tracked(
     notices: NoticeSink,
     tracked: Option<&DriverJoins>,
 ) -> Result<DedicatedConnection, DedicatedError> {
+    let mut connection = open(spec, notices, tracked).await?;
+    connection.pooling = detect_pooling(spec, &connection.client, &connection.wire).await;
+    // Behind a transaction pooler a session SET lands on whichever server
+    // process ran it and stays there for other clients, so none is sent.
+    let statements = if connection.pooling.pools_transactions() {
+        Vec::new()
+    } else {
+        driver_option_sql(&spec.driver_options, spec.safety_policy.read_only)
+    };
+    if !statements.is_empty() {
+        connection
+            .client
+            .batch_execute(&statements.join("; "))
+            .await
+            .map_err(database_error)?;
+    }
+    Ok(connection)
+}
+
+/// Classifies a started session whose protocol `wire` observes.
+pub(crate) async fn detect_pooling(
+    spec: &ResolvedPostgresConnectSpec,
+    client: &Client,
+    wire: &WireState,
+) -> ConnectionPooling {
+    pooling::classify(spec, client, wire).await
+}
+
+/// A started session with no settings applied. The socket is dbunk's own so
+/// the protocol can be observed under any TLS mode.
+async fn open(
+    spec: &ResolvedPostgresConnectSpec,
+    notices: NoticeSink,
+    tracked: Option<&DriverJoins>,
+) -> Result<DedicatedConnection, DedicatedError> {
     let tls_config = tls::client_config(&spec.tls).map_err(|error| DedicatedError::Tls {
         kind: TlsFailureKind::InvalidLocalMaterial,
         message: error.to_string(),
     })?;
     let mut config = spec.tokio_config();
     config.ssl_mode(tls::tokio_ssl_mode(spec.tls.mode));
-    if spec.tls.server_name_differs_from(&spec.host) {
-        // `host` is the certificate name; the socket must still reach the
-        // real (tunnel) endpoint.
-        let addr = with_deadline(spec, resolve_host(&spec.host, spec.port)).await?;
-        config.hostaddr(addr);
-    }
     let client_cert = spec.tls.client_auth_configured();
     let reported = ReportedParameters::new();
-    let (client, driver) = match &tls_config {
-        Some(tls_config) => {
-            let tls = MakeRustlsConnect::new(rustls::ClientConfig::clone(tls_config));
-            let connect = config.connect(tls);
-            let (client, connection) = with_deadline(spec, async {
-                connect.await.map_err(|error| classify(&error, client_cert))
-            })
-            .await?;
-            let driver = spawn_driver(connection, notices, reported.clone());
-            (client, driver)
+    let wire = WireState::new();
+    let (client, driver) = with_deadline(spec, async {
+        // `host` is the endpoint (possibly a tunnel); the TLS server name is
+        // the certificate name.
+        let socket = open_socket(&spec.host, spec.port, spec.keepalive).await?;
+        let socket = Observed::socket(socket, wire.clone());
+        match &tls_config {
+            Some(tls_config) => {
+                let mut make = MakeRustlsConnect::new(rustls::ClientConfig::clone(tls_config));
+                let Ok(connector) = MakeTlsConnect::<Observed<TcpStream>>::make_tls_connect(
+                    &mut make,
+                    &spec.tls.server_name,
+                );
+                let (client, connection) = config
+                    .connect_raw(socket, ObservedTls::new(connector, wire.clone()))
+                    .await
+                    .map_err(|error| classify(&error, client_cert))?;
+                Ok((client, spawn_driver(connection, notices, reported.clone())))
+            }
+            None => {
+                let (client, connection) = config
+                    .connect_raw(socket, NoTls)
+                    .await
+                    .map_err(|error| classify(&error, client_cert))?;
+                Ok((client, spawn_driver(connection, notices, reported.clone())))
+            }
         }
-        None => {
-            let connect = config.connect(NoTls);
-            let (client, connection) = with_deadline(spec, async {
-                connect.await.map_err(|error| classify(&error, client_cert))
-            })
-            .await?;
-            let driver = spawn_driver(connection, notices, reported.clone());
-            (client, driver)
-        }
-    };
-    // From this point every early return aborts the socket driver instead of
-    // detaching it while post-connect session options are applied.
+    })
+    .await?;
+    // From this point every early return aborts the socket driver.
     let driver = DriverTask::new(driver, tracked);
-    let statements = driver_option_sql(&spec.driver_options, spec.safety_policy.read_only);
-    if !statements.is_empty() {
-        client
-            .batch_execute(&statements.join("; "))
-            .await
-            .map_err(database_error)?;
-    }
-    let cancel = client.cancel_token();
+    let cancel = CancelHandle {
+        token: client.cancel_token(),
+        host: spec.host.clone(),
+        port: spec.port,
+        server_name: spec.tls.server_name.clone(),
+    };
     Ok(DedicatedConnection {
         client: Arc::new(client),
         cancel,
         tls: tls_config,
         reported,
+        wire,
+        pooling: ConnectionPooling::Direct,
         _driver: driver,
     })
 }
 
-async fn resolve_host(host: &str, port: u16) -> Result<IpAddr, DedicatedError> {
-    if let Ok(ip) = host.parse::<IpAddr>() {
-        return Ok(ip);
+/// Tries each resolved address in order, as tokio-postgres does.
+async fn open_socket(
+    host: &str,
+    port: u16,
+    keepalive: Option<Duration>,
+) -> Result<TcpStream, DedicatedError> {
+    let addresses: Vec<SocketAddr> = match host.parse::<IpAddr>() {
+        Ok(ip) => vec![SocketAddr::new(ip, port)],
+        Err(_) => tokio::net::lookup_host((host, port))
+            .await
+            .map_err(|_| DedicatedError::ConnectionLost)?
+            .collect(),
+    };
+    for address in addresses {
+        let Ok(socket) = TcpStream::connect(address).await else {
+            continue;
+        };
+        socket
+            .set_nodelay(true)
+            .map_err(|_| DedicatedError::ConnectionLost)?;
+        if let Some(idle) = keepalive {
+            socket2::SockRef::from(&socket)
+                .set_tcp_keepalive(&socket2::TcpKeepalive::new().with_time(idle))
+                .map_err(|_| DedicatedError::ConnectionLost)?;
+        }
+        return Ok(socket);
     }
-    tokio::net::lookup_host((host, port))
-        .await
-        .map_err(|_| DedicatedError::ConnectionLost)?
-        .next()
-        .map(|addr| addr.ip())
-        .ok_or(DedicatedError::ConnectionLost)
+    Err(DedicatedError::ConnectionLost)
 }
 
 /// Map a tokio-postgres connect error onto the dedicated error space.
@@ -457,20 +533,22 @@ async fn with_deadline<T>(
     }
 }
 
-pub(crate) async fn cancel(cancel: tokio_postgres::CancelToken, tls: TlsConfig) -> bool {
+pub(crate) async fn cancel(cancel: CancelHandle, tls: TlsConfig) -> bool {
     let future = async move {
+        let socket = open_socket(&cancel.host, cancel.port, None).await.ok()?;
         match tls {
             Some(config) => {
-                cancel
-                    .cancel_query(MakeRustlsConnect::new(rustls::ClientConfig::clone(&config)))
-                    .await
+                let mut make = MakeRustlsConnect::new(rustls::ClientConfig::clone(&config));
+                let Ok(connector) =
+                    MakeTlsConnect::<TcpStream>::make_tls_connect(&mut make, &cancel.server_name);
+                cancel.token.cancel_query_raw(socket, connector).await.ok()
             }
-            None => cancel.cancel_query(NoTls).await,
+            None => cancel.token.cancel_query_raw(socket, NoTls).await.ok(),
         }
     };
     tokio::time::timeout(Duration::from_secs(2), future)
         .await
-        .is_ok_and(|result| result.is_ok())
+        .is_ok_and(|result| result.is_some())
 }
 
 pub(crate) fn database_error(error: tokio_postgres::Error) -> DedicatedError {

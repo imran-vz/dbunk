@@ -72,7 +72,7 @@ pub use crate::host::{EventSink, SinkClosed};
 pub use crate::postgres::sql_class::{StatementClassKind, StatementClassSummary};
 pub use crate::postgres::sql_params::{ParameterRejectionReason, ParameterValue};
 pub use crate::query_session::protocol::*;
-pub use crate::types::TlsFailureKind;
+pub use crate::types::{ConnectionPooling, TlsFailureKind};
 pub use bastions::{
     DevelopmentBastion, DevelopmentBastionAuth, DevelopmentBastionAuthentication,
     DevelopmentBastionDelete, DevelopmentBastionForm, DevelopmentBastionReference,

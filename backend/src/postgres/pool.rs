@@ -69,9 +69,20 @@ async fn pool_for(connection: &StoredConnection) -> Result<PgPool, String> {
 
     // Slow path: build a new pool.
     let spec = ResolvedPostgresConnectSpec::from_postgres(pg);
-    let options = build_connect_options(&spec);
-    let driver_options = spec.driver_options.clone();
-    let read_only = spec.safety_policy.read_only;
+    let mut options = build_connect_options(&spec);
+    let mut driver_options = spec.driver_options.clone();
+    let mut read_only = spec.safety_policy.read_only;
+    // SQLx cannot observe the protocol, so only an address-known or already
+    // observed transaction pooler is recognised here. Through one, session
+    // SETs would stay on shared server processes and a cached named statement
+    // would be missing on the next transaction's server.
+    if super::dedicated::known_pooling(&spec)
+        .is_some_and(crate::ConnectionPooling::pools_transactions)
+    {
+        driver_options = Default::default();
+        read_only = false;
+        options = options.statement_cache_capacity(0);
+    }
 
     let build = PgPoolOptions::new()
         .max_connections(MAX_POOL_SIZE)

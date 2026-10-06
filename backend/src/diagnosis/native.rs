@@ -7,7 +7,8 @@
 //! internal blocking resolver has stopped. Protocol socket drivers are owned
 //! separately and always joined before this runner returns.
 use super::*;
-use crate::postgres::dedicated::DriverJoins;
+use crate::postgres::dedicated::wire::{Observed, WireState};
+use crate::postgres::dedicated::{self, DriverJoins};
 use std::future::Future;
 use tokio::sync::watch;
 mod types;
@@ -429,41 +430,66 @@ async fn diagnose(
         }
     };
     report.pass(DiagnosisStageKind::Authentication, auth_started, None);
-    database(&client, spec, probe, report, overall).await
+    let (client, wire) = client;
+    database(&client, &wire, spec, probe, report, overall).await
 }
+type Started = (tokio_postgres::Client, std::sync::Arc<WireState>);
+
+/// TLS, if any, is already established on `stream`; the startup exchange is
+/// observed so pooling can be classified.
 async fn startup<S>(
     config: &tokio_postgres::Config,
     stream: S,
     probe: &mut Probe<'_>,
-) -> Result<Result<tokio_postgres::Client, tokio_postgres::Error>, Stop>
+) -> Result<Result<Started, tokio_postgres::Error>, Stop>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
     let drivers = probe.drivers;
+    let wire = WireState::new();
     probe
         .wait(async move {
+            let stream = Observed::socket(stream, wire.clone());
             let (client, connection) = config.connect_raw(stream, NoTls).await?;
             drivers.track_task(tokio::spawn(async move {
                 let _ = connection.await;
             }));
-            Ok(client)
+            Ok((client, wire))
         })
         .await
 }
 async fn database(
     client: &tokio_postgres::Client,
+    wire: &WireState,
     spec: &ResolvedPostgresConnectSpec,
     probe: &mut Probe<'_>,
     report: &mut Report,
     overall: Instant,
 ) -> Result<(), String> {
     let started = Instant::now();
-    // Preserve the earlier native Test action's session-option validation.
-    // These statements affect only the disposable probe connection.
-    for sql in crate::postgres::options::driver_option_sql(
+    let pooling = match probe
+        .wait(dedicated::detect_pooling(spec, client, wire))
+        .await
+    {
+        Err(stop) => return stopped(stop, report, DiagnosisStageKind::Database, started),
+        Ok(pooling) => pooling,
+    };
+    let mut options = crate::postgres::options::driver_option_sql(
         &spec.driver_options,
         spec.safety_policy.read_only,
-    ) {
+    );
+    if pooling.pools_transactions() {
+        // A session SET would stay on a pooled server process for other
+        // clients; the regular drivers do not send them either.
+        report.warn(DiagnosisWarning::TransactionPooler);
+        if !options.is_empty() {
+            report.warn(DiagnosisWarning::SessionOptionsNotApplied);
+        }
+        options.clear();
+    }
+    // Preserve the earlier native Test action's session-option validation.
+    // These statements affect only the disposable probe connection.
+    for sql in options {
         match probe.wait(client.batch_execute(&sql)).await {
             Err(stop) => return stopped(stop, report, DiagnosisStageKind::Database, started),
             Ok(Err(_)) => {

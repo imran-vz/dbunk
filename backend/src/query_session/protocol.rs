@@ -31,6 +31,8 @@ pub struct QueryTransactionSnapshot {
     pub mode: QueryTransactionMode,
     pub status: QueryTransactionStatus,
     pub manual_isolation: QueryTransactionIsolation,
+    /// Fixed for the session: what its connection was classified as.
+    pub pooling: crate::ConnectionPooling,
 }
 impl Default for QueryTransactionSnapshot {
     fn default() -> Self {
@@ -38,6 +40,7 @@ impl Default for QueryTransactionSnapshot {
             mode: QueryTransactionMode::Autocommit,
             status: QueryTransactionStatus::Idle,
             manual_isolation: QueryTransactionIsolation::ReadCommitted,
+            pooling: crate::ConnectionPooling::Direct,
         }
     }
 }
