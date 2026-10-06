@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use super::sql_lex::{lex_sql_spanned, SpannedToken, SqlIdentifier, SqlToken};
+use super::sql_lex::{
+    is_executable_comment, lex_sql_spanned_dialect, SpannedToken, SqlIdentifier, SqlToken,
+};
+pub(crate) use super::sql_lex::SqlDialect;
 
 struct ReadEscalation {
     identifier: &'static str,
@@ -123,8 +126,15 @@ impl StatementClass {
     }
 }
 
+/// Classifies a PostgreSQL script.
 pub(crate) fn classify_script(sql: &str) -> Vec<StatementClass> {
-    match describe_script(sql) {
+    classify_script_dialect(sql, SqlDialect::Postgres)
+}
+
+/// Classifies a script under the lexical and statement rules of the engine
+/// that will run it. A script that does not lex is one unknown statement.
+pub(crate) fn classify_script_dialect(sql: &str, dialect: SqlDialect) -> Vec<StatementClass> {
+    match describe_script_dialect(sql, dialect) {
         Ok(statements) => statements
             .into_iter()
             .map(|statement| statement.class)
@@ -150,13 +160,26 @@ pub(crate) struct StatementFacts {
     pub(crate) native_placeholder: bool,
 }
 
-/// Splits a script and describes each statement. Fails when the script does
-/// not lex or its parentheses do not balance.
+/// Splits a PostgreSQL script and describes each statement. Fails when the
+/// script does not lex or its parentheses do not balance.
 pub(crate) fn describe_script(sql: &str) -> Result<Vec<StatementFacts>, ()> {
-    let statements = split_statements(lex_sql_spanned(sql)?)?;
+    describe_script_dialect(sql, SqlDialect::Postgres)
+}
+
+/// [`describe_script`] under another engine's lexical and statement rules.
+pub(crate) fn describe_script_dialect(
+    sql: &str,
+    dialect: SqlDialect,
+) -> Result<Vec<StatementFacts>, ()> {
+    let statements = split_statements(lex_sql_spanned_dialect(sql, dialect)?)?;
     Ok(statements
         .into_iter()
         .map(|statement| {
+            // A MySQL executable comment runs or not depending on the server
+            // version, so its statement cannot be proven from visible tokens.
+            let executable_comment = statement
+                .iter()
+                .any(|spanned| is_executable_comment(sql, spanned));
             let native_placeholder = statement.iter().any(|spanned| {
                 let text = &sql.as_bytes()[spanned.start..spanned.end];
                 spanned.token == SqlToken::Opaque
@@ -170,7 +193,11 @@ pub(crate) fn describe_script(sql: &str) -> Result<Vec<StatementFacts>, ()> {
                 .map(|spanned| spanned.token)
                 .collect::<Vec<_>>();
             StatementFacts {
-                class: classify_statement(&tokens),
+                class: if executable_comment {
+                    StatementClass::Unknown
+                } else {
+                    classify_statement(&tokens, dialect)
+                },
                 start,
                 end,
                 head: tokens
@@ -221,7 +248,7 @@ fn split_statements(tokens: Vec<SpannedToken>) -> Result<Vec<Vec<SpannedToken>>,
     Ok(statements)
 }
 
-fn classify_statement(tokens: &[SqlToken]) -> StatementClass {
+fn classify_statement(tokens: &[SqlToken], dialect: SqlDialect) -> StatementClass {
     let Some(head) = tokens.first().and_then(identifier) else {
         return StatementClass::Unknown;
     };
@@ -230,10 +257,17 @@ fn classify_statement(tokens: &[SqlToken]) -> StatementClass {
     }
     let keyword = head.value.to_ascii_uppercase();
     match keyword.as_str() {
-        "SELECT" | "VALUES" | "TABLE" | "SHOW" => classified_read(tokens),
-        "EXPLAIN" => classify_explain(tokens),
-        "COPY" => classify_copy(tokens),
-        "WITH" => classify_with(tokens),
+        "SELECT" | "VALUES" | "TABLE" | "SHOW" => classified_read(tokens, dialect),
+        "EXPLAIN" => classify_explain(tokens, dialect),
+        "COPY" if dialect == SqlDialect::Postgres => classify_copy(tokens),
+        "WITH" => classify_with(tokens, dialect),
+        // Server-wide variables, persisted configuration, account passwords
+        // and roles, and other threads' resource groups outlive the session.
+        "SET" if dialect == SqlDialect::MySql && mysql_set_outlives_session(tokens) => {
+            StatementClass::Ddl { destructive: true }
+        }
+        // MySQL RESET clears binary logs, replicas, or persisted variables.
+        "RESET" if dialect == SqlDialect::MySql => StatementClass::Ddl { destructive: true },
         "INSERT" | "MERGE" => StatementClass::Dml {
             unbounded: false,
             destructive: false,
@@ -253,9 +287,35 @@ fn classify_statement(tokens: &[SqlToken]) -> StatementClass {
     }
 }
 
-fn classified_read(tokens: &[SqlToken]) -> StatementClass {
+/// MySQL `SET` forms whose effect is not confined to this session. Any
+/// unquoted mention of a scope or account keyword counts, so a later
+/// `, GLOBAL x = 1` assignment or `@@global.x` cannot hide behind the first.
+fn mysql_set_outlives_session(tokens: &[SqlToken]) -> bool {
+    tokens.iter().any(|token| {
+        ["global", "persist", "persist_only", "password"]
+            .iter()
+            .any(|keyword| is_keyword(token, keyword))
+    }) || tokens
+        .get(1)
+        .is_some_and(|token| is_keyword(token, "resource"))
+        || (tokens.get(1).is_some_and(|token| is_keyword(token, "default"))
+            && tokens.get(2).is_some_and(|token| is_keyword(token, "role")))
+}
+
+fn classified_read(tokens: &[SqlToken], dialect: SqlDialect) -> StatementClass {
     let escalation = read_escalation(tokens);
     if escalation == Some(true) {
+        return StatementClass::Dml {
+            unbounded: false,
+            destructive: true,
+        };
+    }
+    // `INTO OUTFILE` and `INTO DUMPFILE` write a file on the server.
+    if dialect == SqlDialect::MySql
+        && tokens
+            .iter()
+            .any(|token| is_keyword(token, "outfile") || is_keyword(token, "dumpfile"))
+    {
         return StatementClass::Dml {
             unbounded: false,
             destructive: true,
@@ -273,7 +333,7 @@ fn classified_read(tokens: &[SqlToken]) -> StatementClass {
     StatementClass::Read
 }
 
-fn classify_explain(tokens: &[SqlToken]) -> StatementClass {
+fn classify_explain(tokens: &[SqlToken], dialect: SqlDialect) -> StatementClass {
     let mut index = 1usize;
     let analyze = if matches!(tokens.get(index), Some(SqlToken::Symbol('('))) {
         let Some(close_index) = matching_close(tokens, index) else {
@@ -303,7 +363,7 @@ fn classify_explain(tokens: &[SqlToken]) -> StatementClass {
         return StatementClass::Unknown;
     }
     if analyze {
-        classify_statement(&tokens[index..])
+        classify_statement(&tokens[index..], dialect)
     } else {
         // Without ANALYZE, EXPLAIN plans but does not execute the wrapped
         // statement, including any denylisted read-shaped expressions.
@@ -382,7 +442,7 @@ fn classify_copy(tokens: &[SqlToken]) -> StatementClass {
             if contains_write_keyword(tokens) {
                 copy_write_class(tokens, false)
             } else {
-                classified_read(tokens)
+                classified_read(tokens, SqlDialect::Postgres)
             }
         }
         // A string literal is a server file path. PROGRAM and server file
@@ -400,14 +460,84 @@ fn copy_write_class(tokens: &[SqlToken], destructive: bool) -> StatementClass {
     }
 }
 
-fn classify_with(tokens: &[SqlToken]) -> StatementClass {
-    if contains_write_keyword(tokens) {
-        StatementClass::Dml {
-            unbounded: contains_unbounded_update_delete(tokens),
-            destructive: false,
+fn classify_with(tokens: &[SqlToken], dialect: SqlDialect) -> StatementClass {
+    let write = || StatementClass::Dml {
+        unbounded: contains_unbounded_update_delete(tokens),
+        destructive: false,
+    };
+    if dialect == SqlDialect::Postgres {
+        return if contains_write_keyword(tokens) {
+            write()
+        } else {
+            classified_read(tokens, dialect)
+        };
+    }
+    // MySQL and SQLite CTE bodies are queries, so the statement after the
+    // CTE list decides. `replace` is also a function name, so it only counts
+    // as the body head; any body that is not a known query or write is
+    // unknown rather than read.
+    let Some(body) = with_body_index(tokens) else {
+        return StatementClass::Unknown;
+    };
+    let head = &tokens[body];
+    if ["select", "values", "table"]
+        .iter()
+        .any(|keyword| is_keyword(head, keyword))
+    {
+        if contains_write_keyword(tokens) {
+            write()
+        } else {
+            classified_read(tokens, dialect)
         }
+    } else if ["insert", "update", "delete", "replace"]
+        .iter()
+        .any(|keyword| is_keyword(head, keyword))
+    {
+        write()
     } else {
-        classified_read(tokens)
+        StatementClass::Unknown
+    }
+}
+
+/// The index of the statement after `WITH [RECURSIVE] name [(columns)] AS
+/// [NOT] [MATERIALIZED] (...) [, ...]`, or `None` when the CTE list does not
+/// have that shape.
+fn with_body_index(tokens: &[SqlToken]) -> Option<usize> {
+    let mut index = 1usize;
+    if tokens
+        .get(index)
+        .is_some_and(|token| is_keyword(token, "recursive"))
+    {
+        index += 1;
+    }
+    loop {
+        identifier(tokens.get(index)?)?;
+        index += 1;
+        if matches!(tokens.get(index), Some(SqlToken::Symbol('('))) {
+            index = matching_close(tokens, index)? + 1;
+        }
+        if !tokens.get(index).is_some_and(|token| is_keyword(token, "as")) {
+            return None;
+        }
+        index += 1;
+        if tokens.get(index).is_some_and(|token| is_keyword(token, "not")) {
+            index += 1;
+        }
+        if tokens
+            .get(index)
+            .is_some_and(|token| is_keyword(token, "materialized"))
+        {
+            index += 1;
+        }
+        if !matches!(tokens.get(index), Some(SqlToken::Symbol('('))) {
+            return None;
+        }
+        index = matching_close(tokens, index)? + 1;
+        if matches!(tokens.get(index), Some(SqlToken::Symbol(','))) {
+            index += 1;
+            continue;
+        }
+        return (index < tokens.len()).then_some(index);
     }
 }
 
@@ -937,5 +1067,282 @@ mod tests {
             vec![StatementClass::Unknown]
         );
         assert_eq!(classify_script("SELECT (1"), vec![StatementClass::Unknown]);
+    }
+
+    const UNBOUNDED_DML: StatementClass = StatementClass::Dml {
+        unbounded: true,
+        destructive: false,
+    };
+    const BOUNDED_DML: StatementClass = StatementClass::Dml {
+        unbounded: false,
+        destructive: false,
+    };
+
+    fn mysql(sql: &str) -> Vec<StatementClass> {
+        classify_script_dialect(sql, SqlDialect::MySql)
+    }
+
+    fn sqlite(sql: &str) -> Vec<StatementClass> {
+        classify_script_dialect(sql, SqlDialect::Sqlite)
+    }
+
+    /// A read-only connection must refuse the script even when confirmed.
+    fn assert_read_only_blocks(classes: Vec<StatementClass>) {
+        let policy = ResolvedSafetyPolicy {
+            environment: Environment::Production,
+            level: SafetyLevel::Disabled,
+            read_only: true,
+        };
+        let intent = WriteIntent::Statement { classes };
+        assert!(
+            assert_permitted(&policy, &intent, true).is_err(),
+            "{intent:?}"
+        );
+    }
+
+    #[test]
+    fn mysql_dash_without_whitespace_does_not_hide_later_statements() {
+        let sql = "SELECT 1--1;SET SESSION TRANSACTION READ WRITE;DELETE FROM t WHERE 1";
+        // The PostgreSQL lexer reads the rest as a comment.
+        assert_eq!(classify_script(sql), vec![StatementClass::Read]);
+        let classes = mysql(sql);
+        assert_eq!(
+            classes,
+            vec![StatementClass::Read, StatementClass::Session, BOUNDED_DML]
+        );
+        assert_read_only_blocks(classes);
+        assert_eq!(
+            mysql("SELECT 1 -- ; DELETE FROM t\n"),
+            vec![StatementClass::Read]
+        );
+    }
+
+    #[test]
+    fn mysql_hash_comments_split_where_mysql_splits() {
+        let sql = "SELECT 1 # '\n; DELETE FROM t; -- '";
+        assert_eq!(classify_script(sql), vec![StatementClass::Read]);
+        let classes = mysql(sql);
+        assert_eq!(classes, vec![StatementClass::Read, UNBOUNDED_DML]);
+        assert_read_only_blocks(classes);
+    }
+
+    #[test]
+    fn backtick_identifiers_do_not_hide_statements() {
+        // The PostgreSQL lexer reads `'`; DELETE ...; SELECT `'` as a string.
+        let hidden = "SELECT 1 AS `'`; DELETE FROM t; SELECT `'`";
+        assert_eq!(classify_script(hidden), vec![StatementClass::Read]);
+        for sql in [hidden, "SELECT 1 AS `'`; DELETE FROM t; SELECT '`'"] {
+            for classes in [mysql(sql), sqlite(sql)] {
+                assert_eq!(
+                    classes,
+                    vec![StatementClass::Read, UNBOUNDED_DML, StatementClass::Read],
+                    "{sql}"
+                );
+                assert_read_only_blocks(classes);
+            }
+        }
+    }
+
+    #[test]
+    fn dollar_signs_are_not_quotes_outside_postgres() {
+        let sql = "SELECT $$; DELETE FROM t; $$";
+        assert_eq!(classify_script(sql), vec![StatementClass::Read]);
+        for classes in [mysql(sql), sqlite(sql)] {
+            assert_eq!(
+                classes,
+                vec![
+                    StatementClass::Read,
+                    UNBOUNDED_DML,
+                    StatementClass::Unknown
+                ]
+            );
+            assert_read_only_blocks(classes);
+        }
+    }
+
+    #[test]
+    fn mysql_backslash_escapes_fail_closed_when_the_mode_decides_the_boundary() {
+        for sql in [
+            r"SELECT 'a\'; DELETE FROM t; SELECT \'b'",
+            r#"SELECT "a\" , '" ; DELETE FROM t ; SELECT '"#,
+        ] {
+            let classes = mysql(sql);
+            assert_eq!(classes, vec![StatementClass::Unknown], "{sql}");
+            assert_read_only_blocks(classes);
+        }
+        // The PostgreSQL lexer sees one read in the second script.
+        assert_eq!(
+            classify_script(r#"SELECT "a\" , '" ; DELETE FROM t ; SELECT '"#),
+            vec![StatementClass::Read]
+        );
+        assert_eq!(
+            mysql(r#"SELECT 'it''s', "C:\temp"; SELECT 2"#),
+            vec![StatementClass::Read, StatementClass::Read]
+        );
+    }
+
+    #[test]
+    fn mysql_executable_comments_make_their_statement_unknown() {
+        let sql = "SELECT 1 /*!50000 INTO OUTFILE '/tmp/x' */";
+        assert_eq!(classify_script(sql), vec![StatementClass::Read]);
+        let classes = mysql(sql);
+        assert_eq!(classes, vec![StatementClass::Unknown]);
+        assert_read_only_blocks(classes);
+        assert_eq!(
+            mysql("SELECT 1 /*!; DELETE FROM t */; SELECT 2"),
+            vec![StatementClass::Unknown, UNBOUNDED_DML, StatementClass::Read]
+        );
+        assert_eq!(
+            mysql("/*!40101 SET NAMES utf8 */; /*M!100100 SELECT 1 */; SELECT 2"),
+            vec![
+                StatementClass::Unknown,
+                StatementClass::Unknown,
+                StatementClass::Read
+            ]
+        );
+        assert_eq!(
+            mysql("SELECT 1 /*!50000 unterminated"),
+            vec![StatementClass::Unknown]
+        );
+        assert_eq!(
+            mysql("SELECT /*+ MAX_EXECUTION_TIME(1000) */ 1"),
+            vec![StatementClass::Read]
+        );
+        assert_eq!(
+            mysql("SELECT * FROM t INTO OUTFILE '/tmp/x'"),
+            vec![StatementClass::Dml {
+                unbounded: false,
+                destructive: true
+            }]
+        );
+        assert_eq!(
+            mysql("SELECT 1 INTO DUMPFILE '/tmp/x'"),
+            vec![StatementClass::Dml {
+                unbounded: false,
+                destructive: true
+            }]
+        );
+    }
+
+    #[test]
+    fn mysql_and_sqlite_block_comments_do_not_nest() {
+        let sql = "/* a /* b */ DELETE FROM t; /* */ */ SELECT 1";
+        assert_eq!(classify_script(sql), vec![StatementClass::Read]);
+        for classes in [mysql(sql), sqlite(sql)] {
+            assert_eq!(classes, vec![UNBOUNDED_DML, StatementClass::Unknown]);
+            assert_read_only_blocks(classes);
+        }
+    }
+
+    #[test]
+    fn sqlite_bracket_identifiers_do_not_hide_statements() {
+        let sql = "SELECT 1 AS [']; DELETE FROM t; SELECT [']";
+        assert_eq!(classify_script(sql), vec![StatementClass::Read]);
+        let classes = sqlite(sql);
+        assert_eq!(
+            classes,
+            vec![StatementClass::Read, UNBOUNDED_DML, StatementClass::Read]
+        );
+        assert_read_only_blocks(classes);
+        // SQLite strings never take backslash escapes.
+        assert_eq!(
+            sqlite(r"SELECT 'a\'; DELETE FROM t"),
+            vec![StatementClass::Read, UNBOUNDED_DML]
+        );
+    }
+
+    #[test]
+    fn with_body_decides_the_class_outside_postgres() {
+        let replace = "WITH c AS (SELECT 1) REPLACE INTO t SELECT * FROM c";
+        for classes in [sqlite(replace), mysql(replace)] {
+            assert_eq!(classes, vec![BOUNDED_DML]);
+            assert_read_only_blocks(classes);
+        }
+        for sql in [
+            "WITH c AS (SELECT 1) INSERT OR REPLACE INTO t SELECT * FROM c",
+            "WITH c AS (SELECT 1) DELETE FROM t WHERE id = 1",
+        ] {
+            assert_eq!(sqlite(sql), vec![BOUNDED_DML], "{sql}");
+        }
+        assert_eq!(
+            sqlite("WITH c AS (SELECT 1) UPDATE t SET x = 1"),
+            vec![UNBOUNDED_DML]
+        );
+        for sql in [
+            "WITH c AS (SELECT replace(name, 'a', 'b') FROM t) SELECT * FROM c",
+            "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM c WHERE n < 3), \
+             d AS NOT MATERIALIZED (SELECT 2) SELECT * FROM c, d",
+            "WITH `c` AS (SELECT 1) VALUES (1)",
+        ] {
+            assert_eq!(sqlite(sql), vec![StatementClass::Read], "{sql}");
+        }
+        for sql in [
+            "WITH c AS (SELECT 1) PRAGMA writable_schema = 1",
+            "WITH c AS (SELECT 1)",
+            "WITH c (SELECT 1) SELECT 1",
+            "WITH c AS (SELECT 1) (SELECT 2)",
+        ] {
+            assert_eq!(sqlite(sql), vec![StatementClass::Unknown], "{sql}");
+        }
+        // PostgreSQL keeps its keyword scan, where replace() is a function.
+        assert_eq!(
+            classify_script("WITH c AS (SELECT replace(x, 'a', 'b')) SELECT * FROM c"),
+            vec![StatementClass::Read]
+        );
+    }
+
+    #[test]
+    fn mysql_set_beyond_the_session_needs_confirmation_and_write_access() {
+        let destructive_ddl = StatementClass::Ddl { destructive: true };
+        for sql in [
+            "SET GLOBAL max_connections = 10",
+            "set global max_connections = 10",
+            "SET PERSIST max_connections = 10",
+            "SET PERSIST_ONLY max_connections = 10",
+            "SET PASSWORD = 'secret'",
+            "SET PASSWORD FOR 'u'@'%' = 'secret'",
+            "SET @@global.max_connections = 10",
+            "SET @@GLOBAL.max_connections = 10",
+            "SET @@persist.max_connections = 10",
+            "SET autocommit = 1, GLOBAL max_connections = 10",
+            "SET GLOBAL TRANSACTION ISOLATION LEVEL SERIALIZABLE",
+            "SET DEFAULT ROLE r TO u",
+            "SET RESOURCE GROUP rg FOR 42",
+            "RESET PERSIST",
+            "RESET MASTER",
+        ] {
+            let classes = mysql(sql);
+            assert_eq!(classes, vec![destructive_ddl.clone()], "{sql}");
+            let intent = WriteIntent::Statement {
+                classes: classes.clone(),
+            };
+            let protected = ResolvedSafetyPolicy {
+                environment: Environment::Staging,
+                level: SafetyLevel::Protected,
+                read_only: false,
+            };
+            assert!(requires_confirmation(&protected, &intent), "{sql}");
+            assert_read_only_blocks(classes);
+        }
+        for sql in [
+            "SET autocommit = 1",
+            "SET @@session.sql_mode = ''",
+            "SET SESSION TRANSACTION READ WRITE",
+            "SET NAMES utf8mb4",
+            "SET @x = 'global'",
+            "SET sql_mode = DEFAULT",
+        ] {
+            assert_eq!(mysql(sql), vec![StatementClass::Session], "{sql}");
+        }
+        // PostgreSQL SET and RESET stay session-scoped.
+        assert_eq!(one("RESET ALL"), StatementClass::Session);
+        assert_eq!(one("SET password_encryption = 'x'"), StatementClass::Session);
+    }
+
+    #[test]
+    fn postgres_only_heads_are_unknown_in_other_dialects() {
+        assert_eq!(mysql("COPY t TO STDOUT"), vec![StatementClass::Unknown]);
+        assert_eq!(sqlite("COPY t TO STDOUT"), vec![StatementClass::Unknown]);
+        assert_eq!(one("COPY t TO STDOUT"), StatementClass::Read);
     }
 }
