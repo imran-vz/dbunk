@@ -714,7 +714,10 @@ impl TableView {
             Ok(()) => {
                 self.pending_preferences = Some((id, patch));
                 self.busy = true;
-                self.preferences_status = Some("Saving table preferences".into());
+                // Progress and success go to the footer; the strip above the
+                // grid is reserved for preference errors.
+                self.preferences_status = None;
+                self.status = "Saving table preferences".into();
             }
             Err(error) => self.preferences_status = Some(error.into()),
         }
@@ -767,7 +770,8 @@ impl TableView {
         )) {
             Ok(()) => {
                 self.busy = true;
-                self.preferences_status = Some("Loading table preferences".into());
+                self.preferences_status = None;
+                self.status = "Loading table preferences".into();
             }
             Err(error) => {
                 self.busy = false;
@@ -1362,7 +1366,8 @@ impl TableView {
                                 self.browse_controls
                                     .update(cx, |controls, cx| controls.set_mode(mode, cx));
                             }
-                            self.preferences_status = Some("Table preferences saved".into());
+                            self.preferences_status = None;
+                            self.status = "Table preferences saved".into();
                         }
                         Err(error) => {
                             // A refused width must not linger as a live override.

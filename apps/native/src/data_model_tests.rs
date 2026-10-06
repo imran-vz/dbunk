@@ -1019,14 +1019,15 @@ fn sampled_table_widths_defer_to_saved_source_names_after_reordering() {
     let mut columns = crate::grid_columns::GridColumns::default();
     columns.table_columns(&page);
     assert_eq!(columns.width(0), 91.);
-    assert_eq!(columns.width(1), 76.);
+    // Sized to its header, "value text", rather than its one-character cells.
+    assert_eq!(columns.width(1), 113.);
     columns
         .load(Some(TableGridPrefs(
             serde_json::json!({"version":1,"columnOrder":["value","id"],"columnWidths":{"id":222}}),
         )))
         .unwrap();
     assert_eq!(columns.source(0), Some(1));
-    assert_eq!(columns.width(0), 76.);
+    assert_eq!(columns.width(0), 113.);
     assert_eq!(columns.width(1), 222.);
     // New pages can resize sampled defaults; explicit saved widths still win.
     page.rows[0][1] = Some("x".repeat(1000));

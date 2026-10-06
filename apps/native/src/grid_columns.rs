@@ -94,8 +94,9 @@ impl GridColumns {
             .iter()
             .enumerate()
             .map(|(index, column)| {
+                // The header shows the type beside the name, so fit both.
                 crate::column_widths::fit(
-                    &column.name,
+                    &format!("{} {}", column.name, column.cast_type),
                     page.rows
                         .iter()
                         .take(crate::column_widths::SAMPLE_ROWS)
