@@ -41,7 +41,7 @@ impl SchemaView {
             return;
         }
         if self.composing(window, cx) {
-            self.message = "Finish composing before changing the schema review".into();
+            self.fail("Finish composing before changing the schema review");
             cx.notify();
             return;
         }
@@ -90,10 +90,10 @@ impl SchemaView {
                                 self.message =
                                     "Generating bounded schema SQL; no write sent".into();
                             }
-                            Err(error) => self.message = error.into(),
+                            Err(error) => self.fail(error),
                         }
                     }
-                    Err(error) => self.message = error.into(),
+                    Err(error) => self.fail(error),
                 }
             }
             Action::Apply => {

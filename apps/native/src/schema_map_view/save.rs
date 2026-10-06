@@ -114,12 +114,18 @@ impl SchemaMapView {
             this.update_in(cx, |this, _, cx| {
                 this.file_busy = false;
                 this.file_cancel = None;
+                let failed = result.is_err();
                 let message =
                     result.unwrap_or_else(|error| format!("{kind} save refused: {error}"));
-                if this.scene.as_ref().is_some_and(|scene| scene.key() == key) {
+                let message = if this.scene.as_ref().is_some_and(|scene| scene.key() == key) {
+                    message
+                } else {
+                    format!("Earlier captured viewport: {message}")
+                };
+                if failed {
                     this.report(message);
                 } else {
-                    this.report(format!("Earlier captured viewport: {message}"));
+                    this.note(message);
                 }
                 cx.notify();
             })

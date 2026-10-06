@@ -32,13 +32,13 @@ impl TableDdlView {
             return;
         }
         if self.composing(window, cx) {
-            self.message = "Finish text composition before changing this review".into();
+            self.fail("Finish text composition before changing this review");
             cx.notify();
             return;
         }
         let result = self.act(action, cx);
         if let Err(error) = result {
-            self.message = error.into();
+            self.fail(error);
         }
         self.publish(cx);
     }
@@ -142,10 +142,10 @@ impl TableDdlView {
         }
         if let Err(error) = result {
             self.not_sent();
-            self.message = format!("Table change not sent: {error}");
+            self.fail(format!("Table change not sent: {error}"));
         } else if !self.recovery.unknown() {
             self.not_sent();
-            self.message = "Exact uncertain recovery was not preserved; nothing dispatched".into();
+            self.fail("Exact uncertain recovery was not preserved; nothing dispatched");
         } else if let Some(token) = self.flow.as_mut().and_then(|f| f.saved(id)) {
             let exact = match &token {
                 Token::Review(review) => self.recovery.matches_review(review),
@@ -155,7 +155,7 @@ impl TableDdlView {
             };
             if !exact {
                 self.flow = None;
-                self.message = "Saved intent no longer matches authority; no dispatch, recovery remains unknown".into();
+                self.fail("Saved intent no longer matches authority; no dispatch, recovery remains unknown");
                 self.publish(cx);
                 return;
             }
@@ -177,7 +177,7 @@ impl TableDdlView {
                 Err(error) => {
                     self.flow = None;
                     self.recovery.not_sent();
-                    self.message = format!("Table change not sent: {error}");
+                    self.fail(format!("Table change not sent: {error}"));
                 }
             }
         }

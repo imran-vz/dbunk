@@ -1,7 +1,8 @@
 //! Baseline geometry preview: POINT, LINESTRING and POLYGON WKT scaled into a
 //! 320x180 view with bounds. A drawing aid only, not WKT, SRID or topology
 //! validation; the database still validates the staged literal.
-use gpui::{IntoElement, PathBuilder, Styled, canvas, point, px, rgb};
+use crate::style;
+use gpui::{IntoElement, PathBuilder, Styled, canvas, point, px};
 
 /// Larger drafts are not parsed on every frame.
 pub const PREVIEW_BYTES: usize = 64 * 1024;
@@ -136,7 +137,7 @@ pub fn render(preview: &Preview) -> impl IntoElement + use<> {
                 }
             }
             if let Ok(path) = path.build() {
-                window.paint_path(path, rgb(0x60a5fa));
+                window.paint_path(path, style::accent());
             }
         },
     )

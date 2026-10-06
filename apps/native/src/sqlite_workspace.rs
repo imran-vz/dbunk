@@ -803,7 +803,7 @@ fn singular(kind: ObjectKind) -> &'static str {
 
 fn row_icon(row: &TreeRow) -> (&'static str, gpui::Rgba) {
     match &row.kind {
-        RowKind::Database { .. } => ("icons/database_zap.svg", gpui::rgb(0x8bb8a8)),
+        RowKind::Database { .. } => style::kind_icon(style::TreeKind::Database),
         RowKind::Group { kind, .. } => (kind.icon(), style::faint()),
         RowKind::Object { kind, .. } => (kind.icon(), style::dim()),
         RowKind::Truncated { .. } => ("icons/warning.svg", style::warn()),

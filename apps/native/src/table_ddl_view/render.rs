@@ -96,45 +96,48 @@ impl TableDdlView {
         let label = self.label(action, fallback);
         let enabled = self.enabled(action);
         let weak = cx.weak_entity();
-        div()
-            .id(("table-ddl-action", index))
-            .role(if matches!(action, Action::Remove) {
-                Role::CheckBox
-            } else {
-                Role::Button
-            })
-            .aria_label(label)
-            .track_focus(&self.buttons[index])
-            .tab_stop(enabled)
-            .tab_index(0)
-            .a11y_synthetic_children(move |b| {
-                if !enabled {
-                    b.parent_node().set_disabled();
-                }
-            })
-            .when(matches!(action, Action::Remove), |b| {
-                b.aria_toggled(self.remove_comment.into())
-            })
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .text_color(gpui::rgb(if enabled { 0xffffff } else { 0x888888 }))
-            .focus(|s| s.bg(crate::style::line()))
-            .on_click(cx.listener(move |this, _, window, cx| this.click(index, window, cx)))
-            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-                weak.update(cx, |this, cx| this.click(index, window, cx))
-                    .ok();
-            })
-            .child(label)
-            .into_any_element()
+        let primary = enabled && matches!(action, Action::Review | Action::Apply | Action::Confirm);
+        let toggle = matches!(action, Action::Remove).then_some(self.remove_comment);
+        crate::ui::pressed(
+            crate::ui::tool_button(
+                ("table-ddl-action", index),
+                label,
+                (toggle == Some(true)).then_some("icons/check.svg"),
+                enabled,
+                primary,
+            ),
+            toggle == Some(true),
+        )
+        .role(if matches!(action, Action::Remove) {
+            Role::CheckBox
+        } else {
+            Role::Button
+        })
+        .aria_label(label)
+        .track_focus(&self.buttons[index])
+        .tab_stop(enabled)
+        .tab_index(0)
+        .a11y_synthetic_children(move |b| {
+            if !enabled {
+                b.parent_node().set_disabled();
+            }
+        })
+        .when(matches!(action, Action::Remove), |b| {
+            b.aria_toggled(self.remove_comment.into())
+        })
+        .on_click(cx.listener(move |this, _, window, cx| this.click(index, window, cx)))
+        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+            weak.update(cx, |this, cx| this.click(index, window, cx))
+                .ok();
+        })
+        .into_any_element()
     }
     fn click(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if !self.enabled(ACTIONS[index].0) {
             return;
         }
         if self.composing(window, cx) {
-            self.message = "Finish composition before changing this review".into();
+            self.fail("Finish composition before changing this review");
             cx.notify();
             return;
         }
@@ -210,6 +213,7 @@ impl Render for TableDdlView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_field(cx);
         let text = self.review_text();
+        let failure = self.failure.shown(&self.message);
         div()
             .id("table-ddl-review")
             .key_context("TableDdl")
@@ -222,7 +226,7 @@ impl Render for TableDdlView {
             .min_h_0()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
-            .text_xs()
+            .text_size(px(crate::style::FONT))
             .capture_key_down(cx.listener(Self::key))
             .on_action(cx.listener(|this, _: &NextControl, window, cx| {
                 if !this.composing(window, cx) {
@@ -236,24 +240,10 @@ impl Render for TableDdlView {
                     cx.stop_propagation();
                 }
             }))
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_1()
-                    .children((0..ACTIONS.len()).map(|i| self.button(i, cx))),
-            )
+            .child(crate::ui::toolbar().children((0..ACTIONS.len()).map(|i| self.button(i, cx))))
             .when_some(self.value.as_ref(), |v, field| {
-                v.child(div().p_2().child(field.clone()))
+                v.child(div().px(px(8.)).pt(px(8.)).child(field.clone()))
             })
-            .child(
-                div()
-                    .id("table-ddl-status")
-                    .role(Role::Status)
-                    .aria_label(self.message.clone())
-                    .p_2()
-                    .child(self.message.clone()),
-            )
             .child(
                 div()
                     .id("table-ddl-details")
@@ -267,7 +257,9 @@ impl Render for TableDdlView {
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
-                    .p_2()
+                    .p(px(8.))
+                    .font_family(crate::style::MONO)
+                    .focus(|s| s.bg(crate::style::row_hover()))
                     .child(text)
                     .when(!self.receipt.is_empty(), |v| {
                         v.child(
@@ -275,9 +267,25 @@ impl Render for TableDdlView {
                                 .id("table-ddl-receipt")
                                 .role(Role::Label)
                                 .aria_label(self.receipt.clone())
+                                .mt(px(8.))
+                                .text_color(crate::style::dim())
                                 .child(self.receipt.clone()),
                         )
                     }),
+            )
+            .when_some(failure, |v, seq| {
+                v.child(crate::ui::error_strip(
+                    "table-ddl-error",
+                    seq,
+                    self.message.clone(),
+                ))
+            })
+            .child(
+                crate::ui::status_line()
+                    .id("table-ddl-status")
+                    .role(Role::Status)
+                    .aria_label(self.message.clone())
+                    .when(failure.is_none(), |v| v.child(self.message.clone())),
             )
     }
 }

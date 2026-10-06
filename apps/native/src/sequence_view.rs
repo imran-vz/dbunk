@@ -158,6 +158,8 @@ pub struct SequenceView {
     ready: bool,
     editable: bool,
     message: String,
+    /// Marks `message` as an error so it renders as a shaking banner.
+    failure: crate::ui::Failure,
     root: FocusHandle,
     details: FocusHandle,
     buttons: Vec<FocusHandle>,
@@ -205,6 +207,7 @@ impl SequenceView {
             message:
                 "Inspect reads the sequence without advancing it. Every write is reviewed first."
                     .into(),
+            failure: crate::ui::Failure::default(),
             root: cx.focus_handle(),
             details: cx.focus_handle(),
             buttons: (0..ACTIONS.len()).map(|_| cx.focus_handle()).collect(),
@@ -245,6 +248,11 @@ impl SequenceView {
         let id = self.next.get().wrapping_add(1);
         self.next.set(id);
         id
+    }
+    /// Sets an error status, shown as a banner that shakes on every failure.
+    fn fail(&mut self, message: impl Into<String>) {
+        self.message = message.into();
+        self.failure.record(&self.message);
     }
     fn publish(&self, cx: &mut Context<Self>) {
         cx.emit(SequenceEvent::Changed);
@@ -319,7 +327,7 @@ impl SequenceView {
                         self.message =
                             "Reading sequence metadata and value; nextval is never called".into();
                     }
-                    Err(error) => self.message = error.into(),
+                    Err(error) => self.fail(error),
                 }
             }
             Action::ReviewAdvance | Action::ReviewSet | Action::ReviewRestart => {
@@ -346,7 +354,7 @@ impl SequenceView {
                         self.message = "Review the exact SQL, parameters and effect below, then Apply. Nothing has been sent.".into();
                         window.focus(&self.details, cx);
                     }
-                    Err(error) => self.message = format!("Review refused: {error}"),
+                    Err(error) => self.fail(format!("Review refused: {error}")),
                 }
             }
             Action::SetCalled => self.set_called = !self.set_called,
@@ -361,8 +369,9 @@ impl SequenceView {
                         self.message = "Sequence action dispatched; waiting for its receipt".into();
                     }
                     Err(error) => {
-                        self.message =
-                            format!("Not sent: {error}. Review again from the observation.")
+                        self.fail(format!(
+                            "Not sent: {error}. Review again from the observation."
+                        ))
                     }
                 }
             }
@@ -376,8 +385,9 @@ impl SequenceView {
                     }
                     Err(error) => {
                         self.attempt = None;
-                        self.message =
-                            format!("Not sent: {error}. Review again from the observation.")
+                        self.fail(format!(
+                            "Not sent: {error}. Review again from the observation."
+                        ))
                     }
                 }
             }
@@ -423,10 +433,9 @@ impl SequenceView {
                             self.message = "Observed. Choose an action to review; nothing is sent until Apply.".into();
                         }
                         Ok(_) => {
-                            self.message =
-                                "Observation did not match the selected sequence; refused".into()
+                            self.fail("Observation did not match the selected sequence; refused")
                         }
-                        Err(error) => self.message = format!("Inspection failed: {error}"),
+                        Err(error) => self.fail(format!("Inspection failed: {error}")),
                     }
                 }
             }
@@ -457,7 +466,7 @@ impl SequenceView {
                     self.confirmation = Some(*confirmation);
                     self.message = "Stored policy requires confirmation of this exact action; nothing sent yet.".into();
                 } else {
-                    self.message = "Confirmation did not match the reviewed attempt; discarded. Nothing was sent.".into();
+                    self.fail("Confirmation did not match the reviewed attempt; discarded. Nothing was sent.");
                 }
             }
             Ok(SequenceSubmission::Finished(receipt)) => {
@@ -484,7 +493,9 @@ impl SequenceView {
                 self.message = self.unknown.clone().unwrap();
             }
             Err(error) => {
-                self.message = format!("Not applied: {error}. Review again from the observation.")
+                self.fail(format!(
+                    "Not applied: {error}. Review again from the observation."
+                ))
             }
         }
     }

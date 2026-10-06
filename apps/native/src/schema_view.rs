@@ -82,6 +82,8 @@ pub struct SchemaView {
     preview: String,
     reconcile_armed: bool,
     message: String,
+    /// Marks `message` as an error so it renders as a shaking banner.
+    failure: crate::ui::Failure,
     root: FocusHandle,
     details: FocusHandle,
     buttons: Vec<FocusHandle>,
@@ -123,6 +125,7 @@ impl SchemaView {
             preview: String::new(),
             reconcile_armed: false,
             message,
+            failure: crate::ui::Failure::default(),
             root: cx.focus_handle(),
             details: cx.focus_handle(),
             buttons: (0..ACTIONS.len()).map(|_| cx.focus_handle()).collect(),
@@ -187,6 +190,11 @@ impl SchemaView {
         .into();
         self.publish(cx);
     }
+    /// Sets an error status, shown as a banner that shakes on every failure.
+    fn fail(&mut self, message: impl Into<String>) {
+        self.message = message.into();
+        self.failure.record(&self.message);
+    }
     fn publish(&self, cx: &mut Context<Self>) {
         cx.emit(SchemaEvent::Changed);
         cx.emit(SchemaEvent::Activity(self.has_pending()));
@@ -214,7 +222,7 @@ impl SchemaView {
         }
         if let Err(error) = result {
             self.cancel_before_dispatch();
-            self.message = format!("Apply was not sent: {error}");
+            self.fail(format!("Apply was not sent: {error}"));
             self.publish(cx);
             return;
         }
@@ -235,7 +243,7 @@ impl SchemaView {
             Err(error) => {
                 self.applying = None;
                 self.recovery.not_sent();
-                self.message = format!("Apply was not sent: {error}");
+                self.fail(format!("Apply was not sent: {error}"));
             }
         }
         self.publish(cx);
@@ -288,10 +296,9 @@ impl SchemaView {
                         }
                     }
                     Ok(_) => {
-                        self.message =
-                            "Review identity or size was inconsistent; no write permitted".into()
+                        self.fail("Review identity or size was inconsistent; no write permitted")
                     }
-                    Err(error) => self.message = format!("Review refused: {error}"),
+                    Err(error) => self.fail(format!("Review refused: {error}")),
                 }
             }
             TableMessage::SchemaApplied(id, result)
@@ -315,7 +322,7 @@ impl SchemaView {
                             self.message = "Stored policy requires confirmation for this exact SQL; no write sent yet".into();
                         } else {
                             self.applying = None;
-                            self.message = "Confirmation mismatch; recovery remains unknown".into();
+                            self.fail("Confirmation mismatch; recovery remains unknown");
                         }
                     }
                     Ok(CreateSchemaSubmission::Finished(receipt)) => {
@@ -339,9 +346,9 @@ impl SchemaView {
                                 ),
                             };
                         } else {
-                            self.message =
-                                "Receipt did not match this attempt; recovery remains unknown"
-                                    .into();
+                            self.fail(
+                                "Receipt did not match this attempt; recovery remains unknown",
+                            );
                         }
                     }
                     Err(error) => {
@@ -349,7 +356,7 @@ impl SchemaView {
                         if !matches!(error.as_ref(), CreateSchemaError::OutcomeUnavailable) {
                             self.recovery.not_sent();
                         }
-                        self.message = format!("Schema submission: {error}; saved intent retained");
+                        self.fail(format!("Schema submission: {error}; saved intent retained"));
                     }
                 }
             }

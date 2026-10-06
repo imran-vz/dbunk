@@ -95,6 +95,8 @@ pub struct MaintenanceView {
     editable: bool,
     armed: bool,
     message: String,
+    /// Marks `message` as an error so it renders as a shaking banner.
+    failure: crate::ui::Failure,
     receipt: String,
     root: FocusHandle,
     details: FocusHandle,
@@ -114,6 +116,7 @@ impl MaintenanceView {
             journal, review: None, reviewing: None, cancel_review: false, flow: None,
             controls: None, ready: false, editable: true, armed: false,
             message: "Choose an action to observe the target and review SQL. Recovered records cannot be applied.".into(),
+            failure: crate::ui::Failure::default(),
             receipt: String::new(), root: cx.focus_handle(), details: cx.focus_handle(),
             buttons: (0..ACTIONS.len()).map(|_| cx.focus_handle()).collect(), scroll: ScrollHandle::new() }
     }
@@ -166,6 +169,11 @@ impl MaintenanceView {
         } else {
             false
         }
+    }
+    /// Sets an error status, shown as a banner that shakes on every failure.
+    fn fail(&mut self, message: impl Into<String>) {
+        self.message = message.into();
+        self.failure.record(&self.message);
     }
     fn publish(&self, cx: &mut Context<Self>) {
         cx.emit(MaintenanceEvent::Changed);
@@ -227,7 +235,7 @@ impl MaintenanceView {
                         self.receipt.clear();
                         self.message = "Observing the selected target; no maintenance sent".into();
                     }
-                    Err(error) => self.message = error.into(),
+                    Err(error) => self.fail(error),
                 }
             }
             Action::Apply | Action::Confirm => {
@@ -288,7 +296,7 @@ impl MaintenanceView {
         }
         if let Err(error) = result {
             self.cancel_before_dispatch();
-            self.message = format!("Maintenance not sent: {error}");
+            self.fail(format!("Maintenance not sent: {error}"));
         } else if let Some(token) = self.flow.as_mut().and_then(|flow| flow.saved(id)) {
             let command = match token {
                 Token::Review(review) => TableCommand::MaintenanceApply(id, review),
@@ -310,7 +318,7 @@ impl MaintenanceView {
                 Err(error) => {
                     self.flow = None;
                     self.not_sent();
-                    self.message = format!("Maintenance not sent: {error}");
+                    self.fail(format!("Maintenance not sent: {error}"));
                 }
             }
         }
@@ -336,8 +344,8 @@ impl MaintenanceView {
                                 self.message = "Review the observed target, SQL, deadlines and limitations below before applying.".into();
                             }
                         }
-                        Ok(_) => self.message = "Maintenance review exceeds its allowance".into(),
-                        Err(error) => self.message = format!("Maintenance review refused: {error}"),
+                        Ok(_) => self.fail("Maintenance review exceeds its allowance"),
+                        Err(error) => self.fail(format!("Maintenance review refused: {error}")),
                     }
                 }
             }
@@ -367,7 +375,7 @@ impl MaintenanceView {
                             self.message = "Stored policy requires confirmation of this exact target and action; no maintenance sent yet.".into();
                         } else {
                             self.flow = None;
-                            self.message = "Confirmation mismatch; recovery remains unknown".into();
+                            self.fail("Confirmation mismatch; recovery remains unknown");
                         }
                     }
                     Ok(MaintenanceSubmission::Finished(receipt)) => {
@@ -425,8 +433,7 @@ impl MaintenanceView {
                                 }
                             }
                         } else {
-                            self.message =
-                                "Maintenance receipt mismatch; recovery remains unknown".into();
+                            self.fail("Maintenance receipt mismatch; recovery remains unknown");
                         }
                     }
                     Err(error) => {
@@ -434,8 +441,7 @@ impl MaintenanceView {
                         if *error != MaintenanceError::OutcomeUnavailable {
                             self.not_sent();
                         }
-                        self.message =
-                            format!("Maintenance submission: {error}; recovery retained");
+                        self.fail(format!("Maintenance submission: {error}; recovery retained"));
                     }
                 }
             }

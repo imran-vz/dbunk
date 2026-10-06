@@ -243,9 +243,14 @@ identity,..}
                         .top(px(origin.y as f32))
                         .w(px(width as f32))
                         .h(px(height as f32))
-                        .bg(crate::style::bg())
+                        .bg(crate::style::panel())
+                        .rounded(px(4.))
                         .border_1()
-                        .border_color(gpui::rgb(if selected { 0xffffff } else { 0x666666 }))
+                        .border_color(if selected {
+                            crate::style::accent()
+                        } else {
+                            crate::style::line()
+                        })
                         .text_size(px((12. * camera.zoom) as f32))
                         .overflow_hidden()
                         .child(
@@ -263,6 +268,7 @@ identity,..}
                                 .top(px((24. * camera.zoom) as f32))
                                 .left(px((8. * camera.zoom) as f32))
                                 .text_size(px((10. * camera.zoom) as f32))
+                                .text_color(crate::style::faint())
                                 .whitespace_nowrap()
                                 .child(format!(
                                     "{} columns{}{}{}",
@@ -316,6 +322,7 @@ identity,..}
                             .whitespace_nowrap()
                             .text_size(px((crate::schema_map_model::EDGE_LABEL_FONT_SIZE
                                 * camera.zoom) as f32))
+                            .text_color(crate::style::dim())
                             .overflow_hidden()
                             .child(edge.label.clone()),
                     )
@@ -358,7 +365,7 @@ identity,..}
                 };
                 for edge in scene.edges() {
                     let selected = matches!(view.selection, Some(Selection::Edge { identity, .. }) if identity == edge.identity);
-                    let color = gpui::rgb(if selected { 0xffffff } else { 0x888888 });
+                    let color = if selected { crate::style::accent() } else { crate::style::faint() };
                     let mut path = PathBuilder::stroke(px(if selected { 2.5 } else { 1.5 }));
                     match &edge.path {
                         Path::Curve(p) => {
