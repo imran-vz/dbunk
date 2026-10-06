@@ -38,7 +38,9 @@ use sqlx::{TypeInfo, ValueRef};
 use tokio::sync::{mpsc, oneshot};
 
 use super::Backend;
-use crate::postgres::sql_class::{classify_script, describe_script, StatementClassSummary};
+use crate::postgres::sql_class::{
+    classify_script_dialect, describe_script_dialect, SqlDialect, StatementClassSummary,
+};
 use crate::safety::policy::{
     assert_permitted, AuditDisposition, ResolvedSafetyPolicy, SafetyRefusal, WriteIntent,
 };
@@ -874,7 +876,7 @@ pub(crate) async fn execute(
     confirmed: bool,
 ) -> Result<SqliteExecution, String> {
     let intent = WriteIntent::Statement {
-        classes: classify_script(sql),
+        classes: classify_script_dialect(sql, SqlDialect::Sqlite),
     };
     let authorization = match assert_permitted(&config.policy, &intent, confirmed) {
         Ok(authorization) => authorization,
@@ -925,7 +927,7 @@ pub(crate) async fn execute(
     collector.finish_statement();
     // A single read that returned no rows still shows its column header.
     if collector.sets.is_empty()
-        && describe_script(sql).is_ok_and(|statements| {
+        && describe_script_dialect(sql, SqlDialect::Sqlite).is_ok_and(|statements| {
             statements.len() == 1
                 && matches!(
                     statements[0].class,
