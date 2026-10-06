@@ -101,7 +101,7 @@ async fn schema_alter_exact_restore_is_read_only_and_written_as_current_version_
             assert_eq!(load(&pool).await.unwrap().snapshot, Some(expected));
             assert_eq!(raw(&pool).await, before);
             let value: serde_json::Value = serde_json::from_str(&before).unwrap();
-            assert_eq!(value["version"], 15);
+            assert_eq!(value["version"], 16);
             let record = &value["snapshot"]["documents"][0]["schemaAlter"];
             assert_eq!(record["target"]["schema"], " Exact \"資料");
             assert_eq!(record["target"]["identity"]["schemaOid"], 34);
@@ -121,7 +121,7 @@ async fn schema_alter_invalid_recovery_cannot_overwrite_original_record() {
         let mut value = base.clone();
         match defect {
             0 => value["version"] = 13.into(),
-            1 => value["version"] = 16.into(),
+            1 => value["version"] = 17.into(),
             2 => value["snapshot"]["documents"][0]["connectionId"] = serde_json::Value::Null,
             3 => value["snapshot"]["documents"][0]["tool"] = "administration".into(),
             _ => {

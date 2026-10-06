@@ -72,6 +72,7 @@ mod query_library_view;
 mod query_result;
 mod redis_model;
 mod redis_view;
+mod reduce_motion;
 mod result_export;
 mod results;
 mod server_details_model;
@@ -106,10 +107,41 @@ mod window_geometry;
 mod workbench;
 mod workspace;
 
-use gpui::{App, Bounds, KeyBinding, WindowBounds, WindowOptions, prelude::*, px, size};
+use gpui::{
+    App, Bounds, KeyBinding, Window, WindowBounds, WindowOptions, actions, prelude::*, px, size,
+};
 use settings::{DEFAULT_KEYMAP_PATH, KeymapFile};
 use std::process::ExitCode;
 use workbench::*;
+
+// App-level shell commands. Their handlers find the workspace window so the
+// shell keeps owning its own state.
+actions!(native_app, [SwitchProject, FocusConnectionSearch]);
+
+/// Bound on the final host teardown during quit. `Host::shutdown` has its own
+/// 3 s grace / 5 s total deadlines; this only guards a wedged join.
+const QUIT_HOST_SHUTDOWN: std::time::Duration = std::time::Duration::from_secs(6);
+
+type WorkspaceUpdate =
+    fn(&mut workspace::Workspace, &mut Window, &mut gpui::Context<workspace::Workspace>);
+
+/// Global action listeners run while the dispatching window is being updated,
+/// so the workspace window is reached after that update via `defer`.
+fn with_workspace(cx: &mut App, update: WorkspaceUpdate) {
+    cx.defer(move |cx| {
+        let handle = cx
+            .active_window()
+            .and_then(|window| window.downcast::<workspace::Workspace>())
+            .or_else(|| {
+                cx.windows()
+                    .into_iter()
+                    .find_map(|window| window.downcast::<workspace::Workspace>())
+            });
+        if let Some(handle) = handle {
+            handle.update(cx, update).ok();
+        }
+    });
+}
 
 fn init_editor(cx: &mut App) -> anyhow::Result<()> {
     settings::init(cx);
@@ -340,6 +372,9 @@ fn init_workspace_commands(cx: &mut App) {
         KeyBinding::new("cmd-n", NewConnection, Some("NativeWorkspace")),
         KeyBinding::new("cmd-shift-o", FocusNavigator, Some("NativeWorkspace")),
         KeyBinding::new("cmd-k", OpenAnything, Some("NativeWorkspace")),
+        KeyBinding::new("cmd-o", OpenTable, Some("NativeWorkspace")),
+        KeyBinding::new("cmd-p", SwitchProject, Some("NativeWorkspace")),
+        KeyBinding::new("cmd-shift-c", FocusConnectionSearch, Some("NativeWorkspace")),
         KeyBinding::new("ctrl-`", ToggleConsole, Some("NativeWorkspace")),
         KeyBinding::new("cmd-\\", ToggleSidebar, Some("NativeWorkspace")),
         KeyBinding::new("cmd-j", ToggleStatusBar, Some("NativeWorkspace")),
@@ -353,6 +388,16 @@ fn init_workspace_commands(cx: &mut App) {
         KeyBinding::new("cmd-,", CredentialSettings, Some("NativeWorkspace")),
         KeyBinding::new("cmd-q", Quit, Some("NativeWorkspace")),
     ]);
+    cx.on_action(|_: &SwitchProject, cx| {
+        with_workspace(cx, |workspace, window, cx| {
+            workspace.open_projects_menu(window, cx)
+        })
+    });
+    cx.on_action(|_: &FocusConnectionSearch, cx| {
+        with_workspace(cx, |workspace, window, cx| {
+            workspace.focus_connection_search(window, cx)
+        })
+    });
     cx.set_menus([
         Menu::new("dbunk Native").items([
             MenuItem::action("Open Anything…", OpenAnything),
@@ -417,6 +462,9 @@ fn init_workspace_commands(cx: &mut App) {
         ]),
         Menu::new("Connections").items([
             MenuItem::action("New connection…", NewConnection),
+            MenuItem::action("Open table…", OpenTable),
+            MenuItem::action("Switch project…", SwitchProject),
+            MenuItem::action("Search connections", FocusConnectionSearch),
             MenuItem::action("Filter schemas and objects…", FocusNavigator),
             MenuItem::action("Toggle console", ToggleConsole),
             MenuItem::action("Disconnect query", Disconnect),
@@ -469,10 +517,12 @@ fn run() -> anyhow::Result<()> {
         controller::Host::new(backend, runtime.handle().clone())
     };
     let application_host = host.clone();
+    let quit_host = host.clone();
     gpui_platform::application()
         .with_assets(assets::Assets)
         .run(move |cx: &mut App| {
             init_editor(cx).expect("native editor initialization");
+            reduce_motion::install(cx);
             let bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
             if workspace_mode {
                 init_workspace_commands(cx);
@@ -524,6 +574,17 @@ fn run() -> anyhow::Result<()> {
                         |window, cx| {
                             let workspace = cx
                                 .new(|cx| workspace::Workspace::new(application_host, window, cx));
+                            // Registered before the host handler below, and GPUI
+                            // runs quit handlers in registration order: drafts
+                            // flush before the backend is fenced.
+                            let quitting = workspace.downgrade();
+                            cx.on_app_quit(move |cx| {
+                                quitting
+                                    .update(cx, |workspace, cx| workspace.flush_drafts_on_quit(cx))
+                                    .ok();
+                                async {}
+                            })
+                            .detach();
                             window.on_window_should_close(cx, move |window, cx| {
                                 if let Some(Some(workspace)) = window.root::<workspace::Workspace>()
                                 {
@@ -568,6 +629,23 @@ fn run() -> anyhow::Result<()> {
                     .update(cx, |_, window, _| window.activate_window())
                     .expect("activate native window");
             }
+            // OS-driven quit never returns from `run` (AppKit calls `exit()`
+            // after these handlers), so the joined teardown happens here, on
+            // the main thread, bounded. It is latched, so a completed close
+            // makes this immediate.
+            cx.on_app_quit(move |_| {
+                let host = quit_host.clone();
+                match host
+                    .runtime
+                    .block_on(tokio::time::timeout(QUIT_HOST_SHUTDOWN, host.shutdown()))
+                {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => log::error!("Native host shutdown on quit: {error}"),
+                    Err(_) => log::error!("Native host shutdown on quit timed out"),
+                }
+                async {}
+            })
+            .detach();
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {
                     cx.quit();
@@ -576,8 +654,10 @@ fn run() -> anyhow::Result<()> {
             .detach();
             cx.activate(true);
         });
-    // GPUI's quit hooks have a 200 ms deadline. Own the final join outside its
-    // event loop so OS-driven quit also waits for sockets and profile storage.
+    // On macOS `run` does not return: quit ends in `exit()` after the
+    // `on_app_quit` handlers above have flushed drafts and joined the host.
+    // This tail only runs on platforms whose event loop returns; shutdown is
+    // latched, so it is a no-op after the quit handler.
     let result = runtime
         .block_on(host.shutdown())
         .map_err(anyhow::Error::msg);

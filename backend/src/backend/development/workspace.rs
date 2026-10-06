@@ -119,6 +119,17 @@ impl fmt::Debug for WorkspaceDocument {
     }
 }
 
+/// Version 16. View-only workspace shell state. Advisory: a project that no
+/// longer exists falls back to the first project when connections load.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
+pub struct WorkspaceShell {
+    pub sidebar_collapsed: bool,
+    pub status_bar_collapsed: bool,
+    pub project: Option<String>,
+    pub environment: Option<crate::backend::DevelopmentEnvironment>,
+}
+
 /// Document order is the tab order. This payload has no runtime or credential
 /// fields. Draft SQL is plaintext, independently of credential encryption.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -133,6 +144,9 @@ pub struct WorkspaceSnapshot {
     pub layout: Layout,
     pub density: WorkspaceDensity,
     pub navigator_width: f32,
+    /// Version 16. Older records load as `None` and keep the shell defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell: Option<WorkspaceShell>,
 }
 
 impl Default for WorkspaceSnapshot {
@@ -145,6 +159,7 @@ impl Default for WorkspaceSnapshot {
             layout: Layout::Stacked,
             density: WorkspaceDensity::default(),
             navigator_width: 240.0,
+            shell: None,
         }
     }
 }
@@ -438,6 +453,14 @@ fn validate(mut snapshot: WorkspaceSnapshot) -> Result<WorkspaceSnapshot, Worksp
         None if ids.is_empty() => {}
         _ => return Err(WorkspaceError::InvalidSnapshot),
     }
+    if snapshot.shell.as_ref().is_some_and(|shell| {
+        shell
+            .project
+            .as_ref()
+            .is_some_and(|project| project.is_empty() || project.len() > 512)
+    }) {
+        return Err(WorkspaceError::InvalidSnapshot);
+    }
     snapshot.navigator_width = if snapshot.navigator_width.is_finite() {
         snapshot.navigator_width.clamp(160.0, 480.0)
     } else {
@@ -473,7 +496,7 @@ fn encode(snapshot: WorkspaceSnapshot) -> Result<String, WorkspaceError> {
     serde_json::to_writer(
         &mut output,
         &StoredWorkspace {
-            version: 15,
+            version: 16,
             snapshot: validate(snapshot)?,
         },
     )
@@ -487,12 +510,20 @@ fn decode(encoded: &str) -> Result<WorkspaceSnapshot, WorkspaceError> {
         version: u64,
     }
     let version: Version = serde_json::from_str(encoded).map_err(|_| WorkspaceError::Corrupt)?;
-    // Version 14 added `schemaAlter`; version 15 added `objectDdl`.
-    if !matches!(version.version, 1..=15) {
+    // Version 14 added `schemaAlter`; version 15 added `objectDdl`; version
+    // 16 added `shell`.
+    if !matches!(version.version, 1..=16) {
         return Err(WorkspaceError::UnsupportedVersion(version.version));
     }
     let raw: serde_json::Value =
         serde_json::from_str(encoded).map_err(|_| WorkspaceError::Corrupt)?;
+    if version.version < 16
+        && raw["snapshot"]
+            .as_object()
+            .is_some_and(|snapshot| snapshot.contains_key("shell"))
+    {
+        return Err(WorkspaceError::Corrupt);
+    }
     if version.version < 15
         && raw["snapshot"]["documents"]
             .as_array()

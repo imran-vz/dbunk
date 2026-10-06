@@ -82,7 +82,7 @@ async fn global_copy_journal_survives_no_tabs_and_restores_applying_as_unknown_w
         revision = Some(save(&pool, revision, snapshot(job.clone())).await.unwrap());
         let original = raw(&pool).await;
         let stored: serde_json::Value = serde_json::from_str(&original).unwrap();
-        assert_eq!(stored["version"], 15);
+        assert_eq!(stored["version"], 16);
         if state == WorkspaceTableCopyState::Applying {
             assert_eq!(stored["snapshot"]["copyJobs"][0]["state"], "applying");
         }
@@ -125,7 +125,7 @@ async fn copy_unknown_future_and_pre10_fields_preserve_original_storage() {
                 value["version"] = 9.into();
                 value["snapshot"]["copyJobs"] = serde_json::json!([]);
             }
-            2 => value["version"] = 16.into(),
+            2 => value["version"] = 17.into(),
             3 => value["snapshot"]["copyJobs"][0]["reviewToken"] = "not-authority".into(),
             4 => value["snapshot"]["copyJobs"][0]["state"] = "replay".into(),
             5 => value["snapshot"]["copyJobs"][0]["attemptId"] = "invalid".into(),

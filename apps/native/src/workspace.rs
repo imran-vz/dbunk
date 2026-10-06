@@ -170,6 +170,14 @@ pub struct Workspace {
     restored: bool,
     closing: bool,
     cleanup_failed: bool,
+    /// Drafts are flushed and the writer stopped (or none was at risk). A
+    /// latched cleanup error then no longer blocks quitting.
+    drafts_durable: bool,
+    /// An explicit discard owns the writer; quit must not flush it.
+    discarding: bool,
+    /// Coalesces hot-path draft edits; see `draft_changed`.
+    saves: crate::persistence::SaveCoalescer,
+    save_timer: Option<Task<()>>,
     load_error: Option<WorkspaceError>,
     message: Option<String>,
     /// Bumped by each user action; keys the error shake so a repeated
@@ -446,6 +454,10 @@ impl Workspace {
             restored: false,
             closing: false,
             cleanup_failed: false,
+            drafts_durable: false,
+            discarding: false,
+            saves: Default::default(),
+            save_timer: None,
             load_error: None,
             message: None,
             message_seq: 0,
@@ -516,6 +528,14 @@ impl Workspace {
                                     this.density = snapshot.density;
                                     this.navigator_width = snapshot.navigator_width;
                                     this.active = snapshot.active_document_id;
+                                    // Snapshots before version 16 carry no
+                                    // shell state and keep the defaults.
+                                    if let Some(shell) = snapshot.shell {
+                                        this.shell.sidebar_collapsed = shell.sidebar_collapsed;
+                                        this.shell.status_collapsed = shell.status_bar_collapsed;
+                                        this.shell.project = shell.project;
+                                        this.shell.env_filter = shell.environment;
+                                    }
                                     this.copies.update(cx, |store, cx| {
                                         store.restore(snapshot.copy_jobs, cx)
                                     });
@@ -757,7 +777,7 @@ impl Workspace {
                     this.open_library_query(query, window, cx)
                 }
                 DocumentEvent::CachedSchemasChanged => this.refresh_comparison_connections(cx),
-                DocumentEvent::DraftChanged => this.changed(cx),
+                DocumentEvent::DraftChanged => this.draft_changed(cx),
                 DocumentEvent::LayoutChanged(layout) => {
                     this.layout = *layout;
                     for document in &this.documents {
@@ -827,6 +847,12 @@ impl Workspace {
             navigator_width: self.navigator_width,
             copy_jobs: self.copies.read(cx).snapshot(),
             seed_jobs: self.seeds.read(cx).snapshot(),
+            shell: Some(dbunk_lib::backend::WorkspaceShell {
+                sidebar_collapsed: self.shell.sidebar_collapsed,
+                status_bar_collapsed: self.shell.status_collapsed,
+                project: self.shell.project.clone(),
+                environment: self.shell.env_filter,
+            }),
         }
     }
     fn snapshot_payload_bytes(&self, cx: &gpui::App) -> usize {
@@ -840,10 +866,53 @@ impl Workspace {
             },
         )
     }
+    /// Hot path (keystrokes, cell edits, shell toggles): at most one snapshot
+    /// per `DRAFT_COALESCE` window. Apply, copy, seed, close and quit still
+    /// call `changed` for an immediate, revision-exact submission.
+    fn draft_changed(&mut self, cx: &mut Context<Self>) {
+        if self.closing || !self.restored || self.writer.is_none() {
+            return;
+        }
+        if !self.saves.mark() {
+            return;
+        }
+        self.save_timer = Some(cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(crate::persistence::DRAFT_COALESCE)
+                    .await;
+                let wait = this
+                    .update(cx, |this, cx| match this.saves.fire(this.busy) {
+                        crate::persistence::CoalescedSave::Save => {
+                            this.changed(cx);
+                            false
+                        }
+                        crate::persistence::CoalescedSave::Wait => true,
+                        crate::persistence::CoalescedSave::Idle => false,
+                    })
+                    .unwrap_or(false);
+                if !wait {
+                    break;
+                }
+            }
+        }));
+    }
+    /// Immediate submission. While an exact barrier is in flight (`busy`), a
+    /// newer revision would fail that apply as stale, so the change is queued
+    /// and replayed by the coalescing timer once the barrier completes.
     fn changed(&mut self, cx: &mut Context<Self>) {
         if self.closing || !self.restored {
             return;
         }
+        if self.busy {
+            self.draft_changed(cx);
+            cx.notify();
+            return;
+        }
+        self.submit(cx);
+    }
+    fn submit(&mut self, cx: &mut Context<Self>) {
+        self.saves.saved();
         if let Some(writer) = &self.writer {
             let payload_bytes = self.snapshot_payload_bytes(cx);
             // This is a lower bound on encoded size, checked before SQL/draft
@@ -1477,33 +1546,38 @@ impl Workspace {
             Operation::ToggleSidebar => {
                 self.shell.sidebar_collapsed = !self.shell.sidebar_collapsed;
                 self.shell.sidebar_toggled = true;
-                self.shell.sidebar_settling = true;
                 self.shell.sidebar_epoch += 1;
                 let epoch = self.shell.sidebar_epoch;
-                // Both ends stay rendered until the spring has settled.
-                cx.spawn(async move |this, cx| {
-                    cx.background_executor()
-                        .timer(Duration::from_millis(450))
-                        .await;
-                    this.update(cx, |this, cx| {
-                        if this.shell.sidebar_epoch == epoch {
-                            this.shell.sidebar_settling = false;
-                            cx.notify();
-                        }
+                // Both ends stay rendered until the spring has settled. With
+                // Reduce motion the width snaps, so nothing needs to settle.
+                let settle = crate::reduce_motion::sidebar_settle(cx.reduce_motion());
+                self.shell.sidebar_settling = settle.is_some();
+                if let Some(settle) = settle {
+                    cx.spawn(async move |this, cx| {
+                        cx.background_executor().timer(settle).await;
+                        this.update(cx, |this, cx| {
+                            if this.shell.sidebar_epoch == epoch {
+                                this.shell.sidebar_settling = false;
+                                cx.notify();
+                            }
+                        })
+                        .ok();
                     })
-                    .ok();
-                })
-                .detach();
+                    .detach();
+                }
+                self.draft_changed(cx);
                 cx.notify();
                 return;
             }
             Operation::ToggleStatusBar => {
                 self.shell.status_collapsed = !self.shell.status_collapsed;
+                self.draft_changed(cx);
                 cx.notify();
                 return;
             }
             Operation::EnvFilter(environment) => {
                 self.shell.env_filter = *environment;
+                self.draft_changed(cx);
                 cx.notify();
                 return;
             }
@@ -1514,6 +1588,7 @@ impl Workspace {
             }
             Operation::SelectProject(project) => {
                 self.shell.project = Some(project.clone());
+                self.draft_changed(cx);
                 cx.notify();
                 return;
             }
@@ -2178,8 +2253,59 @@ impl Workspace {
     pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.finish_close(false, window, cx);
     }
+    /// ⌘P: toggles the sidebar's project switcher, revealing the sidebar first.
+    pub fn open_projects_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.shell.sidebar_collapsed {
+            self.activate(Operation::ToggleSidebar, window, cx);
+        }
+        self.activate(Operation::ShellMenu(shell::ShellMenu::Projects), window, cx);
+    }
+    /// Moves focus to the sidebar's connection search, revealing the sidebar.
+    pub fn focus_connection_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.shell.sidebar_collapsed {
+            self.activate(Operation::ToggleSidebar, window, cx);
+        }
+        window.focus(&self.shell.search.focus_handle(cx), cx);
+        cx.notify();
+    }
+    /// OS-driven quit (Dock, logout, `terminate:` from another app) bypasses
+    /// `close`: GPUI runs quit handlers and then AppKit calls `exit()`. The
+    /// handler is synchronous, so this blocks for a bounded final flush. After
+    /// a completed close the writer is already stopped and this returns at once.
+    pub fn flush_drafts_on_quit(&mut self, cx: &mut Context<Self>) {
+        if self.discarding {
+            return;
+        }
+        let Some(writer) = self.writer.clone() else {
+            return;
+        };
+        if !self.closing && self.restored {
+            // Quit supersedes any in-flight apply barrier; save the latest.
+            self.submit(cx);
+        }
+        self.closing = true;
+        let flushed = self.host.runtime.block_on(tokio::time::timeout(
+            Duration::from_secs(3),
+            writer.shutdown(),
+        ));
+        match flushed {
+            Ok(Ok(())) => self.drafts_durable = true,
+            Ok(Err(error)) => log::error!("Draft flush on quit failed: {error}"),
+            Err(_) => log::error!("Draft flush on quit timed out"),
+        }
+    }
     fn finish_close(&mut self, discard: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.closing || self.busy {
+            return;
+        }
+        // Host cleanup results are latched, so a retry cannot succeed. Once the
+        // drafts are durable nothing is at risk: quit anyway and log the error.
+        if self.cleanup_failed && self.drafts_durable && !discard {
+            log::error!(
+                "Quitting after failed workspace cleanup: {}",
+                self.message.as_deref().unwrap_or("unknown error")
+            );
+            cx.quit();
             return;
         }
         // Failed restore creates no writer or editable documents. Normal quit
@@ -2188,6 +2314,7 @@ impl Workspace {
             self.changed(cx);
         }
         self.closing = true;
+        self.discarding = discard;
         self.navigator
             .update(cx, |view, cx| view.set_editable(false, cx));
         for document in &self.documents {
@@ -2200,6 +2327,14 @@ impl Workspace {
         } else {
             self.writer.clone()
         };
+        // Without a writer nothing new is at risk (a failed restore keeps the
+        // original record); after a failed attempt keep what that one proved.
+        let durable = Arc::new(std::sync::atomic::AtomicBool::new(if self.cleanup_failed {
+            self.drafts_durable
+        } else {
+            writer.is_none()
+        }));
+        let task_durable = durable.clone();
         let host = self.host.clone();
         let engine_sessions = self.detach_engines(cx);
         // Fullscreen keeps the previous record. GPUI reports the frame origin
@@ -2228,11 +2363,14 @@ impl Workspace {
                         .discard_and_shutdown()
                         .await
                         .map_err(|error| (error.to_string(), false))?;
+                    task_durable.store(true, std::sync::atomic::Ordering::Release);
                 } else {
                     writer
                         .flush()
                         .await
                         .map_err(|error| (error.to_string(), true))?;
+                    // Admission is closed (`closing`), so this revision is final.
+                    task_durable.store(true, std::sync::atomic::Ordering::Release);
                     writer
                         .shutdown()
                         .await
@@ -2260,11 +2398,17 @@ impl Workspace {
                 Ok(Ok(())) => cx.quit(),
                 result => {
                     this.closing = false;
+                    this.discarding = false;
+                    this.drafts_durable = durable.load(std::sync::atomic::Ordering::Acquire);
                     let (error, resumable) = match result {
                         Ok(Err(error)) => error,
                         _ => ("Workspace cleanup failed".into(), false),
                     };
-                    this.message = Some(error);
+                    this.message = Some(if !resumable && this.drafts_durable {
+                        format!("{error}. Drafts are saved; Retry or ⌘Q quits anyway.")
+                    } else {
+                        error
+                    });
                     this.cleanup_failed = !resumable;
                     this.navigator
                         .update(cx, |view, cx| view.set_editable(resumable, cx));

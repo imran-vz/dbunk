@@ -48,6 +48,53 @@ impl Drop for ExportSnapshotLease {
     }
 }
 
+/// Hot-path edits (keystrokes, table cell drafts) are coalesced into one
+/// snapshot per window instead of one per event; the writer then debounces
+/// the SQLite commit. Structural changes and exact barriers save immediately.
+pub const DRAFT_COALESCE: Duration = Duration::from_millis(250);
+
+/// Pure coalescing state; the workspace owns the timer task. While an exact
+/// apply/copy/seed barrier is in flight a save would supersede its revision
+/// and fail it as stale, so a due save waits for the barrier to finish.
+#[derive(Debug, Default)]
+pub struct SaveCoalescer {
+    dirty: bool,
+    armed: bool,
+}
+#[derive(Debug, PartialEq, Eq)]
+pub enum CoalescedSave {
+    /// Build and submit one snapshot now.
+    Save,
+    /// Still dirty but a barrier is in flight; re-arm the timer.
+    Wait,
+    /// Nothing pending (an immediate save already captured it).
+    Idle,
+}
+impl SaveCoalescer {
+    /// Records a change. Returns true when the caller must arm a timer.
+    pub fn mark(&mut self) -> bool {
+        self.dirty = true;
+        !std::mem::replace(&mut self.armed, true)
+    }
+    /// The timer elapsed. `busy` is true while an exact barrier is in flight.
+    pub fn fire(&mut self, busy: bool) -> CoalescedSave {
+        if !self.dirty {
+            self.armed = false;
+            return CoalescedSave::Idle;
+        }
+        if busy {
+            return CoalescedSave::Wait;
+        }
+        self.dirty = false;
+        self.armed = false;
+        CoalescedSave::Save
+    }
+    /// An immediate save snapshotted everything marked so far.
+    pub fn saved(&mut self) {
+        self.dirty = false;
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SaveStatus {
     Pending,
@@ -229,7 +276,8 @@ fn within_budget(snapshot: &WorkspaceSnapshot) -> Result<(), WorkspaceError> {
     serde_json::to_writer(
         Count(0),
         &Envelope {
-            version: 14,
+            // Matches the backend envelope; only its encoded width matters.
+            version: 16,
             snapshot,
         },
     )
@@ -374,6 +422,30 @@ pub fn export_workspace(
 mod tests {
     use super::*;
     use dbunk_lib::backend::{DevelopmentFixtures, WorkspaceDocument, WorkspaceSelection};
+
+    #[test]
+    fn coalescer_builds_one_snapshot_per_window_and_defers_behind_barriers() {
+        let mut saves = SaveCoalescer::default();
+        assert!(saves.mark(), "first change arms the timer");
+        for _ in 0..50 {
+            assert!(!saves.mark(), "a burst shares the armed timer");
+        }
+        assert_eq!(saves.fire(false), CoalescedSave::Save);
+        assert_eq!(saves.fire(false), CoalescedSave::Idle);
+
+        // A change during an apply barrier must not supersede its revision.
+        assert!(saves.mark());
+        assert_eq!(saves.fire(true), CoalescedSave::Wait);
+        assert!(!saves.mark(), "still armed while waiting");
+        assert_eq!(saves.fire(true), CoalescedSave::Wait);
+        assert_eq!(saves.fire(false), CoalescedSave::Save);
+
+        // An immediate save (apply, close, quit) captures pending edits.
+        assert!(saves.mark());
+        saves.saved();
+        assert_eq!(saves.fire(false), CoalescedSave::Idle);
+        assert!(saves.mark(), "the idle timer ended, so a new change re-arms");
+    }
 
     #[test]
     fn export_snapshot_refuses_before_copy_and_releases_only_its_own_allowance() {

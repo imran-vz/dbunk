@@ -224,9 +224,10 @@ impl Workbench {
                 diagnostics::clear(&this.editor, &this.buffer, cx);
                 cx.emit(WorkbenchEvent::DraftChanged);
                 cx.notify();
-            } else if matches!(event, EditorEvent::SelectionsChanged { local: true }) {
-                cx.emit(WorkbenchEvent::DraftChanged);
             }
+            // Caret-only moves never rebuild the workspace snapshot. Every
+            // snapshot reads the live selection, so the caret is persisted
+            // with the next text save and by the immediate close/quit save.
         });
         let accessible = cx.new(|cx| AccessibleEditor::new(editor.clone(), "SQL editor", cx));
         let parameters = cx.new(|cx| QueryParameters::new(window, cx));
