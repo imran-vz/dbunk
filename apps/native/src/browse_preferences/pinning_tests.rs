@@ -94,3 +94,91 @@ fn pin_overflow_and_invalid_identity_preserve_the_latest_record() {
     }
     assert_eq!(latest, before);
 }
+#[test]
+fn column_width_merges_one_name_and_rejects_invalid_widths_or_names() {
+    let latest = TableGridPrefs(
+        json!({"version":1,"columnWidths":{"other":120},"hiddenColumns":["gone"],"future":{"keep":true}}),
+    );
+    let saved = PreferencePatch::ColumnWidth {
+        name: "id".into(),
+        width: 240.,
+    }
+    .apply(Some(latest.clone()), "now")
+    .unwrap();
+    assert_eq!(saved.0["columnWidths"], json!({"other":120,"id":240.0}));
+    assert_eq!(saved.0["hiddenColumns"], json!(["gone"]));
+    assert_eq!(saved.0["future"], json!({"keep":true}));
+    // Bounds are inclusive.
+    for width in [48., 1200.] {
+        assert!(
+            PreferencePatch::ColumnWidth {
+                name: "id".into(),
+                width
+            }
+            .apply(Some(latest.clone()), "now")
+            .is_ok()
+        );
+    }
+    for (name, width) in [
+        ("id", f32::NAN),
+        ("id", f32::INFINITY),
+        ("id", 47.),
+        ("id", 1201.),
+        ("", 100.),
+        ("a\0b", 100.),
+    ] {
+        assert!(
+            PreferencePatch::ColumnWidth {
+                name: name.into(),
+                width
+            }
+            .apply(Some(latest.clone()), "now")
+            .is_err(),
+            "{name:?} {width}"
+        );
+    }
+    let malformed = TableGridPrefs(json!({"version":1,"columnWidths":[1]}));
+    assert!(
+        PreferencePatch::ColumnWidth {
+            name: "id".into(),
+            width: 100.
+        }
+        .apply(Some(malformed), "now")
+        .is_err()
+    );
+}
+#[test]
+fn column_visibility_round_trips_and_preserves_presets_and_history() {
+    let latest = TableGridPrefs(json!({
+        "version":1,
+        "hiddenColumns":["other"],
+        "presets":[{"name":"keep"}],
+        "filterHistory":[{"appliedAt":"then"}],
+        "columnWidths":{"id":99}
+    }));
+    let hide = PreferencePatch::ColumnVisibility {
+        name: "id".into(),
+        visible: false,
+    };
+    let hidden = hide.apply(Some(latest.clone()), "now").unwrap();
+    assert_eq!(hidden.0["hiddenColumns"], json!(["other", "id"]));
+    // Desired state: hiding again does not duplicate the name.
+    assert_eq!(hide.apply(Some(hidden.clone()), "later").unwrap(), hidden);
+    let shown = PreferencePatch::ColumnVisibility {
+        name: "id".into(),
+        visible: true,
+    }
+    .apply(Some(hidden), "later")
+    .unwrap();
+    assert_eq!(shown, latest);
+    assert_eq!(shown.0["presets"], json!([{"name":"keep"}]));
+    assert_eq!(shown.0["filterHistory"], json!([{"appliedAt":"then"}]));
+    assert!(
+        PreferencePatch::ColumnVisibility {
+            name: String::new(),
+            visible: false
+        }
+        .apply(Some(latest), "now")
+        .is_err()
+    );
+}

@@ -34,6 +34,29 @@ fn destination(
     })
 }
 
+/// Keys that open the cell editor in table mode. `space` stays Inspect (its
+/// binding runs first) and shortcuts with cmd, ctrl or alt never edit.
+pub(super) fn edit_seed(key: &gpui::Keystroke) -> Option<crate::data_model::EditSeed> {
+    use crate::data_model::EditSeed;
+    let modifiers = &key.modifiers;
+    if modifiers.platform || modifiers.control || modifiers.alt || modifiers.function {
+        return None;
+    }
+    match key.key.as_str() {
+        "enter" if !modifiers.shift => Some(EditSeed::Keep),
+        "f2" => Some(EditSeed::Keep),
+        "backspace" | "delete" => Some(EditSeed::Clear),
+        "space" | "enter" | "tab" | "escape" => None,
+        // Named keys (arrows, home, f5, …) never type text.
+        name if name.chars().count() != 1 => None,
+        _ => key
+            .key_char
+            .as_deref()
+            .filter(|text| !text.is_empty() && !text.chars().any(char::is_control))
+            .map(|text| EditSeed::Replace(text.to_owned())),
+    }
+}
+
 impl ResultGrid {
     pub(super) fn jump_key(
         &mut self,
@@ -46,6 +69,19 @@ impl ResultGrid {
             return;
         }
         let key = &event.keystroke;
+        if self.table_mode()
+            && let Some(seed) = edit_seed(key)
+        {
+            if let Some((row, source)) = self.selected_cell() {
+                cx.emit(GridEvent::EditCell {
+                    cell: crate::data_model::CellRef::Page(row),
+                    source,
+                    seed,
+                });
+                cx.stop_propagation();
+            }
+            return;
+        }
         if key.modifiers.alt {
             return;
         }
@@ -96,6 +132,77 @@ impl ResultGrid {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_model::EditSeed;
+    use gpui::{Keystroke, Modifiers};
+
+    fn stroke(key: &str, key_char: Option<&str>, modifiers: Modifiers) -> Keystroke {
+        Keystroke {
+            modifiers,
+            key: key.into(),
+            key_char: key_char.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn edit_seed_maps_open_keys_and_ignores_shortcuts() {
+        let plain = Modifiers::default();
+        assert_eq!(
+            edit_seed(&stroke("enter", Some("\n"), plain)),
+            Some(EditSeed::Keep)
+        );
+        assert_eq!(edit_seed(&stroke("f2", None, plain)), Some(EditSeed::Keep));
+        assert_eq!(
+            edit_seed(&stroke("backspace", None, plain)),
+            Some(EditSeed::Clear)
+        );
+        assert_eq!(
+            edit_seed(&stroke("delete", None, plain)),
+            Some(EditSeed::Clear)
+        );
+        assert_eq!(
+            edit_seed(&stroke("a", Some("a"), plain)),
+            Some(EditSeed::Replace("a".into()))
+        );
+        let shift = Modifiers {
+            shift: true,
+            ..Modifiers::default()
+        };
+        assert_eq!(
+            edit_seed(&stroke("a", Some("A"), shift)),
+            Some(EditSeed::Replace("A".into()))
+        );
+        assert_eq!(edit_seed(&stroke("enter", Some("\n"), shift)), None);
+        for (key, modifiers) in [
+            (
+                "a",
+                Modifiers {
+                    platform: true,
+                    ..Modifiers::default()
+                },
+            ),
+            (
+                "x",
+                Modifiers {
+                    control: true,
+                    ..Modifiers::default()
+                },
+            ),
+            (
+                "a",
+                Modifiers {
+                    alt: true,
+                    ..Modifiers::default()
+                },
+            ),
+        ] {
+            assert_eq!(edit_seed(&stroke(key, Some(key), modifiers)), None, "{key}");
+        }
+        assert_eq!(edit_seed(&stroke("space", Some(" "), plain)), None);
+        assert_eq!(edit_seed(&stroke("tab", Some("\t"), plain)), None);
+        assert_eq!(edit_seed(&stroke("escape", None, plain)), None);
+        assert_eq!(edit_seed(&stroke("up", None, plain)), None);
+    }
+
     #[test]
     fn retained_page_jumps_clamp_without_changing_display_column() {
         assert_eq!(
