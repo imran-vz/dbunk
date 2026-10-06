@@ -4,6 +4,7 @@
 //! and replies from an earlier attempt are ignored by epoch.
 mod document;
 mod model;
+mod statements;
 mod tree;
 
 use crate::{
@@ -163,9 +164,13 @@ impl MySqlLane {
             this.update(cx, |this, cx| this.closed(epoch, reason, cx))
                 .ok();
         }));
+        // Only the visible document loads now; the others load when selected,
+        // so a reconnect never overflows the session's request queue.
         for doc in &self.documents {
-            doc.view
-                .update(cx, |view, cx| view.set_session(Some(session.clone()), cx));
+            let load = self.active.as_ref() == Some(&doc.id);
+            doc.view.update(cx, |view, cx| {
+                view.set_session(Some(session.clone()), load, cx)
+            });
         }
         self.tree.reset();
         self.tree.databases = Some(model::Load::Loading);
@@ -201,7 +206,8 @@ impl MySqlLane {
         self.tree.reset();
         self.sync_tree(cx);
         for doc in &self.documents {
-            doc.view.update(cx, |view, cx| view.set_session(None, cx));
+            doc.view
+                .update(cx, |view, cx| view.set_session(None, false, cx));
         }
         self.session.take()
     }
@@ -314,10 +320,13 @@ impl MySqlLane {
         cx: &mut Context<Self>,
     ) {
         if kind != DocKind::Query
-            && let Some(doc) = self.documents.iter().find(|doc| doc.kind == kind)
+            && let Some(id) = self
+                .documents
+                .iter()
+                .find(|doc| doc.kind == kind)
+                .map(|doc| doc.id.clone())
         {
-            self.active = Some(doc.id.clone());
-            cx.notify();
+            self.select_tab(&id, window, cx);
             return;
         }
         if self.documents.len() >= MAX_DOCUMENTS {
@@ -386,7 +395,10 @@ impl MySqlLane {
     pub fn select_tab(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(doc) = self.documents.iter().find(|doc| doc.id == id) {
             self.active = Some(doc.id.clone());
-            doc.view.update(cx, |view, cx| view.focus(window, cx));
+            doc.view.update(cx, |view, cx| {
+                view.load_pending(cx);
+                view.focus(window, cx);
+            });
             cx.notify();
         }
     }
@@ -411,19 +423,26 @@ impl MySqlLane {
         self.select_tab(&id, window, cx);
     }
 
-    /// Closes a tab; a running request in it is abandoned to the worker,
-    /// which finishes it and keeps the session usable.
+    /// Closes a tab and cancels its queued or running request, so the
+    /// request neither runs after the tab is gone nor keeps the shared
+    /// session busy.
     pub fn close_tab(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
         let Some(index) = self.documents.iter().position(|doc| doc.id == id) else {
             return;
         };
-        self.documents.remove(index);
+        let doc = self.documents.remove(index);
+        doc.view.update(cx, |view, _| view.abandon());
         if self.active.as_deref() == Some(id) {
-            self.active = self
+            let next = self
                 .documents
                 .get(index.min(self.documents.len().saturating_sub(1)))
                 .map(|doc| doc.id.clone());
-            self.focus_active(window, cx);
+            self.active = None;
+            match next {
+                // Selecting also loads what a reconnect deferred.
+                Some(next) => self.select_tab(&next, window, cx),
+                None => self.focus_active(window, cx),
+            }
         }
         cx.notify();
     }

@@ -1,7 +1,10 @@
 //! MySQL documents: query, table data, structure and object definition.
 //! Each borrows the lane's session; with no session it keeps its content and
-//! refuses new requests until the lane connects again.
+//! refuses new requests until the lane connects again. Queries and pages
+//! carry a request id, so Stop and closing the tab cancel only this
+//! document's request.
 use super::model::{Load, ObjectRef};
+use super::statements;
 use crate::{
     accessible_editor::AccessibleEditor,
     controller::Host,
@@ -12,7 +15,8 @@ use crate::{
 use dbunk_lib::backend::QueryEvent;
 use dbunk_lib::backend::StatementClassSummary;
 use dbunk_lib::backend::mysql_sessions::{
-    MYSQL_MAX_PAGE_ROWS, MySqlResult, MySqlSession, MySqlSessionError, MySqlStructure,
+    MYSQL_MAX_PAGE_ROWS, MySqlCancel, MySqlRequestId, MySqlResult, MySqlSession, MySqlSessionError,
+    MySqlStructure,
 };
 use editor::Editor;
 use gpui::{
@@ -20,6 +24,7 @@ use gpui::{
     Window, div, prelude::*, px,
 };
 use language::Buffer;
+use multi_buffer::MultiBufferOffset;
 use std::sync::Arc;
 
 /// Rows per data page.
@@ -51,6 +56,14 @@ pub enum DocEvent {
     Data(ObjectRef),
 }
 
+/// Data page navigation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Step {
+    Reload,
+    Next,
+    Previous,
+}
+
 struct Query {
     editor: Entity<Editor>,
     accessible: Entity<AccessibleEditor>,
@@ -69,13 +82,19 @@ pub struct MySqlDocument {
     query: Option<Query>,
     grid: Entity<ResultGrid>,
     has_result: bool,
+    /// First row of the shown page.
     offset: u64,
-    has_more: bool,
+    /// Where the next page starts (after the rows actually kept), if any.
+    next_offset: Option<u64>,
+    /// Start offsets of the pages before this one, for Previous.
+    history: Vec<u64>,
     structure: Load<MySqlStructure>,
     definition: Load<String>,
     status: String,
     error: Option<String>,
     running: Option<Task<()>>,
+    /// The query or page request behind `running`.
+    request: Option<MySqlRequestId>,
     cancel: Option<Task<()>>,
     loads: Vec<Task<()>>,
 }
@@ -112,30 +131,41 @@ impl MySqlDocument {
                 confirm: None,
             }
         });
+        let grid = cx.new(ResultGrid::new);
+        grid.update(cx, |grid, _| grid.set_export_host(host.clone()));
         let mut document = Self {
             host,
             kind,
             session: None,
             focus: cx.focus_handle(),
             query,
-            grid: cx.new(ResultGrid::new),
+            grid,
             has_result: false,
             offset: 0,
-            has_more: false,
+            next_offset: None,
+            history: Vec::new(),
             structure: Load::Idle,
             definition: Load::Idle,
             status: String::new(),
             error: None,
             running: None,
+            request: None,
             cancel: None,
             loads: Vec::new(),
         };
-        document.set_session(session, cx);
+        document.set_session(session, true, cx);
         document
     }
 
-    /// A new session loads anything not yet loaded; `None` stops requests.
-    pub fn set_session(&mut self, session: Option<MySqlSession>, cx: &mut Context<Self>) {
+    /// `None` stops requests. A new session loads anything not yet loaded
+    /// only when `load` is set (the visible document); the others load when
+    /// they are selected, so a reconnect does not flood the session queue.
+    pub fn set_session(
+        &mut self,
+        session: Option<MySqlSession>,
+        load: bool,
+        cx: &mut Context<Self>,
+    ) {
         let connected = session.is_some();
         self.session = session;
         if !connected {
@@ -143,6 +173,7 @@ impl MySqlDocument {
             if self.running.take().is_some() {
                 self.status = "Interrupted: disconnected".into();
             }
+            self.request = None;
             self.cancel = None;
             self.loads.clear();
             if matches!(self.structure, Load::Loading) {
@@ -151,15 +182,43 @@ impl MySqlDocument {
             if matches!(self.definition, Load::Loading) {
                 self.definition = Load::Idle;
             }
-        } else {
-            match &self.kind {
-                DocKind::Query => {}
-                DocKind::Data(_) if !self.has_result => self.load_page(0, cx),
-                DocKind::Data(_) => {}
-                DocKind::Structure(_) | DocKind::Definition(_) => self.load_details(false, cx),
-            }
+        } else if load {
+            self.load_pending(cx);
         }
         cx.notify();
+    }
+
+    /// Loads what this document still lacks (after a reconnect, on select).
+    pub fn load_pending(&mut self, cx: &mut Context<Self>) {
+        if self.session.is_none() {
+            return;
+        }
+        match &self.kind {
+            DocKind::Query => {}
+            DocKind::Data(_) if !self.has_result && self.running.is_none() => {
+                self.load_page(Step::Reload, cx)
+            }
+            DocKind::Data(_) => {}
+            DocKind::Structure(_) | DocKind::Definition(_) => self.load_details(false, cx),
+        }
+    }
+
+    /// The tab is closing: its queued or running request is cancelled, so
+    /// it neither keeps the shared session busy nor runs after the tab is
+    /// gone. Replies are dropped with the tasks.
+    pub fn abandon(&mut self) {
+        self.cancel = None;
+        self.loads.clear();
+        let request = self.request.take();
+        if self.running.take().is_none() {
+            return;
+        }
+        if let (Some(session), Some(id)) = (self.session.clone(), request) {
+            let host = self.host.clone();
+            drop(self.host.runtime.spawn(async move {
+                let _ = host.backend.cancel_mysql_query(&session, id).await;
+            }));
+        }
     }
 
     /// Picker choices once the tree has loaded; an unset database takes the
@@ -193,23 +252,32 @@ impl MySqlDocument {
         self.session.clone()
     }
 
-    fn run(&mut self, confirmed: bool, cx: &mut Context<Self>) {
+    /// Runs the selection or the statement at the cursor, or with `script`
+    /// the whole editor. `confirmed` re-runs only the text the safety policy
+    /// asked about; with nothing pending it does nothing.
+    fn run(&mut self, confirmed: bool, script: bool, cx: &mut Context<Self>) {
         if self.running.is_some() {
             return;
         }
         let Some(query) = &mut self.query else {
             return;
         };
-        let sql = match (confirmed, query.confirm.take()) {
-            (true, Some((sql, _))) => sql,
-            _ => query.editor.read(cx).text(cx),
-        };
-        if sql.trim().is_empty() {
-            self.error = Some("Nothing to run".into());
-            cx.notify();
-            return;
-        }
+        let pending = query.confirm.take();
+        let editor = query.editor.clone();
         let database = query.database.clone();
+        let sql = match (confirmed, pending) {
+            (true, Some((sql, _))) => sql,
+            // Never run the editor text as confirmed.
+            (true, None) => return,
+            (false, _) => match selected_sql(&editor, script, cx) {
+                Ok(sql) => sql,
+                Err(message) => {
+                    self.error = Some(message);
+                    cx.notify();
+                    return;
+                }
+            },
+        };
         let Some(session) = self.session() else {
             cx.notify();
             return;
@@ -217,10 +285,12 @@ impl MySqlDocument {
         self.error = None;
         self.status = "Running…".into();
         let pending = sql.clone();
+        let id = session.request_id();
+        self.request = Some(id);
         let task = self
             .host
             .runtime
-            .spawn(async move { session.query(sql, database, confirmed).await });
+            .spawn(async move { session.query(sql, database, confirmed, id).await });
         self.running = Some(cx.spawn(async move |this, cx| {
             let result = task.await;
             this.update(cx, |this, cx| this.finished(pending, result, cx))
@@ -236,11 +306,17 @@ impl MySqlDocument {
         cx: &mut Context<Self>,
     ) {
         self.running = None;
+        self.request = None;
         self.cancel = None;
         match result {
             Ok(Ok(result)) => {
                 cx.emit(DocEvent::Latency(result.runtime_ms));
                 self.status = result_summary(&result);
+                // Follow a `USE` in the script, so the next run is pinned to
+                // the database this tab is actually in.
+                if let (Some(query), Some(database)) = (&mut self.query, &result.database) {
+                    query.database = Some(database.clone());
+                }
                 self.show(&result, cx);
             }
             Ok(Err(MySqlSessionError::NeedsConfirmation(statements))) => {
@@ -249,6 +325,7 @@ impl MySqlDocument {
                     query.confirm = Some((sql, statements));
                 }
             }
+            Ok(Err(MySqlSessionError::Cancelled)) => self.status = "Cancelled".into(),
             Ok(Err(error)) => {
                 self.status = "Failed".into();
                 self.error = Some(error.to_string());
@@ -265,7 +342,7 @@ impl MySqlDocument {
         if self.running.is_none() || self.cancel.is_some() {
             return;
         }
-        let Some(session) = self.session.clone() else {
+        let (Some(session), Some(id)) = (self.session.clone(), self.request) else {
             return;
         };
         self.status = "Cancelling…".into();
@@ -273,15 +350,23 @@ impl MySqlDocument {
         let task = self
             .host
             .runtime
-            .spawn(async move { host.backend.cancel_mysql_query(&session).await });
+            .spawn(async move { host.backend.cancel_mysql_query(&session, id).await });
         self.cancel = Some(cx.spawn(async move |this, cx| {
             let result = task.await;
             this.update(cx, |this, cx| {
                 this.cancel = None;
-                if let Ok(Err(error)) | Err(error) =
-                    result.map_err(|_| "Cancel task ended unexpectedly".to_string())
-                {
-                    this.error = Some(format!("Cancel failed: {error}"));
+                match result {
+                    // It never ran and never will: stop waiting for it.
+                    Ok(Ok(MySqlCancel::Withdrawn)) if this.request == Some(id) => {
+                        this.running = None;
+                        this.request = None;
+                        this.status = "Cancelled".into();
+                    }
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => this.error = Some(format!("Cancel failed: {error}")),
+                    Err(_) => {
+                        this.error = Some("Cancel failed: cancel task ended unexpectedly".into())
+                    }
                 }
                 cx.notify();
             })
@@ -300,13 +385,21 @@ impl MySqlDocument {
         });
     }
 
-    fn load_page(&mut self, offset: u64, cx: &mut Context<Self>) {
+    fn load_page(&mut self, step: Step, cx: &mut Context<Self>) {
         let DocKind::Data(object) = &self.kind else {
             return;
         };
         if self.running.is_some() {
             return;
         }
+        let offset = match step {
+            Step::Reload => self.offset,
+            Step::Next => match self.next_offset {
+                Some(offset) => offset,
+                None => return,
+            },
+            Step::Previous => self.history.last().copied().unwrap_or(0),
+        };
         let (database, table) = (object.database.clone(), object.name.clone());
         let Some(session) = self.session() else {
             cx.notify();
@@ -314,22 +407,33 @@ impl MySqlDocument {
         };
         self.error = None;
         self.status = "Loading…".into();
+        let id = session.request_id();
+        self.request = Some(id);
         let task = self
             .host
             .runtime
-            .spawn(async move { session.browse(database, table, offset, PAGE_ROWS).await });
+            .spawn(async move { session.browse(database, table, offset, PAGE_ROWS, id).await });
         self.running = Some(cx.spawn(async move |this, cx| {
             let result = task.await;
             this.update(cx, |this, cx| {
                 this.running = None;
+                this.request = None;
                 match result {
                     Ok(Ok(page)) => {
                         cx.emit(DocEvent::Latency(page.runtime_ms));
+                        match step {
+                            Step::Next => this.history.push(this.offset),
+                            Step::Previous => {
+                                this.history.pop();
+                            }
+                            Step::Reload => {}
+                        }
                         this.offset = offset;
-                        this.has_more = page.has_more;
+                        this.next_offset = next_offset(offset, &page);
                         this.status = page_label(offset, &page);
                         this.show(&page, cx);
                     }
+                    Ok(Err(MySqlSessionError::Cancelled)) => this.status = "Cancelled".into(),
                     Ok(Err(error)) => {
                         this.status = "Failed".into();
                         this.error = Some(error.to_string());
@@ -364,6 +468,8 @@ impl MySqlDocument {
             return;
         };
         self.error = None;
+        // Finished loads are dropped so the list stays bounded.
+        self.loads.retain(|task| !task.is_ready());
         if want_structure {
             self.structure = Load::Loading;
             let session = session.clone();
@@ -456,7 +562,7 @@ impl MySqlDocument {
                             Some("icons/play_filled.svg"),
                             connected && !running,
                             cx,
-                            |this, _, cx| this.run(false, cx),
+                            |this, _, cx| this.run(false, false, cx),
                         )
                         .map(|run| ui::pressed(run, true)),
                     )
@@ -499,25 +605,23 @@ impl MySqlDocument {
                         Some("icons/rotate_cw.svg"),
                         connected && !running,
                         cx,
-                        |this, _, cx| this.load_page(this.offset, cx),
+                        |this, _, cx| this.load_page(Step::Reload, cx),
                     ))
                     .child(self.button(
                         "mysql-previous",
                         "Previous",
                         None,
-                        connected && !running && self.offset > 0,
+                        connected && !running && !self.history.is_empty(),
                         cx,
-                        |this, _, cx| {
-                            this.load_page(this.offset.saturating_sub(u64::from(PAGE_ROWS)), cx)
-                        },
+                        |this, _, cx| this.load_page(Step::Previous, cx),
                     ))
                     .child(self.button(
                         "mysql-next",
                         "Next",
                         None,
-                        connected && !running && self.has_more,
+                        connected && !running && self.next_offset.is_some(),
                         cx,
-                        |this, _, cx| this.load_page(this.offset + u64::from(PAGE_ROWS), cx),
+                        |this, _, cx| this.load_page(Step::Next, cx),
                     ))
                     .child(ui::grow())
                     .child(self.button(
@@ -663,7 +767,7 @@ impl MySqlDocument {
                 .child(div().flex_1().child(confirmation_text(statements)))
                 .child(
                     ui::button("mysql-confirm-run", "Run anyway", ui::Variant::Danger, true)
-                        .on_click(cx.listener(|this, _, _, cx| this.run(true, cx))),
+                        .on_click(cx.listener(|this, _, _, cx| this.run(true, false, cx))),
                 )
                 .child(
                     ui::button("mysql-confirm-cancel", "Cancel", ui::Variant::Ghost, true)
@@ -929,7 +1033,38 @@ pub fn page_label(offset: u64, page: &MySqlResult) -> String {
     if page.truncated {
         label.push_str(" · page cut by the size limit");
     }
+    if page.approximate {
+        label.push_str(" · approximate order (no unique key)");
+    }
     label
+}
+
+/// Where the next page starts: after the rows actually shown, since the
+/// size limit can keep fewer than a full page. `None` when there is no next
+/// page or no progress is possible.
+pub fn next_offset(offset: u64, page: &MySqlResult) -> Option<u64> {
+    let shown = page.rows.len() as u64;
+    (page.has_more && shown > 0).then_some(offset + shown)
+}
+
+/// The editor's selection, else the statement at the cursor; with `script`
+/// the whole text.
+fn selected_sql(
+    editor: &Entity<Editor>,
+    script: bool,
+    cx: &mut gpui::App,
+) -> Result<String, String> {
+    editor.update(cx, |editor, cx| {
+        let selection = editor
+            .selections
+            .newest::<MultiBufferOffset>(&editor.display_snapshot(cx));
+        let text = editor.text(cx);
+        match statements::select(&text, selection.start.0..selection.end.0, script) {
+            Some(range) => Ok(text[range].to_owned()),
+            None if statements::split(&text).is_empty() => Err("Nothing to run".into()),
+            None => Err("No SQL statement at the cursor".into()),
+        }
+    })
 }
 
 pub fn confirmation_text(statements: &[StatementClassSummary]) -> String {
@@ -989,8 +1124,8 @@ impl Render for MySqlDocument {
             .size_full()
             .flex()
             .flex_col()
-            .on_action(cx.listener(|this, _: &RunStatement, _, cx| this.run(false, cx)))
-            .on_action(cx.listener(|this, _: &RunScript, _, cx| this.run(false, cx)))
+            .on_action(cx.listener(|this, _: &RunStatement, _, cx| this.run(false, false, cx)))
+            .on_action(cx.listener(|this, _: &RunScript, _, cx| this.run(false, true, cx)))
             .on_action(cx.listener(|this, _: &StopQuery, _, cx| this.stop(cx)))
             .child(toolbar)
             .children(picker)
@@ -1107,6 +1242,29 @@ mod tests {
             "rows 401–600, more available · 4 ms"
         );
         assert_eq!(page_label(0, &result(&["a"], 0)), "no rows · 4 ms");
+        let mut loose = result(&["a"], 2);
+        loose.approximate = true;
+        assert_eq!(
+            page_label(0, &loose),
+            "rows 1–2 · 4 ms · approximate order (no unique key)"
+        );
+    }
+
+    #[test]
+    fn the_next_page_starts_after_the_rows_actually_kept() {
+        let mut full = result(&["a"], 200);
+        full.has_more = true;
+        assert_eq!(next_offset(400, &full), Some(600));
+        // The 16 MiB budget kept 37 rows: the next page starts at row 38.
+        let mut cut = result(&["a"], 37);
+        cut.has_more = true;
+        cut.truncated = true;
+        assert_eq!(next_offset(0, &cut), Some(37));
+        assert_eq!(next_offset(0, &result(&["a"], 12)), None);
+        // Nothing kept: paging cannot progress, so there is no next page.
+        let mut empty = result(&["a"], 0);
+        empty.has_more = true;
+        assert_eq!(next_offset(0, &empty), None);
     }
 
     #[test]

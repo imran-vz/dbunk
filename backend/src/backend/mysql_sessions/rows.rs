@@ -201,6 +201,8 @@ impl Collector {
             rows_affected: self.rows_affected,
             result_sets: self.result_sets,
             has_more: false,
+            approximate: false,
+            database: None,
             runtime_ms,
         }
     }
