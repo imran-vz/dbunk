@@ -154,6 +154,7 @@ async fn create(backend: &Backend) -> Result<(), String> {
                 layout: Layout::SideBySide,
                 density: WorkspaceDensity::Compact,
                 navigator_width: 260.0,
+                shell: None,
             },
         )
         .await

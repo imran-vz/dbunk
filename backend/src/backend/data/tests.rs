@@ -19,7 +19,8 @@ async fn rejected_close_admission_does_not_strand_a_retired_document() {
         .unwrap();
     assert!(matches!(
         backend.close_data_document(&document).await,
-        Err(DataError::Unavailable(QuerySessionError::ConnectionClosing))
+        Err(DataError::Unavailable(QuerySessionError::Timeout { operation }))
+            if operation == "nativeAdmission"
     ));
     assert!(
         document.0.check_open().is_ok(),

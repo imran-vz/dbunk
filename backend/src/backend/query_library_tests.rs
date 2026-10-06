@@ -233,9 +233,8 @@ async fn control_admission_and_shutdown_fence_library_mutations() {
         .unwrap();
     assert!(matches!(
         backend.save_saved_query(saved("refused", false)).await,
-        Err(LibraryError::Unavailable(
-            QuerySessionError::ConnectionClosing
-        ))
+        Err(LibraryError::Unavailable(QuerySessionError::Timeout { operation }))
+            if operation == "nativeAdmission"
     ));
     drop(permit);
     assert!(backend

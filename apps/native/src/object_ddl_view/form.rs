@@ -32,14 +32,13 @@ impl ObjectDdlView {
         !(self.uses_form() && matches!(action, Action::Mode | Action::Option))
     }
     fn control_shown(&self, control: Control) -> bool {
-        match (&self.purpose, control) {
+        matches!(
+            (&self.purpose, control),
             (
                 Some(Purpose::CreateIndex { .. }),
                 Control::Method | Control::Unique | Control::Concurrently,
-            ) => true,
-            (Some(Purpose::AddEnumValue { .. }), Control::Placement) => true,
-            _ => false,
-        }
+            ) | (Some(Purpose::AddEnumValue { .. }), Control::Placement)
+        )
     }
     fn control_enabled(&self, control: Control) -> bool {
         self.editable && self.control_shown(control) && self.editable_recipe()

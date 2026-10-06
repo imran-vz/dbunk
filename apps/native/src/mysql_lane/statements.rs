@@ -216,9 +216,7 @@ impl Segment {
         if !self.routine {
             return;
         }
-        if is("BEGIN") {
-            self.depth += 1;
-        } else if self.depth > 0 && is("CASE") {
+        if is("BEGIN") || (self.depth > 0 && is("CASE")) {
             self.depth += 1;
         } else if self.depth > 0 && is("END") {
             self.pending_end = true;

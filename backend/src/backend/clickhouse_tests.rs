@@ -617,7 +617,7 @@ async fn sessions_read_bounded_catalogs_and_enforce_policy() {
         async move {
             for _ in 0..500 {
                 let statement = format!("KILL QUERY WHERE query_id = '{id}' ASYNC");
-                if fake.requests().iter().any(|sql| *sql == statement) {
+                if fake.requests().contains(&statement) {
                     return;
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(10)).await;

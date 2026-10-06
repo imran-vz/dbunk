@@ -1067,7 +1067,8 @@ mod tests {
                     "other-session".into(),
                     events
                 )
-                .unwrap_err()
+                .err()
+                .expect("connect refused")
                 .contains("owner failed")
         );
         workspace.state.documents.lock().unwrap().failure = None;
