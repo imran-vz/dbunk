@@ -25,9 +25,13 @@ pub const INSPECTORS: usize = 8;
 pub const KINDS: [&str; 6] = ["string", "hash", "list", "set", "zset", "stream"];
 
 /// Splits console input like `redis-cli`: whitespace separates arguments;
-/// double quotes take `\n \r \t \" \\ \xHH` escapes; single quotes are
-/// literal except `\'`.
-pub fn tokenize(input: &str) -> Result<Vec<String>, String> {
+/// double quotes take `\n \r \t \a \b \" \\ \xHH` escapes; single quotes are
+/// literal except `\'`. Arguments are bytes: `\xHH` is that raw byte, so
+/// keys that are not UTF-8 can be named (see [`quote_key`]).
+pub fn tokenize(input: &str) -> Result<Vec<Vec<u8>>, String> {
+    fn push(token: &mut Vec<u8>, c: char) {
+        token.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes());
+    }
     let mut tokens = Vec::new();
     let mut chars = input.chars().peekable();
     loop {
@@ -35,7 +39,7 @@ pub fn tokenize(input: &str) -> Result<Vec<String>, String> {
         let Some(&first) = chars.peek() else {
             return Ok(tokens);
         };
-        let mut token = String::new();
+        let mut token = Vec::new();
         if first == '"' || first == '\'' {
             chars.next();
             loop {
@@ -43,36 +47,35 @@ pub fn tokenize(input: &str) -> Result<Vec<String>, String> {
                     None => return Err("Unbalanced quotes".into()),
                     Some(c) if c == first => break,
                     Some('\\') if first == '\'' => match chars.next() {
-                        Some('\'') => token.push('\''),
+                        Some('\'') => token.push(b'\''),
                         Some(other) => {
-                            token.push('\\');
-                            token.push(other);
+                            token.push(b'\\');
+                            push(&mut token, other);
                         }
                         None => return Err("Unbalanced quotes".into()),
                     },
                     Some('\\') => match chars.next() {
-                        Some('n') => token.push('\n'),
-                        Some('r') => token.push('\r'),
-                        Some('t') => token.push('\t'),
-                        Some('a') => token.push('\u{7}'),
-                        Some('b') => token.push('\u{8}'),
+                        Some('n') => token.push(b'\n'),
+                        Some('r') => token.push(b'\r'),
+                        Some('t') => token.push(b'\t'),
+                        Some('a') => token.push(0x07),
+                        Some('b') => token.push(0x08),
                         Some('x') => {
                             let hex: String = chars.by_ref().take(2).collect();
                             match u8::from_str_radix(&hex, 16) {
-                                Ok(byte) if hex.len() == 2 && byte.is_ascii() => {
-                                    token.push(char::from(byte))
+                                Ok(byte)
+                                    if hex.len() == 2
+                                        && hex.chars().all(|c| c.is_ascii_hexdigit()) =>
+                                {
+                                    token.push(byte)
                                 }
-                                _ => {
-                                    return Err(
-                                        "\\x escapes must be two hex digits below 80".into()
-                                    );
-                                }
+                                _ => return Err("\\x escapes need two hex digits".into()),
                             }
                         }
-                        Some(other) => token.push(other),
+                        Some(other) => push(&mut token, other),
                         None => return Err("Unbalanced quotes".into()),
                     },
-                    Some(c) => token.push(c),
+                    Some(c) => push(&mut token, c),
                 }
             }
             if chars.peek().is_some_and(|c| !c.is_whitespace()) {
@@ -80,11 +83,41 @@ pub fn tokenize(input: &str) -> Result<Vec<String>, String> {
             }
         } else {
             while let Some(c) = chars.next_if(|c| !c.is_whitespace()) {
-                token.push(c);
+                push(&mut token, c);
             }
         }
         tokens.push(token);
     }
+}
+
+/// A key as a double-quoted console argument that [`tokenize`] turns back
+/// into exactly these bytes: printable UTF-8 as is, quotes, backslashes and
+/// controls escaped, and every byte that is not valid UTF-8 as `\xHH`.
+pub fn quote_key(name: &[u8]) -> String {
+    let mut out = String::with_capacity(name.len() + 2);
+    out.push('"');
+    for chunk in name.utf8_chunks() {
+        for c in chunk.valid().chars() {
+            match c {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                c if c.is_control() => {
+                    for byte in c.encode_utf8(&mut [0; 4]).bytes() {
+                        out.push_str(&format!("\\x{byte:02x}"));
+                    }
+                }
+                c => out.push(c),
+            }
+        }
+        for byte in chunk.invalid() {
+            out.push_str(&format!("\\x{byte:02x}"));
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// Key bytes as one line: UTF-8 as is, other bytes and controls escaped.
@@ -270,6 +303,16 @@ pub fn estimate(seen: usize, sampled: usize, total: u64, complete: bool) -> Coun
 #[derive(Debug, Clone, Default)]
 pub struct Keyspace {
     pub databases: Vec<DbNode>,
+    /// Bumped by [`Keyspace::refresh`]; a page requested under an older
+    /// epoch belongs to a tree that no longer exists and is dropped.
+    epoch: u64,
+}
+
+/// A requested page: its cursor and the tree epoch it belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PageRequest {
+    pub cursor: Option<String>,
+    pub epoch: u64,
 }
 
 impl Keyspace {
@@ -278,11 +321,76 @@ impl Keyspace {
         if let Some(node) = nodes.iter_mut().find(|node| node.index == default_db) {
             node.expanded = true;
         }
-        Self { databases: nodes }
+        Self {
+            databases: nodes,
+            epoch: 0,
+        }
     }
 
     pub fn get_mut(&mut self, index: u8) -> Option<&mut DbNode> {
         self.databases.iter_mut().find(|node| node.index == index)
+    }
+
+    /// Rebuilds the tree from fresh totals under a new epoch, keeping which
+    /// databases were expanded, and returns those to sample again. Pages in
+    /// flight from before the refresh are dropped when they land.
+    pub fn refresh(&mut self, databases: &[RedisDatabase]) -> Vec<u8> {
+        let expanded: HashSet<u8> = self
+            .databases
+            .iter()
+            .filter(|db| db.expanded)
+            .map(|db| db.index)
+            .collect();
+        let epoch = self.epoch + 1;
+        let mut nodes: Vec<DbNode> = databases.iter().map(DbNode::new).collect();
+        for node in &mut nodes {
+            node.expanded = expanded.contains(&node.index);
+        }
+        *self = Self {
+            databases: nodes,
+            epoch,
+        };
+        self.databases
+            .iter()
+            .filter(|db| db.expanded)
+            .map(|db| db.index)
+            .collect()
+    }
+
+    /// Starts the next page of one database (see [`DbNode::begin_page`]).
+    pub fn begin_page(&mut self, db: u8) -> Option<PageRequest> {
+        let epoch = self.epoch;
+        let cursor = self.get_mut(db)?.begin_page()?;
+        Some(PageRequest { cursor, epoch })
+    }
+
+    /// Merges a page requested under `epoch`; a page from an older tree is
+    /// dropped. Returns whether it was applied.
+    pub fn apply_page(&mut self, db: u8, epoch: u64, page: RedisScanPage) -> bool {
+        match self.current(db, epoch) {
+            Some(node) => {
+                node.apply_page(page);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Records a failed page requested under `epoch`; failures from an older
+    /// tree are dropped.
+    pub fn fail_page(&mut self, db: u8, epoch: u64, cursor: Option<String>, error: String) {
+        if let Some(node) = self.current(db, epoch) {
+            node.fail_page(cursor, error);
+        }
+    }
+
+    /// The node a page result belongs to: same epoch, page still loading.
+    fn current(&mut self, db: u8, epoch: u64) -> Option<&mut DbNode> {
+        if epoch != self.epoch {
+            return None;
+        }
+        self.get_mut(db)
+            .filter(|node| node.scan == ScanState::Loading)
     }
 }
 
@@ -407,7 +515,7 @@ pub struct Console {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pending {
     pub input: String,
-    pub tokens: Vec<String>,
+    pub tokens: Vec<Vec<u8>>,
     pub command: String,
     pub reason: String,
 }
@@ -587,18 +695,84 @@ mod tests {
         }
     }
 
+    fn words(tokens: Vec<Vec<u8>>) -> Vec<String> {
+        tokens
+            .into_iter()
+            .map(|token| String::from_utf8(token).unwrap())
+            .collect()
+    }
+
     #[test]
     fn tokenizer_matches_redis_cli_quoting() {
-        assert_eq!(tokenize("  SET  k v ").unwrap(), ["SET", "k", "v"]);
+        assert_eq!(words(tokenize("  SET  k v ").unwrap()), ["SET", "k", "v"]);
         assert_eq!(
-            tokenize(r#"SET "a b" 'c d' "x\"y\n" 'it\'s' "\x41""#).unwrap(),
-            ["SET", "a b", "c d", "x\"y\n", "it's", "A"]
+            words(tokenize(r#"SET "a b" 'c d' "x\"y\n" 'it\'s' "\x41" "é""#).unwrap()),
+            ["SET", "a b", "c d", "x\"y\n", "it's", "A", "é"]
         );
-        assert_eq!(tokenize(r#"SET k """#).unwrap(), ["SET", "k", ""]);
+        assert_eq!(words(tokenize(r#"SET k """#).unwrap()), ["SET", "k", ""]);
         assert!(tokenize("").unwrap().is_empty());
         assert!(tokenize(r#"SET "open"#).is_err());
         assert!(tokenize(r#"SET "a"b"#).is_err());
         assert!(tokenize(r#"SET "\xZZ""#).is_err());
+        assert!(tokenize(r#"SET "\x+f""#).is_err());
+        assert!(tokenize(r#"SET "\x4""#).is_err());
+    }
+
+    #[test]
+    fn hex_escapes_are_raw_bytes_and_quoted_keys_round_trip() {
+        // `\xHH` at or above 0x80 is that byte, not a character.
+        assert_eq!(
+            tokenize(r#"GET "\xff\x00k""#).unwrap(),
+            [b"GET".to_vec(), vec![0xff, 0x00, b'k']]
+        );
+        for name in [
+            b"user:1".to_vec(),
+            vec![0xff, 0xfe, b'k'],
+            b"a \"b\" \\ c\n\t\r".to_vec(),
+            "caf\u{e9} \u{85}".as_bytes().to_vec(),
+            vec![0xe2, 0x82],
+            Vec::new(),
+        ] {
+            let quoted = quote_key(&name);
+            assert_eq!(
+                tokenize(&format!("TYPE {quoted}")).unwrap(),
+                [b"TYPE".to_vec(), name.clone()],
+                "{quoted}"
+            );
+            assert!(!quoted.contains('\n'), "{quoted}");
+        }
+    }
+
+    #[test]
+    fn pages_from_before_a_refresh_are_dropped() {
+        let databases = [
+            RedisDatabase { index: 0, keys: 5 },
+            RedisDatabase { index: 1, keys: 2 },
+        ];
+        let mut keyspace = Keyspace::new(&databases, 0);
+        let stale = keyspace.begin_page(0).unwrap();
+        assert_eq!(stale.cursor, None);
+        // The user collapses db0 and expands db1, then refreshes while the
+        // first page is in flight.
+        keyspace.get_mut(0).unwrap().expanded = false;
+        keyspace.get_mut(1).unwrap().expanded = true;
+        let reload = keyspace.refresh(&databases);
+        assert_eq!(reload, [1]);
+        assert!(!keyspace.get_mut(0).unwrap().expanded);
+        let fresh = keyspace.begin_page(1).unwrap();
+        assert_ne!(fresh.epoch, stale.epoch);
+        // The pre-refresh page lands: dropped, not merged.
+        assert!(!keyspace.apply_page(0, stale.epoch, page(&[("old", "string")], Some("9"))));
+        keyspace.fail_page(1, stale.epoch, None, "late".into());
+        assert_eq!(keyspace.get_mut(0).unwrap().sampled(), 0);
+        assert_eq!(keyspace.get_mut(1).unwrap().error, None);
+        assert_eq!(keyspace.get_mut(1).unwrap().scan, ScanState::Loading);
+        // The refreshed page applies.
+        assert!(keyspace.apply_page(1, fresh.epoch, page(&[("new", "hash")], None)));
+        assert_eq!(keyspace.get_mut(1).unwrap().sampled(), 1);
+        // A duplicate result for a page no longer loading is dropped too.
+        assert!(!keyspace.apply_page(1, fresh.epoch, page(&[("dup", "hash")], None)));
+        assert_eq!(keyspace.get_mut(1).unwrap().sampled(), 1);
     }
 
     #[test]
