@@ -1,14 +1,11 @@
 //! Connection CRUD and health checks, as a host calls them.
 
-use crate::app::{
-    current_credential_mode, find_connection, public_connections, with_active_connection, AppState,
-};
+use crate::app::{current_credential_mode, find_connection, public_connections, AppState};
 use crate::dispatch;
-use crate::managed;
 use crate::socket_lifecycle;
 use crate::storage;
 use crate::tunnel;
-use crate::{ConnectResult, HealthCheckResult, StoredConnection};
+use crate::{HealthCheckResult, StoredConnection};
 
 pub(crate) async fn list(state: &AppState) -> Result<Vec<StoredConnection>, String> {
     public_connections(state).await
@@ -170,19 +167,6 @@ pub(crate) async fn disconnect(state: &AppState, connection_id: &str) -> Result<
     })
     .await;
     Ok(())
-}
-
-pub(crate) async fn connect(
-    state: &AppState,
-    connection_id: &str,
-) -> Result<ConnectResult, String> {
-    let mode = current_credential_mode(state).await?;
-    with_active_connection(state, connection_id, |connection| async move {
-        managed::ensure_running_for_connection(&state.credentials, &state.pool, mode, &connection)
-            .await?;
-        dispatch::ping_connection(&connection).await
-    })
-    .await
 }
 
 /// Periodic poll: returns "healthy" + latency or "error" + message. Designed

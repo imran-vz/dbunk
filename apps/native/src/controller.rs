@@ -53,6 +53,12 @@ pub use schema_compare_runtime::{
 pub const WINDOW: &str = "native-fixture";
 const GRACE: Duration = Duration::from_secs(3);
 const TOTAL: Duration = Duration::from_secs(5);
+/// One document's cleanup budget outside app shutdown. It covers the
+/// backend's default 10 s connect deadline plus margin, so a document closed
+/// while its connect stalls is joined, not aborted. Shutdown keeps the
+/// shared `GRACE`/`TOTAL` budget.
+const DOCUMENT_GRACE: Duration = Duration::from_secs(12);
+const DOCUMENT_TOTAL: Duration = Duration::from_secs(14);
 
 type WorkerResult = Result<(), String>;
 
