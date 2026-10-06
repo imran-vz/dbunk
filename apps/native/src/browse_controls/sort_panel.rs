@@ -4,7 +4,7 @@
 use super::{Action, BrowseControls};
 use crate::{style, ui, ui::popover};
 use dbunk_lib::backend::data::*;
-use gpui::{AnyElement, Context, Role, div, prelude::*, px};
+use gpui::{AnyElement, Context, Focusable, Role, div, prelude::*, px};
 
 const PANE_HEIGHT: f32 = 280.;
 
