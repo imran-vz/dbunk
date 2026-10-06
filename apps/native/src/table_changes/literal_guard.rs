@@ -145,6 +145,15 @@ impl TableChanges {
         let marked = editor.update(cx, |editor, cx| {
             editor.marked_text_range(window, cx).is_some()
         });
+        if edited {
+            // Typing replaces the DEFAULT placeholder; inline typing also
+            // replaces NULL (the popover keeps its explicit NULL toggle).
+            edit.default = false;
+            edit.error = None;
+            if edit.presentation == Presentation::Inline {
+                edit.null = false;
+            }
+        }
         let change = edit.history.change(length, marked, edited);
         if change == Change::Keep {
             if !marked {
@@ -168,13 +177,14 @@ impl TableChanges {
             value,
             refused,
             label,
-            edit.kind.is_some() || edit.row.is_none(),
+            edit.multiline(),
             window,
             cx,
         );
         edit.editor = replacement;
         edit.accessible = accessible;
         self.relabel_batch(cx);
+        self.sync_cell_editor(cx);
         cx.defer_in(window, |this, window, cx| {
             this.install_literal_guard(window, cx)
         });
