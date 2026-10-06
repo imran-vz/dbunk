@@ -3,7 +3,7 @@
 //! names, 256 KiB inspection).
 use super::{Action, BrowseControls, INSPECTION_BYTES, filter_summary, parameters};
 use crate::{browse_preferences::HistoryEntry, results::encoded_size, style, ui, ui::popover};
-use gpui::{AnyElement, Context, Role, SharedString, div, prelude::*, px};
+use gpui::{AnyElement, Context, Focusable, Role, SharedString, div, prelude::*, px};
 
 /// Characters of one history or preset summary shown in a list row.
 const SUMMARY_CHARS: usize = 200;
