@@ -261,7 +261,11 @@ mod tests {
             TreeKind::Type,
         ];
         for (i, a) in objects.iter().enumerate() {
-            assert!(objects[i + 1..].iter().all(|b| kind_icon(*a).1 != kind_icon(*b).1));
+            assert!(
+                objects[i + 1..]
+                    .iter()
+                    .all(|b| kind_icon(*a).1 != kind_icon(*b).1)
+            );
         }
     }
 }

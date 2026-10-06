@@ -374,7 +374,11 @@ fn init_workspace_commands(cx: &mut App) {
         KeyBinding::new("cmd-k", OpenAnything, Some("NativeWorkspace")),
         KeyBinding::new("cmd-o", OpenTable, Some("NativeWorkspace")),
         KeyBinding::new("cmd-p", SwitchProject, Some("NativeWorkspace")),
-        KeyBinding::new("cmd-shift-c", FocusConnectionSearch, Some("NativeWorkspace")),
+        KeyBinding::new(
+            "cmd-shift-c",
+            FocusConnectionSearch,
+            Some("NativeWorkspace"),
+        ),
         KeyBinding::new("ctrl-`", ToggleConsole, Some("NativeWorkspace")),
         KeyBinding::new("cmd-\\", ToggleSidebar, Some("NativeWorkspace")),
         KeyBinding::new("cmd-j", ToggleStatusBar, Some("NativeWorkspace")),

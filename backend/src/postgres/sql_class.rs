@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+pub(crate) use super::sql_lex::SqlDialect;
 use super::sql_lex::{
     is_executable_comment, lex_sql_spanned_dialect, SpannedToken, SqlIdentifier, SqlToken,
 };
-pub(crate) use super::sql_lex::SqlDialect;
 
 struct ReadEscalation {
     identifier: &'static str,
@@ -298,7 +298,9 @@ fn mysql_set_outlives_session(tokens: &[SqlToken]) -> bool {
     }) || tokens
         .get(1)
         .is_some_and(|token| is_keyword(token, "resource"))
-        || (tokens.get(1).is_some_and(|token| is_keyword(token, "default"))
+        || (tokens
+            .get(1)
+            .is_some_and(|token| is_keyword(token, "default"))
             && tokens.get(2).is_some_and(|token| is_keyword(token, "role")))
 }
 
@@ -516,11 +518,17 @@ fn with_body_index(tokens: &[SqlToken]) -> Option<usize> {
         if matches!(tokens.get(index), Some(SqlToken::Symbol('('))) {
             index = matching_close(tokens, index)? + 1;
         }
-        if !tokens.get(index).is_some_and(|token| is_keyword(token, "as")) {
+        if !tokens
+            .get(index)
+            .is_some_and(|token| is_keyword(token, "as"))
+        {
             return None;
         }
         index += 1;
-        if tokens.get(index).is_some_and(|token| is_keyword(token, "not")) {
+        if tokens
+            .get(index)
+            .is_some_and(|token| is_keyword(token, "not"))
+        {
             index += 1;
         }
         if tokens
@@ -1150,11 +1158,7 @@ mod tests {
         for classes in [mysql(sql), sqlite(sql)] {
             assert_eq!(
                 classes,
-                vec![
-                    StatementClass::Read,
-                    UNBOUNDED_DML,
-                    StatementClass::Unknown
-                ]
+                vec![StatementClass::Read, UNBOUNDED_DML, StatementClass::Unknown]
             );
             assert_read_only_blocks(classes);
         }
@@ -1336,7 +1340,10 @@ mod tests {
         }
         // PostgreSQL SET and RESET stay session-scoped.
         assert_eq!(one("RESET ALL"), StatementClass::Session);
-        assert_eq!(one("SET password_encryption = 'x'"), StatementClass::Session);
+        assert_eq!(
+            one("SET password_encryption = 'x'"),
+            StatementClass::Session
+        );
     }
 
     #[test]

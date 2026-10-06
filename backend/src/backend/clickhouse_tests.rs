@@ -534,10 +534,7 @@ async fn sessions_read_bounded_catalogs_and_enforce_policy() {
 
     // Structure: sorting key, defaults, skip indexes, engine and DDL, all
     // through the bounded reader.
-    let structure = session
-        .structure("analytics", "daily", "s1")
-        .await
-        .unwrap();
+    let structure = session.structure("analytics", "daily", "s1").await.unwrap();
     assert_eq!(structure.engine, "SummingMergeTree");
     assert_eq!(structure.total_rows, Some(2));
     assert_eq!(structure.sorting_key, ["day"]);

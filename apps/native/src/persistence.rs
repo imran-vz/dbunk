@@ -444,7 +444,10 @@ mod tests {
         assert!(saves.mark());
         saves.saved();
         assert_eq!(saves.fire(false), CoalescedSave::Idle);
-        assert!(saves.mark(), "the idle timer ended, so a new change re-arms");
+        assert!(
+            saves.mark(),
+            "the idle timer ended, so a new change re-arms"
+        );
     }
 
     #[test]

@@ -172,22 +172,28 @@ impl ConnectionSettingsView {
             "Edit connection"
         };
         let weak = cx.weak_entity();
-        crate::ui::tool_button(("connection-settings-action", index), label, None, enabled, false)
-            .track_focus(&self.buttons[index])
-            .tab_stop(enabled)
-            .tab_index(0)
-            .on_click(cx.listener(move |this, _, window, cx| {
+        crate::ui::tool_button(
+            ("connection-settings-action", index),
+            label,
+            None,
+            enabled,
+            false,
+        )
+        .track_focus(&self.buttons[index])
+        .tab_stop(enabled)
+        .tab_index(0)
+        .on_click(cx.listener(move |this, _, window, cx| {
+            window.focus(&this.buttons[index], cx);
+            this.activate(index, cx);
+        }))
+        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+            weak.update(cx, |this, cx| {
                 window.focus(&this.buttons[index], cx);
                 this.activate(index, cx);
-            }))
-            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-                weak.update(cx, |this, cx| {
-                    window.focus(&this.buttons[index], cx);
-                    this.activate(index, cx);
-                })
-                .ok();
             })
-            .into_any_element()
+            .ok();
+        })
+        .into_any_element()
     }
 }
 impl Render for ConnectionSettingsView {

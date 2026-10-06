@@ -164,9 +164,7 @@ impl ObjectDdlView {
         let (name, body) = match labels {
             Some((name_label, body_label, body_limit, multiline)) => (
                 Some(cx.new(|cx| Field::new(name_label, 63, false, name, window, cx))),
-                Some(cx.new(|cx| {
-                    Field::new(body_label, body_limit, multiline, body, window, cx)
-                })),
+                Some(cx.new(|cx| Field::new(body_label, body_limit, multiline, body, window, cx))),
             ),
             None => (None, None),
         };

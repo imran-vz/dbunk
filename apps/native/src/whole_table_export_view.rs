@@ -391,18 +391,24 @@ impl WholeTableExportView {
         };
         let weak = cx.weak_entity();
         let primary = matches!(action, Action::Save);
-        crate::ui::tool_button(("whole-export-action", index), label, None, enabled, primary)
-            .track_focus(&self.buttons[index])
-            .tab_stop(enabled)
-            .tab_index(0)
-            // GPUI maps a focused Enter/Space pair to this click on key-up.
-            // A separate key-down activation would run the action twice.
-            .on_click(cx.listener(move |this, _, window, cx| this.click_button(index, window, cx)))
-            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-                weak.update(cx, |this, cx| this.click_button(index, window, cx))
-                    .ok();
-            })
-            .into_any_element()
+        crate::ui::tool_button(
+            ("whole-export-action", index),
+            label,
+            None,
+            enabled,
+            primary,
+        )
+        .track_focus(&self.buttons[index])
+        .tab_stop(enabled)
+        .tab_index(0)
+        // GPUI maps a focused Enter/Space pair to this click on key-up.
+        // A separate key-down activation would run the action twice.
+        .on_click(cx.listener(move |this, _, window, cx| this.click_button(index, window, cx)))
+        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+            weak.update(cx, |this, cx| this.click_button(index, window, cx))
+                .ok();
+        })
+        .into_any_element()
     }
 }
 impl Drop for WholeTableExportView {

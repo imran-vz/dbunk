@@ -494,7 +494,14 @@ fn alter_is_destructive(depth0: &[String]) -> bool {
     depth0.iter().skip(1).any(|word| {
         matches!(
             word.as_str(),
-            "DELETE" | "UPDATE" | "DROP" | "CLEAR" | "DETACH" | "REPLACE" | "MOVE" | "UNFREEZE"
+            "DELETE"
+                | "UPDATE"
+                | "DROP"
+                | "CLEAR"
+                | "DETACH"
+                | "REPLACE"
+                | "MOVE"
+                | "UNFREEZE"
                 | "TTL"
         )
     })
@@ -843,8 +850,7 @@ fn config_dictionary_columns(described: ClickHouseRows) -> ClickHouseStructure {
             .rows
             .iter()
             .map(|row| {
-                let (kind, expression) =
-                    (cell(row, default_type), cell(row, default_expression));
+                let (kind, expression) = (cell(row, default_type), cell(row, default_expression));
                 ClickHouseStructureColumn {
                     name: cell(row, name),
                     type_name: cell(row, type_name),

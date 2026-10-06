@@ -441,7 +441,9 @@ impl MaintenanceView {
                         if *error != MaintenanceError::OutcomeUnavailable {
                             self.not_sent();
                         }
-                        self.fail(format!("Maintenance submission: {error}; recovery retained"));
+                        self.fail(format!(
+                            "Maintenance submission: {error}; recovery retained"
+                        ));
                     }
                 }
             }

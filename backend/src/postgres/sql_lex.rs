@@ -600,9 +600,7 @@ mod tests {
         );
         // Ends differ with and without NO_BACKSLASH_ESCAPES / ANSI_QUOTES.
         assert!(lex_sql_spanned_dialect(r"SELECT 'a\'; X; '", SqlDialect::MySql).is_err());
-        assert!(
-            lex_sql_spanned_dialect(r#"SELECT "a\" , '" ; X ; '"#, SqlDialect::MySql).is_err()
-        );
+        assert!(lex_sql_spanned_dialect(r#"SELECT "a\" , '" ; X ; '"#, SqlDialect::MySql).is_err());
     }
 
     #[test]

@@ -421,9 +421,8 @@ impl Render for SqliteQueryView {
                         ))
                         .tooltip_show_delay(ui::tooltip_delay())
                         .when(connected && !running, |button| {
-                            button.on_click(
-                                cx.listener(|this, _, _, cx| this.run(false, false, cx)),
-                            )
+                            button
+                                .on_click(cx.listener(|this, _, _, cx| this.run(false, false, cx)))
                         }),
                     )
                     .child(

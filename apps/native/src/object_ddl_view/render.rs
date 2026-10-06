@@ -481,15 +481,11 @@ impl Render for ObjectDdlView {
                 }
             }))
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_1()
-                    .children(
-                        (0..ACTIONS.len())
-                            .filter(|i| self.shows_action(ACTIONS[*i].0))
-                            .map(|i| self.button(i, cx)),
-                    ),
+                div().flex().flex_wrap().gap_1().children(
+                    (0..ACTIONS.len())
+                        .filter(|i| self.shows_action(ACTIONS[*i].0))
+                        .map(|i| self.button(i, cx)),
+                ),
             )
             .when_some(self.name.as_ref().filter(|_| plain_fields), |v, field| {
                 v.child(div().px_2().pt_1().child(field.clone()))

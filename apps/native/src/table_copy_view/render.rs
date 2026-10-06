@@ -305,7 +305,11 @@ impl Render for TableCopyView {
                     .items_center()
                     .gap_2()
                     .px_2()
-                    .child(div().text_color(crate::style::dim()).child(FIELD_LABELS[index]))
+                    .child(
+                        div()
+                            .text_color(crate::style::dim())
+                            .child(FIELD_LABELS[index]),
+                    )
                     .child(div().flex_1().child(field.clone())),
             );
         }

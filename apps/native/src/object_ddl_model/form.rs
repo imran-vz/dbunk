@@ -34,7 +34,9 @@ impl IndexMethod {
         }
     }
     pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|method| method.as_str() == value)
+        Self::ALL
+            .into_iter()
+            .find(|method| method.as_str() == value)
     }
     pub fn next(self) -> Self {
         let at = Self::ALL.iter().position(|m| *m == self).unwrap_or(0);

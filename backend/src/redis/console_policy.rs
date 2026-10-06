@@ -168,7 +168,11 @@ mod tests {
     #[test]
     fn read_only_scripts_are_their_own_class() {
         for text in ["EVAL_RO return 1 0", "evalsha_ro abc 0", "FCALL_RO f 0"] {
-            assert_eq!(classify(&tokens(text)), ConsoleCommand::ReadScript, "{text}");
+            assert_eq!(
+                classify(&tokens(text)),
+                ConsoleCommand::ReadScript,
+                "{text}"
+            );
         }
     }
 

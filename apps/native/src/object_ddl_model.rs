@@ -41,11 +41,19 @@ impl Drop for Lease {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Purpose {
     Drop(PgObjectRef),
-    CreateView { schema: String },
+    CreateView {
+        schema: String,
+    },
     /// A plain table; the backend claims it as an existing `Table`.
-    CreateIndex { schema: String, table: String },
+    CreateIndex {
+        schema: String,
+        table: String,
+    },
     /// An enum type; the backend claims it as an existing `Type`.
-    AddEnumValue { schema: String, name: String },
+    AddEnumValue {
+        schema: String,
+        name: String,
+    },
 }
 fn valid_name(value: &str) -> bool {
     !value.is_empty() && value.len() <= 63 && !value.contains('\0')
@@ -223,9 +231,11 @@ impl Draft {
                 name.clone(),
                 index_columns_text(columns),
             ),
-            [ObjectDdlOperation::AddEnumValue {
-                value, position, ..
-            }] => {
+            [
+                ObjectDdlOperation::AddEnumValue {
+                    value, position, ..
+                },
+            ] => {
                 let (placement, neighbor) = match position {
                     None => (EnumPlacement::End, String::new()),
                     Some(ObjectDdlEnumPosition::Before { neighbor }) => {

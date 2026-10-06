@@ -355,14 +355,20 @@ async fn a_load_that_raced_a_mutation_never_refills_the_cache() {
     // ...while a mutation commits and publishes the new secrets.
     write_all(&context, mode, &entries("new")).await.unwrap();
     assert!(!context.fill_cache(generation, &stale));
-    assert_eq!(read_all_cached(&context, mode).await.unwrap(), entries("new"));
+    assert_eq!(
+        read_all_cached(&context, mode).await.unwrap(),
+        entries("new")
+    );
 
     // Invalidation fences a racing load the same way.
     context.invalidate_cache();
     let generation = context.cached().unwrap_err();
     context.invalidate_cache();
     assert!(!context.fill_cache(generation, &stale));
-    assert_eq!(read_all_cached(&context, mode).await.unwrap(), entries("new"));
+    assert_eq!(
+        read_all_cached(&context, mode).await.unwrap(),
+        entries("new")
+    );
 }
 
 #[tokio::test]

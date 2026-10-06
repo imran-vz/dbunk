@@ -78,7 +78,11 @@ fn console_admission_applies_guard_policy_and_bounds() {
     for refused in [
         tokens("SUBSCRIBE ch"),
         tokens("BLPOP q 0"),
-        vec![b"SET".to_vec(), b"k".to_vec(), vec![b'x'; REDIS_COMMAND_BYTES]],
+        vec![
+            b"SET".to_vec(),
+            b"k".to_vec(),
+            vec![b'x'; REDIS_COMMAND_BYTES],
+        ],
         vec![b"MGET".to_vec(); REDIS_COMMAND_TOKENS + 1],
     ] {
         assert!(matches!(
@@ -167,9 +171,15 @@ fn whole_value_reads_are_measured_and_bounded_forms_are_not() {
         probe("ZRANGE z 0 -1 WITHSCORES"),
         Some(("ZCARD", Window::Rank { start: 0, stop: -1 }))
     );
-    assert_eq!(probe("ZRANGE z -inf +inf BYSCORE"), Some(("ZCARD", Window::All)));
+    assert_eq!(
+        probe("ZRANGE z -inf +inf BYSCORE"),
+        Some(("ZCARD", Window::All))
+    );
     assert_eq!(probe("ZRANGE z -inf +inf BYSCORE LIMIT 0 50"), None);
-    assert_eq!(probe("ZRANGEBYSCORE z -inf +inf"), Some(("ZCARD", Window::All)));
+    assert_eq!(
+        probe("ZRANGEBYSCORE z -inf +inf"),
+        Some(("ZCARD", Window::All))
+    );
     assert_eq!(probe("ZRANGEBYLEX z - + LIMIT 0 10"), None);
     assert_eq!(probe("XRANGE s - +"), Some(("XLEN", Window::All)));
     assert_eq!(probe("XRANGE s - + COUNT 10"), None);
@@ -197,7 +207,10 @@ fn measured_reads_over_their_limit_are_refused_with_a_bounded_form() {
     let refusal = judge(&preflight(&tokens("HGETALL h")).unwrap(), 50_000).unwrap();
     assert!(refusal.contains("HSCAN h 0 COUNT 100"), "{refusal}");
     let refusal = judge(&preflight(&tokens("KEYS user:*")).unwrap(), 50_000).unwrap();
-    assert!(refusal.contains("SCAN 0 MATCH user:* COUNT 100"), "{refusal}");
+    assert!(
+        refusal.contains("SCAN 0 MATCH user:* COUNT 100"),
+        "{refusal}"
+    );
 }
 
 #[test]
@@ -255,9 +268,10 @@ fn raw_replies_are_bounded_while_walking_the_value() {
     );
     assert!(!budget.truncated);
     let mut budget = Budget::default();
-    let RedisValue::Bytes(hex) =
-        bound_reply(redis::Value::BulkString(vec![0xff; REDIS_REPLY_BYTES]), &mut budget)
-    else {
+    let RedisValue::Bytes(hex) = bound_reply(
+        redis::Value::BulkString(vec![0xff; REDIS_REPLY_BYTES]),
+        &mut budget,
+    ) else {
         panic!("bytes expected");
     };
     assert!(budget.truncated);

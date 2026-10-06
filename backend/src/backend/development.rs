@@ -26,6 +26,7 @@ pub use connections::{
 };
 pub use settings::{DevelopmentCredentialState, DevelopmentSettings, DevelopmentStorageMode};
 pub(super) use workspace::encode_record as encode_workspace_record;
+pub use workspace::WorkspaceShell;
 pub use workspace::{
     WorkspaceAdminAction, WorkspaceAdminControl, WorkspaceApplyState, WorkspaceDensity,
     WorkspaceDocument, WorkspaceError, WorkspaceLoad, WorkspaceMaintenance,
@@ -39,7 +40,6 @@ pub use workspace::{
     WORKSPACE_TABLE_DDL_MAX_BYTES,
 };
 pub use workspace::{WorkspaceObjectDdl, WORKSPACE_OBJECT_DDL_MAX_BYTES};
-pub use workspace::WorkspaceShell;
 #[cfg(test)]
 mod tests;
 

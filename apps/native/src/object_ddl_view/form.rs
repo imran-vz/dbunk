@@ -91,7 +91,10 @@ impl ObjectDdlView {
         let pristine = name.is_empty() && body.is_empty();
         match self.draft.operations(purpose, name, body) {
             Err(issue) => (issue.into(), !pristine),
-            Ok(_) => ("Ready: observe and review shows the exact SQL".into(), false),
+            Ok(_) => (
+                "Ready: observe and review shows the exact SQL".into(),
+                false,
+            ),
         }
     }
     /// What an empty index name resolves to, when the columns parse.
@@ -174,9 +177,7 @@ impl ObjectDdlView {
             .tab_index(0)
             // GPUI activates a focused clickable on Enter/Space key-up through
             // on_click; no key-down handler, so activation happens once.
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.control_click(index, window, cx)
-            }))
+            .on_click(cx.listener(move |this, _, window, cx| this.control_click(index, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.control_click(index, window, cx))
                     .ok();

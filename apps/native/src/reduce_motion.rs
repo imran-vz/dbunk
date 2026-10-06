@@ -77,9 +77,10 @@ mod platform {
         // SAFETY: objc_msgSend must be called through the exact method type;
         // every selector sent here takes no arguments and returns an object.
         unsafe {
-            let send = std::mem::transmute::<unsafe extern "C" fn(), unsafe extern "C" fn(Id, Sel) -> Id>(
-                objc_msgSend,
-            );
+            let send = std::mem::transmute::<
+                unsafe extern "C" fn(),
+                unsafe extern "C" fn(Id, Sel) -> Id,
+            >(objc_msgSend);
             send(receiver, sel_registerName(selector.as_ptr()))
         }
     }
@@ -101,9 +102,10 @@ mod platform {
         // both x86_64 (signed char) and arm64 (bool).
         unsafe {
             let workspace = shared_workspace()?;
-            let get = std::mem::transmute::<unsafe extern "C" fn(), unsafe extern "C" fn(Id, Sel) -> i8>(
-                objc_msgSend,
-            );
+            let get = std::mem::transmute::<
+                unsafe extern "C" fn(),
+                unsafe extern "C" fn(Id, Sel) -> i8,
+            >(objc_msgSend);
             Some(
                 get(
                     workspace,

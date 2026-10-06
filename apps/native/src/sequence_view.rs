@@ -368,11 +368,9 @@ impl SequenceView {
                         self.applying = Some(id);
                         self.message = "Sequence action dispatched; waiting for its receipt".into();
                     }
-                    Err(error) => {
-                        self.fail(format!(
-                            "Not sent: {error}. Review again from the observation."
-                        ))
-                    }
+                    Err(error) => self.fail(format!(
+                        "Not sent: {error}. Review again from the observation."
+                    )),
                 }
             }
             Action::Confirm => {
@@ -492,11 +490,9 @@ impl SequenceView {
                 ));
                 self.message = self.unknown.clone().unwrap();
             }
-            Err(error) => {
-                self.fail(format!(
-                    "Not applied: {error}. Review again from the observation."
-                ))
-            }
+            Err(error) => self.fail(format!(
+                "Not applied: {error}. Review again from the observation."
+            )),
         }
     }
     pub(crate) fn text(&self) -> String {

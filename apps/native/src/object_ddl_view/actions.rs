@@ -5,9 +5,7 @@ impl ObjectDdlView {
             Action::Back => !self.has_pending(),
             Action::Cancel => self.pending.is_some() || self.flow.is_some(),
             _ if !self.editable => false,
-            Action::Mode => {
-                self.editable_recipe() && self.purpose.is_some() && !self.uses_form()
-            }
+            Action::Mode => self.editable_recipe() && self.purpose.is_some() && !self.uses_form(),
             Action::Option => self.editable_recipe() && self.creating(),
             Action::Review => self.ready && self.editable_recipe() && self.purpose.is_some(),
             Action::Edit => {

@@ -455,7 +455,10 @@ mod tests {
         let body = format!("[\"s\"]\n[\"String\"]\n[\"{value}\"]\n[\"tail\"]\n");
         let mut reader = RowReader::new(limits(10, 1 << 20));
         for byte in body.as_bytes() {
-            assert_eq!(reader.push(std::slice::from_ref(byte)).unwrap(), Flow::Continue);
+            assert_eq!(
+                reader.push(std::slice::from_ref(byte)).unwrap(),
+                Flow::Continue
+            );
             // Everything still pending was already searched for a newline.
             assert_eq!(reader.scanned, reader.pending.len());
         }

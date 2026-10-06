@@ -382,10 +382,7 @@ impl RedisSession {
             }
         }
         let measured = match self.switch_db(&mut lane, db).await {
-            Ok(()) => {
-                self.pipeline::<Vec<i64>>(&mut lane.connection, &pipe)
-                    .await
-            }
+            Ok(()) => self.pipeline::<Vec<i64>>(&mut lane.connection, &pipe).await,
             Err(error) => Err(error),
         };
         match measured {
@@ -777,7 +774,9 @@ pub(crate) fn preflight(tokens: &[Vec<u8>]) -> Option<Preflight> {
         "LRANGE" | "ZRANGE" | "ZREVRANGE" => {
             let key = key?;
             let probe = if head == "LRANGE" { "LLEN" } else { "ZCARD" };
-            if head == "ZRANGE" && (option("BYSCORE".as_bytes()).is_some() || option("BYLEX".as_bytes()).is_some()) {
+            if head == "ZRANGE"
+                && (option("BYSCORE".as_bytes()).is_some() || option("BYLEX".as_bytes()).is_some())
+            {
                 if limited() {
                     return None;
                 }

@@ -600,7 +600,10 @@ async fn byte_bounded_pages_advance_by_the_rows_they_kept() {
         assert_eq!(page.offset, offset);
         assert_eq!(page.set.omitted_rows, 0);
         assert_eq!(page.set.row_count, page.set.rows.len() as u64);
-        assert!(!page.has_more || !page.set.rows.is_empty(), "a page always advances");
+        assert!(
+            !page.has_more || !page.set.rows.is_empty(),
+            "a page always advances"
+        );
         shortened |= page.has_more && page.set.rows.len() < SQLITE_MAX_PAGE_ROWS as usize;
         seen.extend(
             page.set
@@ -614,7 +617,11 @@ async fn byte_bounded_pages_advance_by_the_rows_they_kept() {
         }
     }
     assert!(shortened, "the byte bound applied");
-    assert_eq!(seen, (1..=300).collect::<Vec<u64>>(), "no row skipped or repeated");
+    assert_eq!(
+        seen,
+        (1..=300).collect::<Vec<u64>>(),
+        "no row skipped or repeated"
+    );
     session.close(DEADLINE).await.unwrap();
 }
 
@@ -660,7 +667,11 @@ async fn confirmed_overrides_are_audited_even_when_a_later_statement_fails() {
         SqliteSessionError::Failed("no such table: missing".into())
     );
     let (sets, _) = completed(run(&session, "SELECT name FROM authors WHERE id = 2").await);
-    assert_eq!(sets[0].rows[0][0].as_deref(), Some("Bee"), "the update committed");
+    assert_eq!(
+        sets[0].rows[0][0].as_deref(),
+        Some("Bee"),
+        "the update committed"
+    );
     let audited: i64 = sqlx::query_scalar("SELECT count(*) FROM safety_overrides")
         .fetch_one(&audit)
         .await

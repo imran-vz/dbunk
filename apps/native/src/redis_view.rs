@@ -347,9 +347,7 @@ impl RedisWorkspace {
                 Ok(page) => {
                     this.keyspace.apply_page(db, epoch, page);
                 }
-                Err(error) => this
-                    .keyspace
-                    .fail_page(db, epoch, retry, error.to_string()),
+                Err(error) => this.keyspace.fail_page(db, epoch, retry, error.to_string()),
             },
         );
         if !started {

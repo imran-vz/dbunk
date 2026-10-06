@@ -571,8 +571,8 @@ impl Focusable for NavigatorView {
 /// Icon and colour for a tree row; colours separate object kinds at a glance.
 fn row_icon(row: &Row, catalog: Option<&Catalog>) -> (&'static str, gpui::Rgba) {
     use crate::catalog::Kind;
-    use dbunk_lib::backend::objects::PgObjectKind as K;
     use crate::style::TreeKind as T;
+    use dbunk_lib::backend::objects::PgObjectKind as K;
     style::kind_icon(match row.kind {
         RowKind::Schema { .. } => T::Schema,
         RowKind::Database => T::Database,
