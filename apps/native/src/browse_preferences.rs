@@ -202,6 +202,17 @@ pub enum PreferencePatch {
         order: Vec<String>,
         width: f32,
     },
+    /// A dragged width for one source name, merged into the latest widths.
+    ColumnWidth {
+        name: String,
+        width: f32,
+    },
+    /// Desired visibility for one source name: hide adds it to
+    /// `hiddenColumns`, show removes it.
+    ColumnVisibility {
+        name: String,
+        visible: bool,
+    },
 }
 impl PreferencePatch {
     pub fn apply(
@@ -214,6 +225,37 @@ impl PreferencePatch {
         match self {
             Self::PinColumn { selected, pinned } => {
                 set_pin(&mut prefs, selected, *pinned)?;
+            }
+            Self::ColumnWidth { name, width } => {
+                if !valid_column_name(name)
+                    || !width.is_finite()
+                    || !(crate::grid_columns::RESIZE_MIN..=crate::grid_columns::RESIZE_MAX)
+                        .contains(width)
+                {
+                    return Err("Column width is invalid");
+                }
+                if !prefs.0["columnWidths"].is_object() {
+                    if !prefs.0["columnWidths"].is_null() {
+                        return Err("Stored column widths are invalid");
+                    }
+                    prefs.0["columnWidths"] = json!({});
+                }
+                prefs.0["columnWidths"][name] = json!(width);
+            }
+            Self::ColumnVisibility { name, visible } => {
+                if !valid_column_name(name) {
+                    return Err("Select an unambiguous PostgreSQL column first");
+                }
+                let mut hidden = array(&prefs, "hiddenColumns")?;
+                if *visible {
+                    hidden.retain(|entry| entry.as_str() != Some(name.as_str()));
+                } else if !hidden
+                    .iter()
+                    .any(|entry| entry.as_str() == Some(name.as_str()))
+                {
+                    hidden.push(json!(name));
+                }
+                prefs.0["hiddenColumns"] = json!(hidden);
             }
             Self::MoveColumn {
                 selected,

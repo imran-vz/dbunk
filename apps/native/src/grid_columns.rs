@@ -2,10 +2,27 @@
 //! unknown fields and absent columns so schema changes do not destroy settings.
 use dbunk_lib::backend::data::TableGridPrefs;
 use serde_json::{Value, json};
-use std::{collections::HashSet, ops::Range};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
 
 pub const DEFAULT_WIDTH: f32 = 160.;
+/// Bounds for a dragged or stored column width.
+pub const RESIZE_MIN: f32 = 48.;
+pub const RESIZE_MAX: f32 = 1200.;
 const PREFS_BYTES: usize = 64 * 1024;
+
+/// One source column as the Columns popover lists it. Hidden columns are
+/// included; `cast_type` is filled by the grid, which owns the page.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ColumnEntry {
+    pub source: usize,
+    pub name: String,
+    pub cast_type: String,
+    pub visible: bool,
+    pub pinned: bool,
+}
 
 #[derive(Clone, Copy)]
 pub enum ColumnAction {
@@ -27,6 +44,9 @@ pub struct GridColumns {
     widths: Vec<f32>,
     offsets: Vec<f32>,
     prefs: TableGridPrefs,
+    /// Live (unsaved) drag widths by source name. The stored record wins on
+    /// `load`; a new page keeps them so widths do not snap back mid-save.
+    overrides: HashMap<String, f32>,
 }
 impl Default for GridColumns {
     fn default() -> Self {
@@ -38,6 +58,7 @@ impl Default for GridColumns {
             widths: Vec::new(),
             offsets: vec![0.],
             prefs: TableGridPrefs(json!({"version": 1})),
+            overrides: HashMap::new(),
         }
     }
 }
@@ -52,6 +73,7 @@ impl GridColumns {
         }
         crate::browse_preferences::validate_pins(&prefs)?;
         self.prefs = prefs;
+        self.overrides.clear();
         self.rebuild();
         Ok(())
     }
@@ -179,15 +201,120 @@ impl GridColumns {
                                 .copied()
                                 .unwrap_or(DEFAULT_WIDTH)
                         },
-                        |width| width.clamp(48., 1200.) as f32,
+                        |width| width.clamp(f64::from(RESIZE_MIN), f64::from(RESIZE_MAX)) as f32,
                     )
             })
             .collect();
+        // Live drag widths apply last, so a new page never snaps them back.
+        for (display, source) in self.visible.iter().enumerate() {
+            if let Some(width) = self.overrides.get(&self.names[*source]) {
+                self.widths[display] = *width;
+            }
+        }
+        self.rebuild_offsets();
+    }
+    fn rebuild_offsets(&mut self) {
         self.offsets.clear();
         self.offsets.push(0.);
         for width in &self.widths {
             self.offsets.push(self.offsets.last().unwrap() + width);
         }
+    }
+    /// Applies a dragged width locally (no preference write). Returns whether
+    /// the geometry changed.
+    pub fn set_live_width(&mut self, display: usize, width: f32) -> bool {
+        let Some(source) = self.source(display) else {
+            return false;
+        };
+        if !width.is_finite() {
+            return false;
+        }
+        let width = width.clamp(RESIZE_MIN, RESIZE_MAX);
+        if self.widths[display] == width {
+            return false;
+        }
+        self.widths[display] = width;
+        self.overrides.insert(self.names[source].clone(), width);
+        self.rebuild_offsets();
+        true
+    }
+    /// Drops every live width; the stored record is authoritative again.
+    pub fn clear_overrides(&mut self) -> bool {
+        if self.overrides.is_empty() {
+            return false;
+        }
+        self.overrides.clear();
+        self.rebuild();
+        true
+    }
+    fn unambiguous_name(&self, source: usize) -> Result<&str, &'static str> {
+        let name = self
+            .names
+            .get(source)
+            .ok_or("Column is no longer available")?;
+        if self.names.iter().filter(|item| *item == name).count() != 1
+            || !crate::browse_preferences::valid_column_name(name)
+        {
+            return Err("Column settings require an unambiguous PostgreSQL column name");
+        }
+        Ok(name)
+    }
+    /// The current width of one visible column as a stored preference.
+    pub fn width_patch(
+        &self,
+        display: usize,
+    ) -> Result<crate::browse_preferences::PreferencePatch, &'static str> {
+        let source = self.source(display).ok_or("Select a column first")?;
+        let name = self.unambiguous_name(source)?;
+        Ok(crate::browse_preferences::PreferencePatch::ColumnWidth {
+            name: name.to_owned(),
+            width: self.widths[display].clamp(RESIZE_MIN, RESIZE_MAX),
+        })
+    }
+    /// Visible columns in display order, then hidden ones in source order.
+    pub fn entries(&self) -> Vec<ColumnEntry> {
+        let mut entries = self
+            .visible
+            .iter()
+            .enumerate()
+            .map(|(display, source)| ColumnEntry {
+                source: *source,
+                name: self.names[*source].clone(),
+                cast_type: String::new(),
+                visible: true,
+                pinned: display < self.pinned_count,
+            })
+            .collect::<Vec<_>>();
+        entries.extend(
+            (0..self.names.len())
+                .filter(|source| !self.visible.contains(source))
+                .map(|source| ColumnEntry {
+                    source,
+                    name: self.names[source].clone(),
+                    cast_type: String::new(),
+                    visible: false,
+                    pinned: false,
+                }),
+        );
+        entries
+    }
+    /// Shows or hides one source column. Hiding the last visible column is
+    /// refused so the grid always keeps something to inspect.
+    pub fn visibility_patch(
+        &self,
+        source: usize,
+        visible: bool,
+    ) -> Result<crate::browse_preferences::PreferencePatch, &'static str> {
+        let name = self.unambiguous_name(source)?;
+        if !visible && self.display(source).is_some() && self.len() <= 1 {
+            return Err("Keep at least one column visible");
+        }
+        Ok(
+            crate::browse_preferences::PreferencePatch::ColumnVisibility {
+                name: name.to_owned(),
+                visible,
+            },
+        )
     }
     /// Refuse over-budget changes atomically; the caller publishes only after
     /// SQLite acknowledges the complete preference record.
@@ -364,6 +491,153 @@ mod tests {
             columns.change(None, ColumnAction::ShowAll).unwrap().len(),
             3
         );
+    }
+
+    fn page(names: &[&str]) -> dbunk_lib::backend::data::BrowseTableResult {
+        use dbunk_lib::backend::data::*;
+        BrowseTableResult {
+            request_id: 1,
+            columns: names
+                .iter()
+                .map(|name| BrowseColumn {
+                    name: (*name).into(),
+                    cast_type: "text".into(),
+                    nullable: true,
+                })
+                .collect(),
+            rows: vec![names.iter().map(|_| Some("x".into())).collect()],
+            identity: BrowseIdentity {
+                kind: BrowseIdentityKind::None,
+                columns: vec![],
+            },
+            row_identity: None,
+            page_info: BrowsePageInfo {
+                mode: BrowsePageMode::Offset,
+                page: Some(1),
+                has_more: false,
+                next_cursor: None,
+            },
+            count: BrowseCount {
+                kind: BrowseCountKind::Exact,
+                value: Some(1),
+            },
+            inspection: BrowseInspection {
+                sql: String::new(),
+                params: vec![],
+            },
+            omitted_rows: 0,
+            truncated_cells: 0,
+            runtime_ms: 0,
+        }
+    }
+
+    #[test]
+    fn live_width_is_clamped_and_updates_offsets_and_total() {
+        let mut columns = sample_columns();
+        let before = columns.total_width();
+        let first = columns.width(0);
+        assert!(columns.set_live_width(0, 5.));
+        assert_eq!(columns.width(0), RESIZE_MIN);
+        assert_eq!(columns.offset(1), RESIZE_MIN);
+        assert_eq!(columns.total_width(), before - first + RESIZE_MIN);
+        assert!(columns.set_live_width(1, 10_000.));
+        assert_eq!(columns.width(1), RESIZE_MAX);
+        assert_eq!(columns.offset(2), RESIZE_MIN + RESIZE_MAX);
+        // Unchanged, non-finite and unknown columns report no change.
+        assert!(!columns.set_live_width(1, 2_000.));
+        assert!(!columns.set_live_width(0, f32::NAN));
+        assert!(!columns.set_live_width(9, 100.));
+        assert_eq!(columns.width(0), RESIZE_MIN);
+    }
+
+    #[test]
+    fn live_width_survives_a_new_page_and_load_restores_the_stored_width() {
+        let mut columns = GridColumns::default();
+        columns
+            .load(Some(TableGridPrefs(
+                json!({"version":1,"columnWidths":{"value":90}}),
+            )))
+            .unwrap();
+        columns.table_columns(&page(&["id", "value"]));
+        assert_eq!(columns.width(1), 90.);
+        assert!(columns.set_live_width(1, 300.));
+        columns.table_columns(&page(&["id", "value", "added"]));
+        assert_eq!(columns.width(1), 300.);
+        assert_eq!(columns.offset(2), columns.width(0) + 300.);
+        let stored = columns.prefs();
+        columns.load(Some(stored)).unwrap();
+        assert_eq!(columns.width(1), 90.);
+        // clear_overrides also returns to the stored record.
+        assert!(columns.set_live_width(1, 250.));
+        assert!(columns.clear_overrides());
+        assert_eq!(columns.width(1), 90.);
+        assert!(!columns.clear_overrides());
+    }
+
+    #[test]
+    fn width_patch_names_the_source_and_refuses_ambiguous_names() {
+        use crate::browse_preferences::PreferencePatch;
+        let mut columns = sample_columns()
+            .change(Some(2), ColumnAction::Left)
+            .unwrap();
+        assert!(columns.set_live_width(1, 222.));
+        match columns.width_patch(1).unwrap() {
+            PreferencePatch::ColumnWidth { name, width } => {
+                assert_eq!(name, "amount");
+                assert_eq!(width, 222.);
+            }
+            _ => panic!("expected a width patch"),
+        }
+        assert!(columns.width_patch(9).is_err());
+        let mut duplicate = GridColumns::default();
+        duplicate.columns(["x", "x"].into_iter().map(str::to_owned));
+        assert!(duplicate.width_patch(0).is_err());
+        assert!(duplicate.visibility_patch(1, false).is_err());
+    }
+
+    #[test]
+    fn entries_include_hidden_columns_and_last_visible_cannot_hide() {
+        use crate::browse_preferences::PreferencePatch;
+        let columns = sample_columns()
+            .change(Some(1), ColumnAction::Hide)
+            .unwrap()
+            .change(Some(1), ColumnAction::TogglePin)
+            .unwrap();
+        let entries = columns.entries();
+        let summary = entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.source,
+                    entry.name.as_str(),
+                    entry.visible,
+                    entry.pinned,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            summary,
+            [
+                (2, "amount", true, true),
+                (0, "id", true, false),
+                (1, "value", false, false)
+            ]
+        );
+        match columns.visibility_patch(1, true).unwrap() {
+            PreferencePatch::ColumnVisibility { name, visible } => {
+                assert_eq!((name.as_str(), visible), ("value", true));
+            }
+            _ => panic!("expected a visibility patch"),
+        }
+        let single = columns.change(Some(0), ColumnAction::Hide).unwrap();
+        assert_eq!(single.len(), 1);
+        let last = single.source(0).unwrap();
+        assert_eq!(
+            single.visibility_patch(last, false).err(),
+            Some("Keep at least one column visible")
+        );
+        // Hiding an already hidden column is still allowed (idempotent).
+        assert!(single.visibility_patch(1, false).is_ok());
     }
 }
 
