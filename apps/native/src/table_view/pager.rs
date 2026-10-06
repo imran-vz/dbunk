@@ -6,7 +6,7 @@ use super::menus::LegacyAction;
 use super::{Action, TableView, menus::Popover};
 use crate::{accessible_editor::AccessibleEditor, browse_preferences::PAGE_SIZES};
 use editor::Editor;
-use gpui::{AnyElement, Context, Role, SharedString, Window, div, prelude::*, px};
+use gpui::{AnyElement, Context, Focusable, Role, SharedString, Window, div, prelude::*, px};
 
 /// What the pager popover offers, for the reachability test.
 #[cfg(test)]
@@ -110,9 +110,12 @@ pub(super) fn parse_jump(text: &str, last: Option<u32>) -> Result<u32, String> {
     }
 }
 
+/// `(page, page_size, rows, total)`; the total is `(count, exact)`.
+type PageNumbers = (u32, u32, usize, Option<(u64, bool)>);
+
 impl TableView {
     /// `(page, page_size, rows, total)` for the current result, if any.
-    pub(super) fn page_numbers(&self) -> Option<(u32, u32, usize, Option<(u64, bool)>)> {
+    pub(super) fn page_numbers(&self) -> Option<PageNumbers> {
         let model = self.model.as_ref()?;
         let result = model.result()?;
         let total = model

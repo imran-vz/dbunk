@@ -63,9 +63,12 @@ impl TablePolicy {
 
     /// PostgreSQL records resolve their policy; anything else is `UNKNOWN`.
     pub fn from_connection(connection: &DevelopmentConnection) -> Self {
-        connection.postgres.as_ref().map_or(Self::UNKNOWN, |postgres| {
-            Self::resolve(postgres.environment, postgres.safe_mode, postgres.read_only)
-        })
+        connection
+            .postgres
+            .as_ref()
+            .map_or(Self::UNKNOWN, |postgres| {
+                Self::resolve(postgres.environment, postgres.safe_mode, postgres.read_only)
+            })
     }
 
     /// `None` when the review cannot be opened at all (read-only).
@@ -231,7 +234,10 @@ mod tests {
             TablePolicy::resolve(Production, Inherit, false).confirm_style(),
             Some(ConfirmStyle::Typed)
         );
-        assert_eq!(TablePolicy::UNKNOWN.confirm_style(), Some(ConfirmStyle::Typed));
+        assert_eq!(
+            TablePolicy::UNKNOWN.confirm_style(),
+            Some(ConfirmStyle::Typed)
+        );
         assert!(TablePolicy::UNKNOWN.expects_backend_confirmation());
         assert_eq!(TablePolicy::UNKNOWN.read_only_reason(), None);
     }
@@ -245,12 +251,11 @@ mod tests {
                 assert!(!policy.expects_backend_confirmation());
                 assert_eq!(
                     policy.read_only_reason(),
-                    Some("Read-only connection: editing is disabled. Change it in connection settings.")
+                    Some(
+                        "Read-only connection: editing is disabled. Change it in connection settings."
+                    )
                 );
-                assert_eq!(
-                    preconfirmation(&policy, true),
-                    Preconfirmation::NotGranted
-                );
+                assert_eq!(preconfirmation(&policy, true), Preconfirmation::NotGranted);
             }
         }
         assert_eq!(
@@ -275,11 +280,18 @@ mod tests {
         );
     }
 
-    fn record(postgres: Option<(DevelopmentEnvironment, DevelopmentSafeMode, bool)>) -> DevelopmentConnection {
+    fn record(
+        postgres: Option<(DevelopmentEnvironment, DevelopmentSafeMode, bool)>,
+    ) -> DevelopmentConnection {
         DevelopmentConnection {
             id: "c".into(),
             name: "c".into(),
-            engine: (if postgres.is_some() { "PostgreSQL" } else { "MySQL" }).into(),
+            engine: (if postgres.is_some() {
+                "PostgreSQL"
+            } else {
+                "MySQL"
+            })
+            .into(),
             organization: Default::default(),
             unsupported_reason: None,
             postgres: postgres.map(|(environment, safe_mode, read_only)| {
@@ -313,8 +325,13 @@ mod tests {
                 read_only: false,
             }
         );
-        assert!(TablePolicy::from_connection(&record(Some((Development, Disabled, true)))).read_only);
-        assert_eq!(TablePolicy::from_connection(&record(None)), TablePolicy::UNKNOWN);
+        assert!(
+            TablePolicy::from_connection(&record(Some((Development, Disabled, true)))).read_only
+        );
+        assert_eq!(
+            TablePolicy::from_connection(&record(None)),
+            TablePolicy::UNKNOWN
+        );
     }
 
     #[test]
@@ -326,8 +343,14 @@ mod tests {
         assert_eq!(preconfirmation(&protected, false), Preconfirmation::Granted);
         assert_eq!(preconfirmation(&protected, true), Preconfirmation::Granted);
         let disabled = TablePolicy::resolve(Development, Inherit, false);
-        assert_eq!(preconfirmation(&disabled, false), Preconfirmation::NotGranted);
-        assert_eq!(preconfirmation(&disabled, true), Preconfirmation::NotGranted);
+        assert_eq!(
+            preconfirmation(&disabled, false),
+            Preconfirmation::NotGranted
+        );
+        assert_eq!(
+            preconfirmation(&disabled, true),
+            Preconfirmation::NotGranted
+        );
         assert_eq!(
             preconfirmation(&TablePolicy::UNKNOWN, true),
             Preconfirmation::Granted

@@ -96,7 +96,11 @@ impl TableChanges {
     }
     /// Removes a draft insert (the band's × button).
     pub fn remove_insert(&mut self, change: Uuid, cx: &mut Context<Self>) {
-        if self.edit.as_ref().is_some_and(|edit| edit.insert == Some(change)) {
+        if self
+            .edit
+            .as_ref()
+            .is_some_and(|edit| edit.insert == Some(change))
+        {
             self.close_edit(Advance::Stay, cx);
             self.finish_work();
         }

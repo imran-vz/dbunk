@@ -63,7 +63,10 @@ impl Workbench {
                     this.status = "Changes committed separately; results invalidated. Run SQL explicitly to refresh".into();
                 }
                 ChangesEvent::FocusGrid(_) => this.query_changes_return_focus = true,
-                ChangesEvent::KeyChanged => {}
+                ChangesEvent::KeyChanged
+                | ChangesEvent::EditOpened { .. }
+                | ChangesEvent::EditClosed { .. }
+                | ChangesEvent::OverlayChanged => {}
             }
             cx.notify();
         }));

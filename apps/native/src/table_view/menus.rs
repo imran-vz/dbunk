@@ -12,8 +12,8 @@ use crate::{
 };
 use dbunk_lib::backend::{csv_transfers::CsvDirection, data::BrowseSortDirection};
 use gpui::{
-    AnyElement, Bounds, Context, Entity, MouseDownEvent, Pixels, Role, SharedString, Subscription,
-    Window, prelude::*, px,
+    AnyElement, Bounds, Context, Entity, Focusable, MouseDownEvent, Pixels, Role, SharedString,
+    Subscription, Window, prelude::*, px,
 };
 
 /// Every action the pre-032 table tab exposed: the 19 toolbar buttons, the

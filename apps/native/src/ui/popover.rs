@@ -4,8 +4,8 @@
 //! keyboard navigation with `MenuNav`.
 use crate::style;
 use gpui::{
-    Anchor, Bounds, Deferred, Div, ElementId, Pixels, Point, Role, SharedString, Size, Stateful,
-    anchored, canvas, deferred, div, point, prelude::*, px, svg,
+    Anchor, Bounds, Deferred, Div, ElementId, Pixels, Role, SharedString, Stateful, anchored,
+    canvas, deferred, div, point, prelude::*, px, svg,
 };
 use std::{cell::Cell, rc::Rc};
 
@@ -40,38 +40,6 @@ pub enum Placement {
     BelowEnd,
     /// At the anchor's origin (context menus at the pointer).
     AtPoint,
-}
-
-/// Top-left corner for a panel of `size` opened from `anchor` inside a
-/// window of `window`. Flips above the anchor when there is no room below,
-/// then clamps so the panel keeps an 8 px margin to every window edge.
-pub fn place(
-    anchor: Bounds<Pixels>,
-    size: Size<Pixels>,
-    window: Size<Pixels>,
-    placement: Placement,
-) -> Point<Pixels> {
-    let (ax, ay) = (anchor.origin.x.as_f32(), anchor.origin.y.as_f32());
-    let (aw, ah) = (anchor.size.width.as_f32(), anchor.size.height.as_f32());
-    let (w, h) = (size.width.as_f32(), size.height.as_f32());
-    let (ww, wh) = (window.width.as_f32(), window.height.as_f32());
-    let (x, below, above) = match placement {
-        Placement::Below => (ax, ay + ah + GAP, ay - GAP - h),
-        Placement::BelowEnd => (ax + aw - w, ay + ah + GAP, ay - GAP - h),
-        Placement::AtPoint => (ax, ay, ay - h),
-    };
-    let y = if below + h <= wh - MARGIN || above < MARGIN {
-        below
-    } else {
-        above
-    };
-    point(px(clamp_axis(x, w, ww)), px(clamp_axis(y, h, wh)))
-}
-
-/// Keeps `[start, start + len]` inside `[MARGIN, limit - MARGIN]`; a panel
-/// larger than the window aligns to the leading margin.
-fn clamp_axis(start: f32, len: f32, limit: f32) -> f32 {
-    start.min(limit - MARGIN - len).max(MARGIN)
 }
 
 /// Paints `panel` above the document, anchored to `anchor` (window
@@ -143,7 +111,11 @@ fn row(
         .gap(px(6.))
         .rounded(px(4.))
         .whitespace_nowrap()
-        .text_color(if enabled { style::text() } else { style::faint() })
+        .text_color(if enabled {
+            style::text()
+        } else {
+            style::faint()
+        })
         .when(highlighted, |row| row.bg(style::hover()))
         .when(enabled, |row| {
             row.cursor_pointer()
@@ -183,7 +155,11 @@ pub fn item(
         .when(highlighted, |row| row.aria_active_descendant())
         .child(leading(
             icon,
-            if enabled { style::dim() } else { style::faint() },
+            if enabled {
+                style::dim()
+            } else {
+                style::faint()
+            },
         ))
         .child(div().flex_1().min_w_0().overflow_hidden().child(label))
         .when_some(hint, |row, hint| {
@@ -269,7 +245,11 @@ pub fn select_trigger(
         .bg(style::bg())
         .text_sm()
         .whitespace_nowrap()
-        .text_color(if enabled { style::text() } else { style::faint() })
+        .text_color(if enabled {
+            style::text()
+        } else {
+            style::faint()
+        })
         .when(enabled, |trigger| {
             trigger
                 .cursor_pointer()
@@ -353,11 +333,6 @@ impl MenuNav {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::size;
-
-    fn bounds(x: f32, y: f32, w: f32, h: f32) -> Bounds<Pixels> {
-        Bounds::new(point(px(x), px(y)), size(px(w), px(h)))
-    }
 
     #[test]
     fn menu_nav_wraps_jumps_and_maps_keys() {
@@ -394,55 +369,5 @@ mod tests {
         nav.set_len(4);
         assert_eq!(nav.key("up"), MenuKey::Moved);
         assert_eq!(nav.highlighted, 3);
-    }
-
-    #[test]
-    fn place_opens_below_and_aligns_end_edges() {
-        let window = size(px(1000.), px(800.));
-        let anchor = bounds(100., 50., 80., 20.);
-        let panel = size(px(200.), px(100.));
-        assert_eq!(
-            place(anchor, panel, window, Placement::Below),
-            point(px(100.), px(72.))
-        );
-        assert_eq!(
-            place(anchor, panel, window, Placement::BelowEnd),
-            point(px(MARGIN), px(72.))
-        );
-        let trailing = bounds(700., 50., 80., 20.);
-        assert_eq!(
-            place(trailing, panel, window, Placement::BelowEnd),
-            point(px(580.), px(72.))
-        );
-        assert_eq!(
-            place(bounds(300., 400., 0., 0.), panel, window, Placement::AtPoint),
-            point(px(300.), px(400.))
-        );
-    }
-
-    #[test]
-    fn place_flips_above_without_room_and_keeps_window_margins() {
-        let window = size(px(1000.), px(800.));
-        let panel = size(px(300.), px(200.));
-        let low = bounds(100., 700., 80., 20.);
-        assert_eq!(
-            place(low, panel, window, Placement::Below),
-            point(px(100.), px(498.))
-        );
-        assert_eq!(
-            place(bounds(900., 760., 0., 0.), panel, window, Placement::AtPoint),
-            point(px(692.), px(560.))
-        );
-        // No room either way: stay below, clamped inside the margin.
-        let tall = size(px(300.), px(790.));
-        let p = place(bounds(100., 300., 80., 20.), tall, window, Placement::Below);
-        assert_eq!(p.y, px(MARGIN));
-        for anchor in [bounds(-50., -50., 10., 10.), bounds(990., 790., 10., 10.)] {
-            for placement in [Placement::Below, Placement::BelowEnd, Placement::AtPoint] {
-                let p = place(anchor, panel, window, placement);
-                assert!(p.x >= px(MARGIN) && p.x + panel.width <= px(1000. - MARGIN));
-                assert!(p.y >= px(MARGIN) && p.y + panel.height <= px(800. - MARGIN));
-            }
-        }
     }
 }

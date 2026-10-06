@@ -187,28 +187,23 @@ impl TableChanges {
         let geometry = (kind == Some(Kind::Geometry) && !null && !raw)
             .then(|| crate::geometry_preview::parse(&edit.editor.read(cx).text(cx)));
 
-        let mut body = div()
-            .flex()
-            .flex_col()
-            .gap(px(6.))
-            .px(px(8.))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .font_family(style::MONO)
-                            .text_color(style::dim())
-                            .child(title.clone()),
-                    )
-                    .when(null, |row| row.child(ui::badge("NULL")))
-                    .when(default, |row| row.child(ui::badge("DEFAULT"))),
-            );
+        let mut body = div().flex().flex_col().gap(px(6.)).px(px(8.)).child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .font_family(style::MONO)
+                        .text_color(style::dim())
+                        .child(title.clone()),
+                )
+                .when(null, |row| row.child(ui::badge("NULL")))
+                .when(default, |row| row.child(ui::badge("DEFAULT"))),
+        );
         if let Some(label) = context {
             body = body.child(
                 div()
@@ -336,38 +331,36 @@ impl TableChanges {
             .child(cancel)
             .child(save);
 
-        let panel = popover::panel(
-            "cell-popover-editor",
-            Role::Dialog,
-            format!("Edit {title}"),
-        )
-        .w(px(480.))
-        .gap(px(6.))
-        // Modal-like: outside clicks never discard or stage the draft.
-        .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-            let keystroke = &event.keystroke;
-            let action = if keystroke.key == "escape" && !keystroke.modifiers.modified() {
-                Some(Action::CancelEdit)
-            } else if keystroke.key == "enter"
-                && keystroke.modifiers.platform
-                && !keystroke.modifiers.shift
-                && !keystroke.modifiers.alt
-            {
-                Some(Action::Stage)
-            } else {
-                None
-            };
-            if let Some(action) = action
-                && !this.composition_active(window, cx)
-            {
-                this.activate(action, window, cx);
-                cx.stop_propagation();
-            }
-        }))
-        .child(body)
-        .child(footer);
+        let panel = popover::panel("cell-popover-editor", Role::Dialog, format!("Edit {title}"))
+            .w(px(480.))
+            .gap(px(6.))
+            // Modal-like: outside clicks never discard or stage the draft.
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                let keystroke = &event.keystroke;
+                let action = if keystroke.key == "escape" && !keystroke.modifiers.modified() {
+                    Some(Action::CancelEdit)
+                } else if keystroke.key == "enter"
+                    && keystroke.modifiers.platform
+                    && !keystroke.modifiers.shift
+                    && !keystroke.modifiers.alt
+                {
+                    Some(Action::Stage)
+                } else {
+                    None
+                };
+                if let Some(action) = action
+                    && !this.composition_active(window, cx)
+                {
+                    this.activate(action, window, cx);
+                    cx.stop_propagation();
+                }
+            }))
+            .child(body)
+            .child(footer);
         match self.popover_anchor {
-            Some(anchor) => popover::layer(anchor, popover::Placement::Below, panel).into_any_element(),
+            Some(anchor) => {
+                popover::layer(anchor, popover::Placement::Below, panel).into_any_element()
+            }
             // No cell on screen (legacy JSON insert, or before the host sends
             // the anchor): centre it over the table instead.
             None => dialog::backdrop("cell-editor-backdrop")

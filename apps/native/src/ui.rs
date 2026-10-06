@@ -124,7 +124,11 @@ pub fn icon_button(
     enabled: bool,
 ) -> Stateful<Div> {
     let label = label.into();
-    let color = if enabled { style::dim() } else { style::faint() };
+    let color = if enabled {
+        style::dim()
+    } else {
+        style::faint()
+    };
     div()
         .id(id)
         .role(Role::Button)

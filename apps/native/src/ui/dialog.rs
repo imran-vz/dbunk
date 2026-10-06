@@ -23,7 +23,11 @@ pub fn backdrop(id: impl Into<ElementId>) -> Stateful<Div> {
 /// The dialog panel: AX modal dialog named `title`, fixed `width`, at most
 /// 80 % of the backdrop's height. Wrap with `ui::appear` at the call site; a
 /// caller that installs its own `a11y_synthetic_children` must set modal again.
-pub fn modal(id: impl Into<ElementId>, title: impl Into<SharedString>, width: f32) -> Stateful<Div> {
+pub fn modal(
+    id: impl Into<ElementId>,
+    title: impl Into<SharedString>,
+    width: f32,
+) -> Stateful<Div> {
     div()
         .id(id)
         .role(Role::Dialog)
@@ -112,9 +116,18 @@ pub fn env_notice(
         .rounded(px(5.))
         .overflow_hidden()
         .border_1()
-        .border_color(if loud { style::with_alpha(color, 0x73) } else { style::line() })
+        .border_color(if loud {
+            style::with_alpha(color, 0x73)
+        } else {
+            style::line()
+        })
         .when(loud, |notice| notice.bg(style::warn_fill()))
-        .child(div().flex_none().w(px(2.)).bg(style::with_alpha(color, 0xff)))
+        .child(
+            div()
+                .flex_none()
+                .w(px(2.))
+                .bg(style::with_alpha(color, 0xff)),
+        )
         .child(
             div()
                 .flex_1()

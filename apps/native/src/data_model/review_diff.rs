@@ -496,9 +496,12 @@ mod tests {
                 truncated: false,
             }
         );
-        let param = format_param(0, &DmlParam::Text {
-            value: Some("🙂".repeat(DIFF_TEXT_CHARS + 1)),
-        });
+        let param = format_param(
+            0,
+            &DmlParam::Text {
+                value: Some("🙂".repeat(DIFF_TEXT_CHARS + 1)),
+            },
+        );
         assert_eq!(param, format!("$1 = '{}…'", "🙂".repeat(DIFF_TEXT_CHARS)));
     }
 
@@ -516,9 +519,12 @@ mod tests {
             "a = 1, b = 'x', c = NULL, d = -2.5, e = 'it''s', f = '1e3'"
         );
         assert_eq!(
-            format_param(0, &DmlParam::Text {
-                value: Some("text".into())
-            }),
+            format_param(
+                0,
+                &DmlParam::Text {
+                    value: Some("text".into())
+                }
+            ),
             "$1 = 'text'"
         );
         assert_eq!(
@@ -526,9 +532,12 @@ mod tests {
             "$3 = NULL"
         );
         assert_eq!(
-            format_param(1, &DmlParam::Text {
-                value: Some("42".into())
-            }),
+            format_param(
+                1,
+                &DmlParam::Text {
+                    value: Some("42".into())
+                }
+            ),
             "$2 = '42'"
         );
     }

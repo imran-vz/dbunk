@@ -1979,7 +1979,7 @@ impl Render for TableView {
                             .id("table-changes-message")
                             .role(Role::Status)
                             .aria_label(summary.message.clone())
-                            .flex_shrink()
+                            .flex_shrink_1()
                             .min_w_0()
                             .max_w(px(360.))
                             .truncate()

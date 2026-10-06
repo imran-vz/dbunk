@@ -100,15 +100,12 @@ impl TableChanges {
                     .child(self.button(
                         "Save virtual key",
                         Action::KeySave,
-                        available && valid_key_columns(&self.key.columns) && self.analysis.is_some(),
+                        available
+                            && valid_key_columns(&self.key.columns)
+                            && self.analysis.is_some(),
                         cx,
                     ))
-                    .child(self.button(
-                        "Cancel key selection",
-                        Action::KeyCancel,
-                        !pending,
-                        cx,
-                    )),
+                    .child(self.button("Cancel key selection", Action::KeyCancel, !pending, cx)),
             );
         } else {
             body = body.child(

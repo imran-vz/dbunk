@@ -7,7 +7,7 @@ use super::menus::LegacyAction;
 use super::{Action, TableView, menus::Popover};
 use crate::{accessible_editor::AccessibleEditor, grid::ColumnEntry, grid_columns::ColumnAction};
 use editor::{Editor, EditorEvent};
-use gpui::{AnyElement, Context, Role, SharedString, Window, div, prelude::*, px};
+use gpui::{AnyElement, Context, Focusable, Role, SharedString, Window, div, prelude::*, px};
 
 /// Footer actions of the popover; per-column toggles are generated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

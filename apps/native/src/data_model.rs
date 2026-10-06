@@ -32,16 +32,17 @@ mod write_safety;
 pub use browse::{PageAction, RequestTicket, TableDocument, TableQuery};
 pub use mutations::{
     Advance, ApplyResolution, ApplyTicket, BulkOutcome, BulkRow, CellRef, DraftOverlay, EditSeed,
-    InsertCell, InsertRow, MutationDraft, OVERLAY_TEXT_BYTES, OverlayKey, OverlayValue, ReviewPlan,
-    RowMark,
+    InsertCell, InsertRow, MutationDraft, OverlayKey, OverlayValue, ReviewPlan, RowMark,
 };
 pub use review_diff::{
-    DIFF_TEXT_CHARS, DiffCell, DiffChange, DiffKind, DiffValue, apply_error_message, diff_summary,
-    format_param, review_diff,
+    DiffCell, DiffChange, DiffKind, DiffValue, apply_error_message, diff_summary, format_param,
+    review_diff,
 };
+#[cfg(test)]
+pub use write_safety::EffectiveSafeMode;
 pub use write_safety::{
-    ConfirmStyle, ConfirmationStep, EffectiveSafeMode, Preconfirmation, TablePolicy,
-    on_needs_confirmation, preconfirmation,
+    ConfirmStyle, ConfirmationStep, Preconfirmation, TablePolicy, on_needs_confirmation,
+    preconfirmation,
 };
 
 #[cfg(test)]

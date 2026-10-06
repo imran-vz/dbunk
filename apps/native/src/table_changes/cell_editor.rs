@@ -51,11 +51,13 @@ pub(super) fn cell_editor_key(keystroke: &Keystroke) -> Option<CellEditorEvent> 
             Some(CellEditorEvent::Expand)
         }
         "enter" if plain && !modifiers.shift => Some(CellEditorEvent::Commit(Advance::Stay)),
-        "tab" if plain && !modifiers.platform => Some(CellEditorEvent::Commit(if modifiers.shift {
-            Advance::Left
-        } else {
-            Advance::Right
-        })),
+        "tab" if plain && !modifiers.platform => {
+            Some(CellEditorEvent::Commit(if modifiers.shift {
+                Advance::Left
+            } else {
+                Advance::Right
+            }))
+        }
         "escape" if !modifiers.modified() => Some(CellEditorEvent::Cancel),
         _ => None,
     }
@@ -147,7 +149,11 @@ impl TableChanges {
             .analysis
             .as_ref()
             .ok_or_else(|| self.unavailable.clone().unwrap_or_else(|| CHECKING.into()))?;
-        match analysis.columns.get(source).map(|column| column.writability) {
+        match analysis
+            .columns
+            .get(source)
+            .map(|column| column.writability)
+        {
             Some(ColumnWritability::Writable) => Ok(column.name.clone()),
             Some(ColumnWritability::Generated) => Err("Generated column".into()),
             Some(ColumnWritability::IdentityAlways) => {

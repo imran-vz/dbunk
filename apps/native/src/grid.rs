@@ -489,14 +489,6 @@ impl ResultGrid {
         self.reveal_selected_column();
         true
     }
-    pub fn selected_column(&self) -> Option<String> {
-        let column = self
-            .views
-            .get(self.model.active)?
-            .head
-            .map_or(0, |(_, column)| column);
-        self.column_name(column).map(str::to_owned)
-    }
 
     pub fn inspector_has_focus(&self, window: &Window, cx: &App) -> bool {
         self.navigation
