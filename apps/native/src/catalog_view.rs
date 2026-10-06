@@ -40,6 +40,8 @@ enum Action {
     SchemaAlter,
     DropObject,
     CreateView,
+    CreateIndex,
+    AddEnumValue,
     Schema,
     Maintenance,
     Sequence,
@@ -207,7 +209,7 @@ impl CatalogView {
             show_details: false,
             root: cx.focus_handle(),
             list: cx.focus_handle(),
-            buttons: (0..18).map(|_| cx.focus_handle()).collect(),
+            buttons: (0..20).map(|_| cx.focus_handle()).collect(),
             scroll: UniformListScrollHandle::new(),
             previous_focus: None,
             editable: true,
@@ -767,7 +769,13 @@ impl CatalogView {
         }
         if self.object_ddl_busy {
             // Keep the owned review reachable for Cancel until it settles.
-            return matches!(action, Action::DropObject | Action::CreateView);
+            return matches!(
+                action,
+                Action::DropObject
+                    | Action::CreateView
+                    | Action::CreateIndex
+                    | Action::AddEnumValue
+            );
         }
         if self.maintenance_busy {
             // Back may hide an owned operation. Keep its review reachable so
@@ -787,7 +795,10 @@ impl CatalogView {
                         || self.schema_alter_recovery.is_some())
             }
             // A retained or restored change reopens without a selection.
-            Action::DropObject | Action::CreateView => {
+            Action::DropObject
+            | Action::CreateView
+            | Action::CreateIndex
+            | Action::AddEnumValue => {
                 !self.busy
                     && self.connection.is_some()
                     && (selected || self.object_ddl.is_some() || self.object_ddl_recovery.is_some())
@@ -839,6 +850,12 @@ impl CatalogView {
             }
             Action::DropObject => self.open_object_ddl(Some(true), window, cx),
             Action::CreateView => self.open_object_ddl(Some(false), window, cx),
+            Action::CreateIndex => {
+                self.open_object_ddl_for(Some(object_ddl::ObjectDdlStart::CreateIndex), window, cx)
+            }
+            Action::AddEnumValue => {
+                self.open_object_ddl_for(Some(object_ddl::ObjectDdlStart::AddEnumValue), window, cx)
+            }
             Action::DdlExport => self.show_ddl_export(window, cx),
             Action::Maintenance => {
                 self.show_sequence = false;
@@ -1136,6 +1153,8 @@ impl Render for CatalogView {
                                     Action::SchemaAlter,
                                     Action::DropObject,
                                     Action::CreateView,
+                                    Action::CreateIndex,
+                                    Action::AddEnumValue,
                                 ])
                                 .filter(|(_, action)| this.enabled(*action))
                                 .map(|(focus, _)| focus.clone()),
@@ -1237,7 +1256,9 @@ impl Render for CatalogView {
                         cx,
                     ))
                     .child(self.button(16, "Drop object", Action::DropObject, cx))
-                    .child(self.button(17, "Create view", Action::CreateView, cx)),
+                    .child(self.button(17, "Create view", Action::CreateView, cx))
+                    .child(self.button(18, "Create index", Action::CreateIndex, cx))
+                    .child(self.button(19, "Add enum value", Action::AddEnumValue, cx)),
             )
             .child(div().h(px(28.)).child(self.accessible.clone()))
             .child(
