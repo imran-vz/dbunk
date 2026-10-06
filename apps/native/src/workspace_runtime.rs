@@ -7,6 +7,12 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 const SESSION_LIMIT: usize = 4;
 const EXECUTION_LIMIT: usize = 2;
+/// Consecutive transient backend errors (admission timeouts and the like)
+/// before a liveness check fails a document or the owner. `OwnerMismatch`
+/// fails at once.
+const HEARTBEAT_FAILURE_LIMIT: u32 = 3;
+/// Cleanup failures kept for the final `join` report; later ones are dropped.
+const CLEANUP_FAILURE_LIMIT: usize = 8;
 
 struct Execution {
     id: String,
@@ -27,7 +33,19 @@ struct Document {
 struct Documents {
     active: HashMap<String, Document>,
     workers: Vec<(String, Worker)>,
+    /// Owner failure (registration or heartbeat). Every document depends on
+    /// the owner, so only this refuses new connects.
     failure: Option<String>,
+    /// Per-session cleanup failures, reported by `join`. They never block a
+    /// later connect: the failed session is closed again in the background.
+    cleanup_failures: Vec<String>,
+}
+impl Documents {
+    fn record_cleanup_failure(&mut self, error: String) {
+        if self.cleanup_failures.len() < CLEANUP_FAILURE_LIMIT {
+            self.cleanup_failures.push(error);
+        }
+    }
 }
 struct State {
     documents: Mutex<Documents>,
@@ -149,22 +167,24 @@ impl WorkspaceRuntime {
         if self.state.closing.load(Ordering::Acquire) {
             return Err("Application is closing");
         }
-        let mut failure = None;
+        // A finished worker's failure belongs to its own session; it is kept
+        // for the final report and never refuses this connect.
+        let mut failures = Vec::new();
         documents
             .workers
             .retain(|(_, worker)| match worker.join.clone().now_or_never() {
                 Some(Err(error)) => {
-                    failure = Some(error.to_string());
+                    failures.push(error.to_string());
                     false
                 }
                 Some(Ok(())) => false,
                 None => true,
             });
-        if documents.failure.is_none() {
-            documents.failure = failure;
+        for failure in failures {
+            documents.record_cleanup_failure(failure);
         }
         if documents.failure.is_some() {
-            return Err("Previous session cleanup failed. Close the workspace.");
+            return Err("The workspace session owner failed. Close the workspace.");
         }
         if !documents.active.contains_key(&tab) && documents.active.len() >= SESSION_LIMIT {
             return Err("Four sessions are open. Disconnect a document before connecting another.");
@@ -231,7 +251,11 @@ impl WorkspaceRuntime {
             let result: WorkerResult = async {
                 if let Some(previous) = previous {
                     let now = Instant::now();
-                    join_worker(&previous.worker, now + GRACE, now + TOTAL, false).await?;
+                    if join_worker(&previous.worker, now + DOCUMENT_GRACE, now + DOCUMENT_TOTAL, false).await.is_err() {
+                        // Its failure is reported by `join`. Close its session
+                        // again so this replacement never shares a slot with it.
+                        close_abandoned(&backend, &previous.session).await;
+                    }
                 }
                 if state.closing.load(Ordering::Acquire) || *stop_rx.borrow() { return Ok(()); }
                 let mut registration_stop = stop_rx.clone();
@@ -246,8 +270,8 @@ impl WorkspaceRuntime {
                     worker_events.clone(), command_rx, transaction_rx, review_rx, cancel_rx, ack_rx, stop_rx,
                     state.executions.clone(), execution.clone(), worker_opening.clone(), focused,
                 ).await;
-                // Backend admission waits any still-owned open before closing
-                // this session. Never retire the window for one document.
+                // The backend cancels a still-owned open of this session before
+                // closing it. Never retire the window for one document.
                 if !state.closing.load(Ordering::Acquire) {
                     backend.close_native_session(WINDOW, &worker_session).await.map_err(error_message)?;
                 }
@@ -260,8 +284,9 @@ impl WorkspaceRuntime {
             if documents.active.get(&worker_tab).is_some_and(|document| document.session == worker_session) {
                 documents.active.remove(&worker_tab);
             }
+            // The error stays with this session: a later `connect` or `join`
+            // collects it from the worker. Other documents are unaffected.
             if let Err(error) = &result {
-                documents.failure.get_or_insert_with(|| error.clone());
                 worker_events.fail(Failure::Backend(error.clone()));
             }
             result
@@ -294,15 +319,38 @@ impl WorkspaceRuntime {
             return Ok(());
         };
         document.controls.stop();
+        self.join_document(&document).await
+    }
+
+    /// Joins one stopped document. A worker that missed its budget was
+    /// aborted, so its session is closed again by a tracked cleanup worker;
+    /// the error is returned to this caller and never latched for others.
+    async fn join_document(&self, document: &Document) -> WorkerResult {
         let now = Instant::now();
-        let result = join_worker(&document.worker, now + GRACE, now + TOTAL, false).await;
-        if let Err(error) = &result {
-            self.state
-                .documents
-                .lock()
-                .unwrap()
-                .failure
-                .get_or_insert_with(|| error.clone());
+        let result = join_worker(
+            &document.worker,
+            now + DOCUMENT_GRACE,
+            now + DOCUMENT_TOTAL,
+            false,
+        )
+        .await;
+        if result.is_err() {
+            let _submission = self.state.submission.lock().unwrap();
+            let mut documents = self.state.documents.lock().unwrap();
+            // An aborted worker never ran its own exit; free the tab so it can
+            // reconnect with a new session.
+            documents
+                .active
+                .retain(|_, active| active.session != document.session);
+            if !self.state.closing.load(Ordering::Acquire) {
+                let backend = self.backend.clone();
+                let session = document.session.clone();
+                let cleanup = Worker::new(self.runtime.spawn(async move {
+                    close_abandoned(&backend, &session).await;
+                    Ok(())
+                }));
+                documents.workers.push((document.session.clone(), cleanup));
+            }
         }
         result
     }
@@ -328,26 +376,16 @@ impl WorkspaceRuntime {
         for document in &documents {
             document.controls.stop();
         }
-        let now = Instant::now();
         let results = futures_util::future::join_all(
             documents
                 .iter()
-                .map(|document| join_worker(&document.worker, now + GRACE, now + TOTAL, false)),
+                .map(|document| self.join_document(document)),
         )
         .await;
-        let result = results
+        results
             .into_iter()
             .collect::<Result<Vec<_>, _>>()
-            .map(|_| ());
-        if let Err(error) = &result {
-            self.state
-                .documents
-                .lock()
-                .unwrap()
-                .failure
-                .get_or_insert_with(|| error.clone());
-        }
-        result
+            .map(|_| ())
     }
 
     pub(super) fn stop(&self) {
@@ -366,7 +404,10 @@ impl WorkspaceRuntime {
                     .iter()
                     .map(|(_, worker)| worker.clone())
                     .collect::<Vec<_>>(),
-                documents.failure.clone(),
+                documents
+                    .failure
+                    .clone()
+                    .or_else(|| documents.cleanup_failures.first().cloned()),
             )
         };
         let results = futures_util::future::join_all(
@@ -389,6 +430,17 @@ impl WorkspaceRuntime {
             .collect::<Result<Vec<_>, _>>()
             .map(|_| ())
     }
+}
+
+/// Best-effort close of a session whose worker failed or was aborted. The
+/// backend cancels an in-flight open of it and joins its socket; the call's
+/// work stays owned by the backend if this bounded wait gives up.
+async fn close_abandoned(backend: &Backend, session: &str) {
+    let _ = tokio::time::timeout(
+        DOCUMENT_GRACE,
+        backend.close_native_session(WINDOW, session),
+    )
+    .await;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -609,6 +661,25 @@ fn release_execution(state: &ExecutionState, id: Option<&str>) {
     }
 }
 
+/// Counts consecutive transient errors. `OwnerMismatch` means another owner
+/// replaced this one and fails at once; anything else is retried on the next
+/// tick until `HEARTBEAT_FAILURE_LIMIT` consecutive errors.
+#[derive(Default)]
+struct Strikes(u32);
+impl Strikes {
+    fn clear(&mut self) {
+        self.0 = 0;
+    }
+    /// `Err` with the message once the error is fatal.
+    fn record(&mut self, error: QuerySessionError) -> WorkerResult {
+        self.0 = self.0.saturating_add(1);
+        if matches!(error, QuerySessionError::OwnerMismatch) || self.0 >= HEARTBEAT_FAILURE_LIMIT {
+            return Err(error_message(error));
+        }
+        Ok(())
+    }
+}
+
 async fn heartbeat(
     backend: Backend,
     owner: String,
@@ -624,6 +695,10 @@ async fn heartbeat(
         .map_err(|error| error.to_string())?;
     let mut interval = tokio::time::interval(Duration::from_secs(10));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    // Focus not yet delivered; a transient refusal is retried next tick.
+    let mut pending_focus = None;
+    let mut owner_strikes = Strikes::default();
+    let mut document_strikes: HashMap<String, Strikes> = HashMap::new();
     loop {
         if *stop.borrow() || state.closing.load(Ordering::Acquire) {
             return Ok(());
@@ -633,19 +708,20 @@ async fn heartbeat(
             _ = stop.changed() => return Ok(()),
             changed = focus.changed() => {
                 if changed.is_err() { return Ok(()); }
-                let focused = *focus.borrow_and_update();
-                if let Err(error) = backend.set_focus(WINDOW, focused).await {
-                    if state.closing.load(Ordering::Acquire) { return Ok(()); }
-                    return Err(error_message(error));
-                }
+                pending_focus = Some(*focus.borrow_and_update());
             }
             _ = interval.tick() => {
                 let documents = state.documents.lock().unwrap().active.values().cloned().collect::<Vec<_>>();
+                document_strikes.retain(|session, _| documents.iter().any(|document| &document.session == session));
                 let mut alive = Vec::new();
                 for document in documents {
                     match backend.session_alive(WINDOW, &document.session).await {
-                        Ok(true) => alive.push(document.session),
+                        Ok(true) => {
+                            document_strikes.remove(&document.session);
+                            alive.push(document.session);
+                        }
                         Ok(false) | Err(QuerySessionError::SessionNotFound) => {
+                            document_strikes.remove(&document.session);
                             if !document.opening.load(Ordering::Acquire) {
                                 document.events.fail(Failure::Backend("Connection lost. Reconnect to run again.".into()));
                                 document.controls.stop();
@@ -653,14 +729,39 @@ async fn heartbeat(
                         },
                         Err(error) => {
                             if state.closing.load(Ordering::Acquire) { return Ok(()); }
-                            document.events.fail(Failure::Backend(error_message(error)));
+                            // An owner mismatch ends the owner, not one document.
+                            if matches!(error, QuerySessionError::OwnerMismatch) {
+                                return Err(error_message(error));
+                            }
+                            if let Err(message) = document_strikes.entry(document.session.clone()).or_default().record(error) {
+                                document_strikes.remove(&document.session);
+                                document.events.fail(Failure::Backend(message));
+                            }
                         }
                     }
                 }
-                if *focus.borrow() && !alive.is_empty()
-                    && let Err(error) = backend.heartbeat(WINDOW, HeartbeatPayload { owner_id: owner.clone(), session_ids: alive }).await {
-                        if state.closing.load(Ordering::Acquire) { return Ok(()); }
-                        return Err(error_message(error));
+                if *focus.borrow() && !alive.is_empty() {
+                    match backend.heartbeat(WINDOW, HeartbeatPayload { owner_id: owner.clone(), session_ids: alive }).await {
+                        Ok(_) => owner_strikes.clear(),
+                        Err(error) => {
+                            if state.closing.load(Ordering::Acquire) { return Ok(()); }
+                            owner_strikes.record(error)?;
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(focused) = pending_focus {
+            match backend.set_focus(WINDOW, focused).await {
+                Ok(()) => {
+                    pending_focus = None;
+                    owner_strikes.clear();
+                }
+                Err(error) => {
+                    if state.closing.load(Ordering::Acquire) {
+                        return Ok(());
+                    }
+                    owner_strikes.record(error)?;
                 }
             }
         }
@@ -889,6 +990,102 @@ mod tests {
         drop(receivers);
         assert_eq!(workspace.queue_budget.used(), 0);
     }
+    #[test]
+    fn heartbeat_strikes_retry_transient_errors_and_fail_owner_mismatch_at_once() {
+        let transient = || QuerySessionError::Timeout {
+            operation: "nativeAdmission".into(),
+        };
+        let mut strikes = Strikes::default();
+        for _ in 1..HEARTBEAT_FAILURE_LIMIT {
+            assert!(strikes.record(transient()).is_ok());
+        }
+        // A success between errors resets the count.
+        strikes.clear();
+        for _ in 1..HEARTBEAT_FAILURE_LIMIT {
+            assert!(strikes.record(transient()).is_ok());
+        }
+        assert!(strikes.record(transient()).is_err());
+        assert!(
+            Strikes::default()
+                .record(QuerySessionError::OwnerMismatch)
+                .is_err()
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_failed_session_cleanup_is_reported_without_blocking_later_connects() {
+        let (_profile, backend) = backend().await;
+        let (layout, _) = watch::channel(None);
+        let closing = Arc::new(AtomicBool::new(false));
+        let mut workspace = WorkspaceRuntime::new(
+            backend.clone(),
+            tokio::runtime::Handle::current(),
+            "workspace-owner".into(),
+            layout,
+            closing.clone(),
+            Arc::new(Mutex::new(())),
+        );
+        workspace.registration.join.clone().await.unwrap();
+        // Hold document startup so no open reaches the network.
+        let (release, blocked) = tokio::sync::oneshot::channel();
+        workspace.registration = Worker::new(tokio::spawn(async {
+            blocked.await.unwrap();
+            Ok(())
+        }));
+        let failed = Worker::new(tokio::spawn(async {
+            Err("session cleanup failed".to_string())
+        }));
+        assert!(failed.join.clone().await.is_err());
+        workspace
+            .state
+            .documents
+            .lock()
+            .unwrap()
+            .workers
+            .push(("failed-session".into(), failed));
+        let (events, receiver) = workspace.mailbox();
+        workspace
+            .connect(
+                "tab".into(),
+                backend.fixture().id,
+                "next-session".into(),
+                events,
+            )
+            .expect("another session's cleanup failure must not block connects");
+        assert_eq!(
+            workspace.state.documents.lock().unwrap().cleanup_failures,
+            vec!["session cleanup failed".to_string()]
+        );
+        // Only an owner failure refuses new documents.
+        workspace.state.documents.lock().unwrap().failure = Some("owner lost".into());
+        let (events, refused) = workspace.mailbox();
+        assert!(
+            workspace
+                .connect(
+                    "other".into(),
+                    backend.fixture().id,
+                    "other-session".into(),
+                    events
+                )
+                .unwrap_err()
+                .contains("owner failed")
+        );
+        workspace.state.documents.lock().unwrap().failure = None;
+        workspace.stop();
+        closing.store(true, Ordering::Release);
+        release.send(()).unwrap();
+        let now = Instant::now();
+        assert_eq!(
+            workspace
+                .join(now + Duration::from_secs(1), now + Duration::from_secs(2))
+                .await
+                .unwrap_err(),
+            "session cleanup failed"
+        );
+        backend.shutdown().await.unwrap();
+        drop((receiver, refused));
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn query_library_close_fences_queued_edits_and_releases_delivery_budget() {
         use crate::controller::{LibraryCommand, query_library_runtime::LibraryRuntime};

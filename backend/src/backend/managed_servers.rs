@@ -221,6 +221,20 @@ impl Backend {
         .map_err(|_| CLOSING.to_string())?
     }
 
+    /// Connect intent: starts the stopped managed container linked to
+    /// `connection_id` and waits for PostgreSQL. `Ok(false)` means nothing
+    /// was started (no managed record, already running, or a profile kind
+    /// that never offers managed servers). Query-session opens run the same
+    /// check before connecting, so hosts need not call this first.
+    pub async fn ensure_managed_running(&self, connection_id: String) -> Result<bool, String> {
+        let authority = self.development()?;
+        self.call(move |state| async move {
+            Ok(ensure_running_for_connection(&state, &authority, &connection_id).await)
+        })
+        .await
+        .map_err(|_| CLOSING.to_string())?
+    }
+
     /// Settles the linked connection (open work retired, sessions closed),
     /// then stops the exact owned container.
     pub async fn stop_managed_server(&self, id: String) -> Result<(), String> {
@@ -308,6 +322,25 @@ fn require_general(kind: NativeProfileKind) -> Result<(), String> {
         return Err("Managed servers require a general PostgreSQL profile".into());
     }
     Ok(())
+}
+
+/// Shared by [`Backend::ensure_managed_running`] and the PostgreSQL open
+/// path. Runs outside the lifecycle gate: Docker and readiness waits are
+/// bounded by the service's own deadlines and must not stall other opens.
+pub(super) async fn ensure_running_for_connection(
+    state: &AppState,
+    authority: &Authority,
+    connection_id: &str,
+) -> Result<bool, String> {
+    if authority.kind() != NativeProfileKind::GeneralPostgres {
+        return Ok(false);
+    }
+    service::ensure_running_for_connection(
+        &scope(state, authority),
+        &runner::CliHost,
+        connection_id,
+    )
+    .await
 }
 
 fn scope<'a>(state: &'a AppState, authority: &'a Authority) -> service::Scope<'a> {

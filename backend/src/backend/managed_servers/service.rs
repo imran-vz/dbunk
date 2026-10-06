@@ -864,6 +864,53 @@ pub(super) async fn start(
     .await
 }
 
+/// Connect intent for the connection linked to a managed record: a stopped
+/// owned container is started through [`start`] (label-verified, bounded by
+/// `LIFECYCLE` and `START_READY`). Returns `Ok(true)` only when a start ran.
+/// A connection without a managed record, or one already running, is left
+/// alone. A missing container is an explicit error; connect never recreates.
+pub(super) async fn ensure_running_for_connection(
+    scope: &Scope<'_>,
+    host: &dyn ManagedHost,
+    connection_id: &str,
+) -> Result<bool, String> {
+    let Some(server) =
+        storage::managed::read_managed_server_by_connection_id(scope.pool, connection_id)
+            .await
+            .map_err(|_| "Managed servers could not be loaded".to_string())?
+            .filter(|server| server.engine == DatabaseEngine::PostgreSQL)
+    else {
+        return Ok(false);
+    };
+    let name = bounded(&server.name);
+    let observed = match resolve(host, scope.profile_id, &server.id).await {
+        Ok(observed) => observed,
+        Err(error) => {
+            let status = availability(host).await;
+            let detail = if status.is_available() {
+                error
+            } else {
+                status.describe()
+            };
+            return Err(format!(
+                "Managed server '{name}' could not be checked before connecting: {detail}"
+            ));
+        }
+    };
+    match observed {
+        None => Err(format!(
+            "Managed server '{name}' has no container; Recreate it under Managed Servers"
+        )),
+        Some((_, state)) if state == "running" => Ok(false),
+        Some(_) => {
+            start(scope, host, &server.id).await.map_err(|error| {
+                format!("Managed server '{name}' could not be started: {error}")
+            })?;
+            Ok(true)
+        }
+    }
+}
+
 pub(super) async fn stop(
     scope: &Scope<'_>,
     host: &dyn ManagedHost,

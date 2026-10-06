@@ -712,6 +712,66 @@ async fn list_and_lifecycle_touch_only_this_profiles_labelled_container_by_id() 
 }
 
 #[tokio::test]
+async fn connect_intent_starts_only_a_stopped_owned_container_and_never_recreates() {
+    let fixture = Fixture::new().await;
+    let host = FakeHost::default();
+    let (plan, done) = fixture.provisioned(&host).await;
+    let owned = host.world().containers[0].id.clone();
+    // Unmanaged connections never reach Docker.
+    let before = host.world().log.len();
+    assert!(
+        !service::ensure_running_for_connection(&fixture.scope(), &host, "not-managed")
+            .await
+            .unwrap()
+    );
+    assert_eq!(host.world().log.len(), before);
+    // Already running: observed, not started.
+    assert!(
+        !service::ensure_running_for_connection(&fixture.scope(), &host, &done.connection_id)
+            .await
+            .unwrap()
+    );
+    assert!(host.mutating_targets().is_empty());
+    service::stop(&fixture.scope(), &host, &plan.record_id)
+        .await
+        .unwrap();
+    assert!(
+        service::ensure_running_for_connection(&fixture.scope(), &host, &done.connection_id)
+            .await
+            .unwrap()
+    );
+    assert_eq!(host.world().containers[0].state, "running");
+    assert_eq!(host.mutating_targets(), vec![owned.clone(), owned.clone()]);
+    // The readiness probe used the linked connection's saved password.
+    let password = fixture.password(&done.connection_id).await;
+    assert_eq!(host.world().ready_passwords.last(), Some(&password));
+    // A missing container is an explicit error; a same-named impostor is
+    // neither adopted nor started.
+    host.world().containers.clear();
+    let impostor = foreign_container(&host, &plan.container_name, &[]);
+    host.world().containers[0].state = "exited".into();
+    let error =
+        service::ensure_running_for_connection(&fixture.scope(), &host, &done.connection_id)
+            .await
+            .unwrap_err();
+    assert!(error.contains("no container"), "{error}");
+    assert!(!host.mutating_targets().contains(&impostor));
+    // Docker being unavailable is reported as such, not as a missing container.
+    host.world()
+        .fail
+        .insert("ps", exit("Cannot connect to the Docker daemon"));
+    host.world().available = Some(exit(
+        "Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+    ));
+    let error =
+        service::ensure_running_for_connection(&fixture.scope(), &host, &done.connection_id)
+            .await
+            .unwrap_err();
+    assert!(error.contains("could not be checked"), "{error}");
+    assert!(error.contains("Docker daemon"), "{error}");
+}
+
+#[tokio::test]
 async fn a_listed_id_whose_labels_do_not_verify_is_refused() {
     let fixture = Fixture::new().await;
     let host = FakeHost::default();

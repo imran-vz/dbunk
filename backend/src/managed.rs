@@ -563,35 +563,6 @@ pub async fn recreate(
     .await
 }
 
-/// Start a stopped Managed Server before its linked Connection is used.
-///
-/// Returns `true` when a start was required so callers can distinguish
-/// a cold boot from an already-running server. Missing containers remain
-/// an explicit Orphaned error; connect intent never recreates resources.
-pub async fn ensure_running_for_connection(
-    context: &credentials::Context,
-    pool: &SqlitePool,
-    mode: CredentialStorageMode,
-    connection: &StoredConnection,
-) -> Result<bool, String> {
-    let Some(server) =
-        storage::managed::read_managed_server_by_connection_id(pool, connection.id()).await?
-    else {
-        return Ok(false);
-    };
-    match docker::container_state(&server.container_name).await {
-        Some(state) if state == "running" => Ok(false),
-        Some(_) => {
-            start_and_wait(context, pool, mode, &server).await?;
-            Ok(true)
-        }
-        None => Err(format!(
-            "Managed server '{}' is orphaned; recreate it under Settings → Local Databases",
-            server.name
-        )),
-    }
-}
-
 #[cfg(test)]
 mod live_tests {
     //! End-to-end provisioning against the real Docker daemon.

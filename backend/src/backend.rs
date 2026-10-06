@@ -53,6 +53,7 @@ pub mod table_seed;
 pub mod table_structure;
 mod transactions;
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -60,9 +61,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::app::AppState;
+use crate::host::SharedSink;
+use crate::postgres::connect_spec::{ResolvedPostgresConnectSpec, DEFAULT_CONNECT_TIMEOUT};
 use crate::postgres::dedicated::DriverJoins;
 use crate::query_session::service;
-use tokio::sync::{Mutex, Semaphore};
+use crate::{CredentialStorageMode, DatabaseEngine, StoredConnection};
+use tokio::sync::{Mutex, Semaphore, TryAcquireError};
 
 pub use crate::host::{EventSink, SinkClosed};
 pub use crate::postgres::sql_class::{StatementClassKind, StatementClassSummary};
@@ -164,6 +168,9 @@ struct Inner {
     _profile_lock: std::fs::File,
     development: Option<Arc<development::Authority>>,
     development_gate: Arc<Mutex<()>>,
+    /// In-flight PostgreSQL opens, so a close can cancel one without waiting
+    /// on the gate. Boxed for the same `size_of::<Inner>()` budget as below.
+    opens: Box<OpenTickets>,
     /// Plan 031 step 4: live native MySQL sessions. Boxed: safety-audit
     /// cursors count `size_of::<Inner>()` against a fixed budget.
     mysql: Box<mysql_sessions::Registry>,
@@ -237,6 +244,7 @@ impl Backend {
             _profile_lock: profile_lock,
             development,
             development_gate: Arc::new(Mutex::new(())),
+            opens: Default::default(),
             mysql: Default::default(),
         }))
     }
@@ -253,12 +261,13 @@ impl Backend {
         F: FnOnce(Arc<AppState>) -> Fut + Send + 'static,
         Fut: Future<Output = Result<T, QuerySessionError>> + Send + 'static,
     {
-        self.call_with_admission(self.0.admission.clone(), operation)
+        self.admitted_call(self.0.admission.clone(), Some(ADMISSION_WAIT), operation)
             .await
     }
 
     // Long data requests have a separate bounded budget. They cannot consume
     // the slots used by ACK, cancellation, lifecycle and persistence calls.
+    // Data refusal stays immediate: its UI retries on the next request.
     async fn call_with_admission<T, F, Fut>(
         &self,
         admission: Arc<Semaphore>,
@@ -269,6 +278,48 @@ impl Backend {
         F: FnOnce(Arc<AppState>) -> Fut + Send + 'static,
         Fut: Future<Output = Result<T, QuerySessionError>> + Send + 'static,
     {
+        self.admitted_call(admission, None, operation).await
+    }
+
+    /// A closed semaphore is shutdown and refuses at once. Exhaustion is
+    /// transient load: with `wait`, the caller waits that long for a slot and
+    /// is then refused with `Timeout`, never with `ConnectionClosing`.
+    async fn admitted_call<T, F, Fut>(
+        &self,
+        admission: Arc<Semaphore>,
+        wait: Option<Duration>,
+        operation: F,
+    ) -> Result<T, QuerySessionError>
+    where
+        T: Send + 'static,
+        F: FnOnce(Arc<AppState>) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<T, QuerySessionError>> + Send + 'static,
+    {
+        let permit = {
+            let _submission = self.0.submission.lock().unwrap();
+            if self.0.closing.load(Ordering::SeqCst) {
+                return Err(QuerySessionError::ConnectionClosing);
+            }
+            admission.clone().try_acquire_owned()
+        };
+        let permit = match permit {
+            Ok(permit) => permit,
+            // Waits outside the submission lock; shutdown closes the
+            // semaphore, which ends this wait with `Closed`.
+            Err(TryAcquireError::NoPermits) => match wait {
+                Some(wait) => match tokio::time::timeout(wait, admission.acquire_owned()).await {
+                    Ok(Ok(permit)) => permit,
+                    Ok(Err(_)) => return Err(QuerySessionError::ConnectionClosing),
+                    Err(_) => {
+                        return Err(QuerySessionError::Timeout {
+                            operation: "nativeAdmission".into(),
+                        })
+                    }
+                },
+                None => return Err(QuerySessionError::ConnectionClosing),
+            },
+            Err(TryAcquireError::Closed) => return Err(QuerySessionError::ConnectionClosing),
+        };
         let receive = {
             // Synchronize registration with shutdown's admission fence. Merely
             // checking an atomic flag before spawn leaves a late-worker race.
@@ -276,9 +327,6 @@ impl Backend {
             if self.0.closing.load(Ordering::SeqCst) {
                 return Err(QuerySessionError::ConnectionClosing);
             }
-            let permit = admission
-                .try_acquire_owned()
-                .map_err(|_| QuerySessionError::ConnectionClosing)?;
             let state = self.0.state.clone();
             let (send, receive) = tokio::sync::oneshot::channel();
             let task = tokio::spawn(async move {
@@ -305,10 +353,12 @@ impl Backend {
         .await
     }
 
-    /// Native lifecycle operations and session startup share admission. Hold
-    /// through hydration and socket startup so a credential/connection change
-    /// cannot be overtaken by an earlier open. Existing Tauri fences are kept
-    /// at the service boundary; native callers cannot overlap those fences.
+    /// Native lifecycle operations share this gate: connection, credential,
+    /// bastion and managed-server mutations, and startup admission. A
+    /// PostgreSQL open holds it only to admit and snapshot the record and,
+    /// after connecting, to revalidate it; never across network I/O (see
+    /// [`open_native_session`]). Existing Tauri fences are kept at the service
+    /// boundary; native callers cannot overlap those fences.
     async fn development_call<T, F, Fut>(&self, operation: F) -> Result<T, QuerySessionError>
     where
         T: Send + 'static,
@@ -335,16 +385,26 @@ impl Backend {
         if self.0.development.is_none() && payload.connection_id != profile::CONNECTION_ID {
             return Err(QuerySessionError::ConnectionLost);
         }
+        // Registered before admission so a close issued after this call
+        // cancels the open whatever step it has reached.
+        let registration = OpenTickets::register(&self.0, window, &payload.session_id)?;
         let window = window.to_owned();
         let development = self.0.development.clone();
         let inner = self.0.clone();
         self.call(move |state| async move {
-            let _admission = inner.development_gate.lock().await;
-            if inner.closing.load(Ordering::SeqCst) {
-                return Err(QuerySessionError::ConnectionClosing);
-            }
-            admit_connection(&state, development.as_deref(), &payload.connection_id).await?;
-            service::open(&state, &window, payload, sink).await
+            let ticket = registration.ticket.clone();
+            let result = open_native_session(
+                &inner,
+                &state,
+                development.as_deref(),
+                &ticket,
+                &window,
+                payload,
+                sink,
+            )
+            .await;
+            drop(registration);
+            result
         })
         .await
     }
@@ -407,8 +467,11 @@ impl Backend {
         .await
     }
 
-    /// Waits for admitted native startup before closing only this document's
-    /// session. A cancelled open caller cannot leave a later socket behind.
+    /// Closes only this document's session. An in-flight open of it is
+    /// cancelled first rather than waited for: the open runs ungated while it
+    /// connects, observes the cancellation at its next step, and closes any
+    /// session it still publishes. Its socket is owned by a tracked task that
+    /// shutdown joins, so a cancelled open never leaves a socket behind.
     pub async fn close_native_session(
         &self,
         window: &str,
@@ -417,6 +480,7 @@ impl Backend {
         if self.0.development.is_none() {
             return Err(QuerySessionError::ConnectionLost);
         }
+        self.0.opens.cancel(window, session_id);
         let window = window.to_owned();
         let session_id = session_id.to_owned();
         self.development_call(move |state| async move {
@@ -614,6 +678,236 @@ impl Backend {
         *shutdown = Some(result.clone());
         result
     }
+}
+
+/// Bounded wait for a lifecycle admission slot. Exhaustion is transient load
+/// (a burst of heartbeats, focus changes and ACKs), not shutdown.
+const ADMISSION_WAIT: Duration = Duration::from_secs(2);
+
+/// In-flight native PostgreSQL opens by session ID.
+#[derive(Default)]
+struct OpenTickets(std::sync::Mutex<HashMap<String, Arc<OpenTicket>>>);
+
+struct OpenTicket {
+    window: String,
+    cancelled: AtomicBool,
+}
+
+impl OpenTicket {
+    fn cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+}
+
+/// Owned by the open's task; removes exactly its own ticket when that task
+/// finishes or is aborted.
+struct OpenRegistration {
+    inner: Arc<Inner>,
+    session: String,
+    ticket: Arc<OpenTicket>,
+}
+
+impl OpenTickets {
+    fn register(
+        inner: &Arc<Inner>,
+        window: &str,
+        session: &str,
+    ) -> Result<OpenRegistration, QuerySessionError> {
+        let ticket = Arc::new(OpenTicket {
+            window: window.into(),
+            cancelled: AtomicBool::new(false),
+        });
+        {
+            let mut tickets = inner.opens.0.lock().unwrap();
+            if tickets.contains_key(session) {
+                return Err(QuerySessionError::InvalidSequence);
+            }
+            tickets.insert(session.into(), ticket.clone());
+        }
+        Ok(OpenRegistration {
+            inner: inner.clone(),
+            session: session.into(),
+            ticket,
+        })
+    }
+
+    /// Only the owning window may cancel; an unknown session is a no-op.
+    fn cancel(&self, window: &str, session: &str) {
+        if let Some(ticket) = self.0.lock().unwrap().get(session) {
+            if ticket.window == window {
+                ticket.cancelled.store(true, Ordering::SeqCst);
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn contains(&self, session: &str) -> bool {
+        self.0.lock().unwrap().contains_key(session)
+    }
+}
+
+impl Drop for OpenRegistration {
+    fn drop(&mut self) {
+        let mut tickets = self
+            .inner
+            .opens
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if tickets
+            .get(&self.session)
+            .is_some_and(|ticket| Arc::ptr_eq(ticket, &self.ticket))
+        {
+            tickets.remove(&self.session);
+        }
+    }
+}
+
+/// Native PostgreSQL open in three steps. What the lifecycle gate protects:
+///
+/// 1. Gated: admission (profile authority, credential recovery) and the
+///    hydrated record are read together, so the open starts from either the
+///    pre- or the post-mutation record of any queued edit, never a mix.
+/// 2. Ungated: managed-server start, SSH route, observer and session sockets.
+///    Each step has its own deadline (Docker lifecycle and readiness, the
+///    tunnel's, and the connect timeout, defaulted here when the record sets
+///    none). A slow host delays only this open, and a close cancels it via
+///    its ticket instead of queueing behind it.
+/// 3. Gated again: a mutation that completed while connecting is detected by
+///    re-admitting and comparing the hydrated record (ignoring activity time,
+///    name and organization). A fence that overlapped finalization already
+///    refused or closed the session; a dead or cancelled session is closed.
+///
+/// Residual: a fence that changes no stored field (an explicit Disconnect or
+/// a credential-mode change that keeps the password), and that starts and
+/// ends entirely while this open connects, does not close the new session.
+/// The record it connected with is still current in that case.
+async fn open_native_session(
+    inner: &Inner,
+    state: &AppState,
+    development: Option<&development::Authority>,
+    ticket: &OpenTicket,
+    window: &str,
+    payload: OpenSessionPayload,
+    sink: SharedSink<QueryEventEnvelope>,
+) -> Result<QueryTransactionSnapshot, QuerySessionError> {
+    let connection_id = payload.connection_id.clone();
+    let session_id = payload.session_id.clone();
+    let (connection, mode, fingerprint) = {
+        let _admission = inner.development_gate.lock().await;
+        if inner.closing.load(Ordering::SeqCst) || ticket.cancelled() {
+            return Err(QuerySessionError::ConnectionClosing);
+        }
+        admit_connection(state, development, &connection_id).await?;
+        admission_snapshot(state, &connection_id).await?
+    };
+    if connection.engine() != DatabaseEngine::PostgreSQL {
+        return Err(QuerySessionError::UnsupportedEngine);
+    }
+    if let Some(authority) = development {
+        if ticket.cancelled() {
+            return Err(QuerySessionError::ConnectionClosing);
+        }
+        managed_servers::ensure_running_for_connection(state, authority, &connection_id)
+            .await
+            .map_err(|message| QuerySessionError::Database {
+                code: None,
+                message,
+                severity: None,
+                position: None,
+            })?;
+    }
+    if ticket.cancelled() {
+        return Err(QuerySessionError::ConnectionClosing);
+    }
+    let resolved = crate::tunnel::resolve_connection(
+        &state.credentials,
+        &state.pool,
+        mode,
+        &connection_id,
+        &connection,
+    )
+    .await
+    .map_err(|_| QuerySessionError::ConnectionLost)?;
+    let spec = native_connect_spec(&resolved)?;
+    if ticket.cancelled() {
+        return Err(QuerySessionError::ConnectionClosing);
+    }
+    let opened = state.query_sessions.open(window, payload, sink, spec).await;
+
+    let _admission = inner.development_gate.lock().await;
+    if ticket.cancelled() {
+        // The close may have run before this open reserved or finalized;
+        // repeat it so the reservation and any published session are joined.
+        let _ = state.query_sessions.close_native(&session_id, window).await;
+        return Err(QuerySessionError::ConnectionClosing);
+    }
+    let snapshot = opened?;
+    if inner.closing.load(Ordering::SeqCst) {
+        // Shutdown's global teardown owns this session now.
+        return Err(QuerySessionError::ConnectionClosing);
+    }
+    let current = async {
+        admit_connection(state, development, &connection_id).await?;
+        Ok::<_, QuerySessionError>(admission_snapshot(state, &connection_id).await?.2)
+    }
+    .await;
+    let unchanged = matches!(&current, Ok(current) if *current == fingerprint);
+    let alive = unchanged
+        && state
+            .query_sessions
+            .session_alive(window, &session_id)
+            .await
+            .unwrap_or(false);
+    if !alive {
+        let _ = state.query_sessions.close_native(&session_id, window).await;
+        return Err(QuerySessionError::ConnectionLost);
+    }
+    crate::app::touch_connection_activity(state, &connection_id).await;
+    Ok(snapshot)
+}
+
+/// The spec a native session connects with. A record without a connect
+/// timeout gets the default deadline, so no open waits on the OS TCP timeout.
+fn native_connect_spec(
+    connection: &StoredConnection,
+) -> Result<ResolvedPostgresConnectSpec, QuerySessionError> {
+    let mut spec = ResolvedPostgresConnectSpec::from_connection(connection)
+        .map_err(|_| QuerySessionError::UnsupportedEngine)?;
+    spec.connect_timeout.get_or_insert(DEFAULT_CONNECT_TIMEOUT);
+    Ok(spec)
+}
+
+/// Hydrated record, without its SSH route, plus a fingerprint of every field
+/// a session's connection depends on.
+async fn admission_snapshot(
+    state: &AppState,
+    connection_id: &str,
+) -> Result<(StoredConnection, CredentialStorageMode, Vec<u8>), QuerySessionError> {
+    let mode = crate::app::current_credential_mode(state)
+        .await
+        .map_err(|_| QuerySessionError::ConnectionLost)?;
+    let mut connection = crate::storage::read_connection_by_id(&state.pool, connection_id)
+        .await
+        .map_err(|_| QuerySessionError::ConnectionLost)?
+        .ok_or(QuerySessionError::ConnectionLost)?;
+    crate::credentials::hydrate(&state.credentials, mode, &mut connection)
+        .await
+        .map_err(|_| QuerySessionError::ConnectionLost)?;
+    let fingerprint = connection_fingerprint(&connection)?;
+    Ok((connection, mode, fingerprint))
+}
+
+/// Activity time, name and organization never affect a live session, and
+/// concurrent opens touch activity, so they are excluded.
+fn connection_fingerprint(connection: &StoredConnection) -> Result<Vec<u8>, QuerySessionError> {
+    let mut connection = connection.clone();
+    if let StoredConnection::PostgreSQL(pg) = &mut connection {
+        pg.last_activity_at = None;
+        pg.name = String::new();
+        pg.organization = Default::default();
+    }
+    serde_json::to_vec(&connection).map_err(|_| QuerySessionError::ConnectionLost)
 }
 
 /// Call while native startup admission is held, before any secret hydration.
@@ -841,6 +1135,259 @@ mod tests {
         backend.shutdown().await.unwrap();
         done.await.unwrap();
     }
+    /// Loopback listener that accepts and never answers, wired into the
+    /// fixture record. Private test setup only.
+    async fn stalled_fixture(backend: &Backend) -> tokio::net::TcpListener {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut connection = crate::storage::read_connections(&backend.0.state.pool)
+            .await
+            .unwrap()
+            .remove(0);
+        let crate::StoredConnection::PostgreSQL(pg) = &mut connection else {
+            unreachable!()
+        };
+        pg.port = listener.local_addr().unwrap().port();
+        crate::storage::upsert_connection(&backend.0.state.pool, &connection)
+            .await
+            .unwrap();
+        backend
+            .register_owner(
+                "native",
+                RegisterOwnerPayload {
+                    owner_id: "owner".into(),
+                },
+            )
+            .await
+            .unwrap();
+        listener
+    }
+
+    fn spawn_open(
+        backend: &Backend,
+        session: &str,
+    ) -> tokio::task::JoinHandle<Result<QueryTransactionSnapshot, QuerySessionError>> {
+        let caller = backend.clone();
+        let session = session.to_owned();
+        tokio::spawn(async move {
+            caller
+                .open(
+                    "native",
+                    OpenSessionPayload {
+                        owner_id: "owner".into(),
+                        session_id: session,
+                        tab_id: "tab".into(),
+                        connection_id: caller.fixture().id,
+                    },
+                    Arc::new(|_: QueryEventEnvelope| Ok(())),
+                )
+                .await
+        })
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_stalled_connect_does_not_hold_the_lifecycle_gate() {
+        let directory = profile::directory();
+        let backend = Backend::open_fixture(&directory.path().canonicalize().unwrap())
+            .await
+            .unwrap();
+        let listener = stalled_fixture(&backend).await;
+        let opening = spawn_open(&backend, "stalled");
+        let (_socket, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        // The open is inside its network step. Lifecycle work, including a
+        // second document's admission, is not queued behind it.
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            backend.development_call(|_| async { Ok(()) }),
+        )
+        .await
+        .expect("gate is free while a connect stalls")
+        .unwrap();
+        assert!(backend.0.opens.contains("stalled"));
+        // A duplicate in-flight session ID is refused before admission.
+        assert!(matches!(
+            spawn_open(&backend, "stalled").await.unwrap(),
+            Err(QuerySessionError::InvalidSequence)
+        ));
+        backend.shutdown().await.unwrap();
+        assert!(opening.await.unwrap().is_err());
+        assert!(!backend.0.opens.contains("stalled"));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_cancelled_open_never_reaches_the_network() {
+        let directory = profile::directory();
+        let backend = Backend::open_fixture(&directory.path().canonicalize().unwrap())
+            .await
+            .unwrap();
+        let listener = stalled_fixture(&backend).await;
+        let (entered, entry) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel::<()>();
+        let held_backend = backend.clone();
+        let held = tokio::spawn(async move {
+            held_backend
+                .development_call(move |_| async move {
+                    entered.send(()).unwrap();
+                    released.await.unwrap();
+                    Ok(())
+                })
+                .await
+        });
+        entry.await.unwrap();
+        let opening = spawn_open(&backend, "cancelled");
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !backend.0.opens.contains("cancelled") {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        // Another window cannot cancel this window's open.
+        backend.0.opens.cancel("elsewhere", "cancelled");
+        backend.0.opens.cancel("native", "cancelled");
+        release.send(()).unwrap();
+        held.await.unwrap().unwrap();
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(2), opening)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(QuerySessionError::ConnectionClosing)
+        ));
+        assert!(!backend.0.opens.contains("cancelled"));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), listener.accept())
+                .await
+                .is_err(),
+            "a cancelled open must not connect"
+        );
+        backend.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn admission_exhaustion_waits_briefly_and_is_not_reported_as_closing() {
+        let directory = profile::directory();
+        let backend = Backend::open_fixture(&directory.path().canonicalize().unwrap())
+            .await
+            .unwrap();
+        let (release, _) = tokio::sync::broadcast::channel::<()>(1);
+        let (started, mut ready) = tokio::sync::mpsc::channel(16);
+        let mut holders = Vec::new();
+        for _ in 0..16 {
+            let caller = backend.clone();
+            let mut released = release.subscribe();
+            let started = started.clone();
+            holders.push(tokio::spawn(async move {
+                caller
+                    .call(move |_| async move {
+                        started.send(()).await.unwrap();
+                        let _ = released.recv().await;
+                        Ok(())
+                    })
+                    .await
+            }));
+        }
+        for _ in 0..16 {
+            ready.recv().await.unwrap();
+        }
+        assert!(matches!(
+            backend.call(|_| async { Ok(()) }).await,
+            Err(QuerySessionError::Timeout { .. })
+        ));
+        // A slot freed during the wait admits the waiting call.
+        let waiting = {
+            let caller = backend.clone();
+            tokio::spawn(async move { caller.call(|_| async { Ok(()) }).await })
+        };
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        release.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), waiting)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        for holder in holders {
+            holder.await.unwrap().unwrap();
+        }
+        backend.shutdown().await.unwrap();
+        assert!(matches!(
+            backend.call(|_| async { Ok(()) }).await,
+            Err(QuerySessionError::ConnectionClosing)
+        ));
+    }
+
+    #[test]
+    fn fingerprint_ignores_activity_name_and_organization_only() {
+        let base = crate::StoredConnection::PostgreSQL(crate::PgStoredConnection {
+            organization: Default::default(),
+            id: "c".into(),
+            name: "Name".into(),
+            database: "db".into(),
+            host: "127.0.0.1".into(),
+            port: 5432,
+            user: "u".into(),
+            password: "secret".into(),
+            role: String::new(),
+            environment: crate::Environment::default(),
+            safe_mode: crate::SafeMode::default(),
+            read_only: false,
+            last_activity_at: None,
+            ssl: false,
+            tls_options: None,
+            driver_options: None,
+            ssh_tunnel: crate::SshTunnelConfig::default(),
+        });
+        let fingerprint = connection_fingerprint(&base).unwrap();
+        let mut cosmetic = base.clone();
+        if let crate::StoredConnection::PostgreSQL(pg) = &mut cosmetic {
+            pg.name = "Renamed".into();
+            pg.last_activity_at = Some("2026-10-06T00:00:00Z".into());
+            pg.organization.folder = "Folder".into();
+        }
+        assert_eq!(connection_fingerprint(&cosmetic).unwrap(), fingerprint);
+        let changes: [fn(&mut crate::PgStoredConnection); 3] = [
+            |pg| pg.password = "rotated".into(),
+            |pg| pg.port = 5433,
+            |pg| pg.read_only = true,
+        ];
+        for change in changes {
+            let mut changed = base.clone();
+            if let crate::StoredConnection::PostgreSQL(pg) = &mut changed {
+                change(pg);
+            }
+            assert_ne!(connection_fingerprint(&changed).unwrap(), fingerprint);
+        }
+    }
+
+    #[test]
+    fn native_spec_bounds_a_record_without_a_connect_timeout() {
+        let connection = crate::StoredConnection::PostgreSQL(crate::PgStoredConnection {
+            organization: Default::default(),
+            id: "c".into(),
+            name: "Name".into(),
+            database: "db".into(),
+            host: "127.0.0.1".into(),
+            port: 5432,
+            user: "u".into(),
+            password: String::new(),
+            role: String::new(),
+            environment: crate::Environment::default(),
+            safe_mode: crate::SafeMode::default(),
+            read_only: false,
+            last_activity_at: None,
+            ssl: false,
+            tls_options: None,
+            driver_options: None,
+            ssh_tunnel: crate::SshTunnelConfig::default(),
+        });
+        assert_eq!(
+            native_connect_spec(&connection).unwrap().connect_timeout,
+            Some(DEFAULT_CONNECT_TIMEOUT)
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn closing_during_stalled_connect_aborts_and_joins_the_owned_socket() {
         use tokio::io::AsyncReadExt;
