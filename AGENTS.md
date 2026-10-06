@@ -17,6 +17,7 @@
 
 - Lead with the result. Keep prose concise and concrete; use lists when they help. Report changes, verification, and any remaining blockers. Avoid stock phrases and em dashes.
 - Use one agent for ordinary tasks. Delegate for breadth or independent review when worthwhile, with bounded tasks and explicit file ownership to avoid collisions.
+- Subagents and worktrees never build: no `cargo`, `just`, `rustc`, `clippy` or test runs. GPUI builds are huge and disk space is limited. Subagents write code carefully, add tests without running them, and commit; builds and verification (`just fmt`/`lint`/`test` and the `-native` equivalents) run once, after the changes are merged back into the main checkout.
 
 ### Issue tracker
 
