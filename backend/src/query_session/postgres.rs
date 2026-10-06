@@ -21,8 +21,9 @@ pub(crate) use crate::postgres::row_budget::{shrink_row, truncate_utf8};
 
 pub(crate) struct SessionConnection {
     inner: DedicatedConnection,
+    /// The server process that answered the session's first query. Behind a
+    /// transaction pooler later transactions may run elsewhere.
     pub pid: i32,
-    pub backend_start: String,
     pub notices: Arc<Mutex<mpsc::Receiver<Notice>>>,
     dropped_notices: Arc<AtomicU32>,
 }
@@ -57,18 +58,23 @@ pub(crate) async fn connect_tracked(
     )
     .await
     .map_err(map_dedicated)?;
+    // Simple protocol: a named statement could outlive its server process
+    // assignment behind a transaction pooler.
     let identity = inner
         .client
-        .query_one(
-            "SELECT pg_backend_pid(), backend_start::text FROM pg_stat_activity WHERE pid = pg_backend_pid()",
-            &[],
-        )
+        .simple_query("SELECT pg_backend_pid()")
         .await
         .map_err(|error| map_dedicated(dedicated::database_error(error)))?;
+    let pid = identity
+        .iter()
+        .find_map(|message| match message {
+            tokio_postgres::SimpleQueryMessage::Row(row) => row.get(0)?.parse().ok(),
+            _ => None,
+        })
+        .ok_or(QuerySessionError::ConnectionLost)?;
     Ok(SessionConnection {
         inner,
-        pid: identity.get(0),
-        backend_start: identity.get(1),
+        pid,
         notices: Arc::new(Mutex::new(notice_rx)),
         dropped_notices,
     })
@@ -162,6 +168,36 @@ pub(crate) enum TransactionEntry {
     Begin(String),
     /// A transaction is already open or failed; run inside it.
     Inside,
+}
+
+/// How transactions that dbunk itself opens must be shaped for the endpoint.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct TransactionScope {
+    /// A transaction pooler: requests that must reach one server process
+    /// are kept inside one transaction.
+    pub pooled: bool,
+    /// Without a session setting (none is sent through a transaction
+    /// pooler), read-only connections open read-only transactions.
+    pub read_only: bool,
+}
+
+impl TransactionScope {
+    pub(crate) fn begin(self) -> &'static str {
+        if self.pooled && self.read_only {
+            "BEGIN READ ONLY"
+        } else {
+            "BEGIN"
+        }
+    }
+
+    /// The user's manual transaction, opened with dbunk's isolation choice.
+    pub(crate) fn manual_begin(self, isolation: &str) -> String {
+        if self.pooled && self.read_only {
+            format!("BEGIN ISOLATION LEVEL {isolation} READ ONLY")
+        } else {
+            format!("BEGIN ISOLATION LEVEL {isolation}")
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -258,7 +294,15 @@ pub(crate) fn execute_plan(
     entry: TransactionEntry,
     control: Arc<dyn ExecutionControl>,
 ) -> mpsc::Receiver<DriverEvent> {
-    execute_plan_tracked(client, notices, plan, entry, control, None)
+    execute_plan_tracked(
+        client,
+        notices,
+        plan,
+        entry,
+        TransactionScope::default(),
+        control,
+        None,
+    )
 }
 
 pub(crate) fn execute_plan_tracked(
@@ -266,6 +310,7 @@ pub(crate) fn execute_plan_tracked(
     notices: Arc<Mutex<mpsc::Receiver<Notice>>>,
     plan: ExecutionPlan,
     entry: TransactionEntry,
+    scope: TransactionScope,
     control: Arc<dyn ExecutionControl>,
     tracked: Option<&dedicated::DriverJoins>,
 ) -> mpsc::Receiver<DriverEvent> {
@@ -277,6 +322,7 @@ pub(crate) fn execute_plan_tracked(
             notices: &mut notices,
             control: &*control,
             plan: &plan,
+            scope,
             reducer: Reducer::new(sender, RowLimit::None),
         };
         let outcome = match &plan.shape {
@@ -313,6 +359,7 @@ struct Run<'a> {
     notices: &'a mut mpsc::Receiver<Notice>,
     control: &'a dyn ExecutionControl,
     plan: &'a ExecutionPlan,
+    scope: TransactionScope,
     reducer: Reducer,
 }
 
@@ -353,11 +400,12 @@ impl Run<'_> {
             // A cursor is planned for its first rows. Without a limit the
             // read runs to exhaustion, so plan it for all of them; the
             // setting ends with the wrapper transaction.
-            TransactionEntry::Autocommit if row_limit.is_none() => {
-                Some("BEGIN; SET LOCAL cursor_tuple_fraction = 1")
-            }
-            TransactionEntry::Autocommit => Some("BEGIN"),
-            TransactionEntry::Begin(begin) => Some(begin.as_str()),
+            TransactionEntry::Autocommit if row_limit.is_none() => Some(format!(
+                "{}; SET LOCAL cursor_tuple_fraction = 1",
+                self.scope.begin()
+            )),
+            TransactionEntry::Autocommit => Some(self.scope.begin().to_owned()),
+            TransactionEntry::Begin(begin) => Some(begin.clone()),
             TransactionEntry::Inside => None,
         };
         let mut opened = false;
@@ -371,7 +419,7 @@ impl Run<'_> {
                     Checkpoint::Proceed => {}
                 }
                 opened = true;
-                if let Err(error) = self.client.batch_execute(opening).await {
+                if let Err(error) = self.client.batch_execute(&opening).await {
                     break 'statements self.failed(error, None);
                 }
             }
@@ -507,6 +555,9 @@ impl Run<'_> {
             Checkpoint::Stop => return Some(Outcome::Stopped),
             Checkpoint::Proceed => {}
         }
+        if self.scope.pooled {
+            return self.pooled_bound_command(statement, values, entry).await;
+        }
         // Prepared before any transaction is opened, so a refusal leaves the
         // session exactly as it was. Dropping `prepared` closes it.
         let prepared = match self.client.prepare(statement).await {
@@ -540,6 +591,97 @@ impl Run<'_> {
                 Outcome::Completed
             }
             Err(error) => self.failed(error, Some(0)).into_outcome(),
+        };
+        drain_notices(
+            &self.reducer.sender,
+            self.notices,
+            &mut self.reducer.totals,
+            &mut self.reducer.retained_notices,
+        )
+        .await
+        .ok()?;
+        Some(outcome)
+    }
+
+    /// Behind a transaction pooler a statement prepared in one transaction
+    /// can be executed on another server process, so preparation, execution
+    /// and close share one transaction: the user's, opened here in manual
+    /// mode, or a wrapper committed before completion is reported. A refusal
+    /// or failure before execution rolls back what was opened here.
+    async fn pooled_bound_command(
+        &mut self,
+        statement: &str,
+        values: &BoundValues,
+        entry: &TransactionEntry,
+    ) -> Option<Outcome> {
+        let (opening, wrapper) = match entry {
+            TransactionEntry::Autocommit => (Some(self.scope.begin().to_owned()), true),
+            TransactionEntry::Begin(begin) => (Some(begin.clone()), false),
+            TransactionEntry::Inside => (None, false),
+        };
+        let opened = opening.is_some();
+        if let Some(opening) = opening {
+            if let Err(error) = self.client.batch_execute(&opening).await {
+                return Some(self.failed(error, None).into_outcome());
+            }
+        }
+        let prepared = match self.client.prepare(statement).await {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                let outcome = self.failed(error, Some(0)).into_outcome();
+                if opened {
+                    rollback(self.client).await;
+                }
+                return Some(outcome);
+            }
+        };
+        if !prepared.columns().is_empty() {
+            drop(prepared);
+            if opened {
+                rollback(self.client).await;
+            }
+            return Some(Outcome::Refused(PARAMETERS_RETURN_ROWS));
+        }
+        match self.control.checkpoint().await {
+            Checkpoint::Closed => return Some(Outcome::Abandoned),
+            Checkpoint::Stop => {
+                drop(prepared);
+                if opened {
+                    rollback(self.client).await;
+                }
+                return Some(Outcome::Stopped);
+            }
+            Checkpoint::Proceed => {}
+        }
+        let parameters = values.0.iter().map(TextParameter).collect::<Vec<_>>();
+        let result = self.client.execute(&prepared, &as_sql(&parameters)).await;
+        // The close is queued before the transaction ends.
+        drop(prepared);
+        let outcome = match result {
+            Ok(affected) => {
+                let committed = if wrapper {
+                    cleanup(self.client, "COMMIT").await
+                } else {
+                    Ok(())
+                };
+                match committed {
+                    Ok(()) => {
+                        self.reducer.complete(affected).await.ok()?;
+                        Outcome::Completed
+                    }
+                    Err(error) => {
+                        rollback(self.client).await;
+                        Outcome::Failed(error)
+                    }
+                }
+            }
+            Err(error) => {
+                let outcome = self.failed(error, Some(0)).into_outcome();
+                if wrapper {
+                    rollback(self.client).await;
+                }
+                outcome
+            }
         };
         drain_notices(
             &self.reducer.sender,
@@ -1022,7 +1164,10 @@ fn bound_metadata(columns: &mut [Option<String>], result: &mut ExecutionTotals) 
     }
 }
 
-pub(crate) async fn cancel(cancel: tokio_postgres::CancelToken, tls: dedicated::TlsConfig) -> bool {
+pub(crate) async fn cancel(
+    cancel: crate::postgres::dedicated::CancelHandle,
+    tls: dedicated::TlsConfig,
+) -> bool {
     crate::postgres::dedicated::cancel(cancel, tls).await
 }
 pub(crate) fn database_error(error: tokio_postgres::Error) -> QuerySessionError {
@@ -2175,7 +2320,7 @@ mod tests {
     }
 
     async fn cancel_query_for_test(
-        token: tokio_postgres::CancelToken,
+        token: crate::postgres::dedicated::CancelHandle,
         tls: dedicated::TlsConfig,
     ) -> bool {
         tokio::time::sleep(Duration::from_millis(100)).await;

@@ -636,8 +636,14 @@ manually). For the current table list, read the migrations in
   zero-row column metadata. Retained data is bounded independently from a
   DataRow transiently decoded by the driver.
 - **Query Outcome** — terminal status, omission totals, typed truncation
-  reasons, structured database error, and observer-derived transaction state.
-  Transaction truth is never inferred from SQL text.
+  reasons, structured database error, and protocol-derived transaction state.
+  Transaction truth is never inferred from SQL text: it is the status the
+  session's own server reports in ReadyForQuery, which holds behind poolers.
+- **Connection Pooling** — what sits between dbunk and PostgreSQL, classified on
+  connect: direct, session pooler, transaction pooler, or a pooler of unknown
+  mode, which is treated as a transaction pooler. Through a transaction pooler
+  no session-level SET is sent (it would stay on a shared server process), and
+  requests that must reach one server process share one transaction.
 
 ## PostgreSQL Tool Job
 

@@ -48,7 +48,7 @@ pub(crate) struct ExecutorInner {
     pub(crate) closed: bool,
     pub(crate) busy: bool,
     pub(crate) pending_cancel: Option<(
-        tokio_postgres::CancelToken,
+        crate::postgres::dedicated::CancelHandle,
         crate::postgres::dedicated::TlsConfig,
     )>,
 }
@@ -64,7 +64,7 @@ pub(crate) fn enqueue_job(
     inner: &mut ExecutorInner,
     job: Job,
 ) -> Option<(
-    tokio_postgres::CancelToken,
+    crate::postgres::dedicated::CancelHandle,
     crate::postgres::dedicated::TlsConfig,
 )> {
     let in_flight = {

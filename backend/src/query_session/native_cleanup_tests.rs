@@ -1,5 +1,5 @@
-//! No sockets: task-drop signals prove tab-scoped termination and shared
-//! observer lifetime, including sessions removed before cleanup is requested.
+//! No sockets: task-drop signals prove tab-scoped termination, including
+//! sessions removed before cleanup is requested.
 use super::*;
 use crate::postgres::dedicated::DriverJoins;
 
@@ -24,7 +24,7 @@ async fn tracked_task(group: &DriverJoins) -> tokio::sync::oneshot::Receiver<()>
 }
 
 #[tokio::test]
-async fn native_close_joins_only_its_session_and_keeps_shared_observer_until_last_tab() {
+async fn native_close_joins_only_its_session() {
     let directory = tempfile::tempdir().unwrap();
     let pool = crate::storage::open_pool(&crate::storage::Paths::from_dir(directory.path().into()))
         .await
@@ -33,10 +33,8 @@ async fn native_close_joins_only_its_session_and_keeps_shared_observer_until_las
     let manager = QuerySessionManager::new(pool.clone()).with_native_tasks(parent.clone());
     let first = parent.child();
     let second = parent.child();
-    let observer = parent.child();
     let first_done = tracked_task(&first).await;
     let mut second_done = tracked_task(&second).await;
-    let mut observer_done = tracked_task(&observer).await;
     {
         let mut state = manager.inner.lock().await;
         for (id, tasks) in [("one", first.clone()), ("two", second.clone())] {
@@ -49,9 +47,6 @@ async fn native_close_joins_only_its_session_and_keeps_shared_observer_until_las
                 },
             );
         }
-        state
-            .native_observers
-            .insert("same-connection".into(), vec![observer]);
     }
     assert!(matches!(
         manager.close_native("one", "different-window").await,
@@ -63,10 +58,6 @@ async fn native_close_joins_only_its_session_and_keeps_shared_observer_until_las
         second_done.try_recv(),
         Err(tokio::sync::oneshot::error::TryRecvError::Empty)
     ));
-    assert!(matches!(
-        observer_done.try_recv(),
-        Err(tokio::sync::oneshot::error::TryRecvError::Empty)
-    ));
     // Late descendants inherit the closed session's abort without fencing the
     // parent or another session. Their join remains owned by the global host.
     let late = tracked_task(&first).await;
@@ -74,10 +65,8 @@ async fn native_close_joins_only_its_session_and_keeps_shared_observer_until_las
     late.await.unwrap();
     manager.close_native("two", "window").await.unwrap();
     second_done.await.unwrap();
-    observer_done.await.unwrap();
     manager.close_native("two", "window").await.unwrap();
     assert!(manager.inner.lock().await.native_sessions.is_empty());
-    assert!(manager.inner.lock().await.native_observers.is_empty());
     parent.drain().await;
     pool.close().await;
 }

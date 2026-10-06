@@ -805,7 +805,7 @@ fn cancel_tab_state(state: &mut ExecutorState, tab_id: &str) -> (bool, Option<Ca
 }
 
 struct CancelRequest {
-    token: tokio_postgres::CancelToken,
+    token: crate::postgres::dedicated::CancelHandle,
     tls: crate::postgres::dedicated::TlsConfig,
     request_id: u64,
 }
@@ -1255,7 +1255,7 @@ async fn finish_executor_close(executor: &Executor, preparation: ClosePreparatio
 
 type QueuedClose = Vec<(AnalysisJob, ResultMutationError)>;
 type CloseCancel = Option<(
-    tokio_postgres::CancelToken,
+    crate::postgres::dedicated::CancelHandle,
     crate::postgres::dedicated::TlsConfig,
 )>;
 

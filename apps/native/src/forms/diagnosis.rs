@@ -304,6 +304,12 @@ fn warning_text(warning: NativeDiagnosisWarning) -> &'static str {
         NativeDiagnosisWarning::ProductionWithoutVerification => {
             "Warning: production connection does not verify the server certificate."
         }
+        NativeDiagnosisWarning::TransactionPooler => {
+            "Connection pooler that may pool by transaction: session state (SET, temporary tables, LISTEN, session locks) may not persist between transactions. Use a session pooler or a direct connection if you need it."
+        }
+        NativeDiagnosisWarning::SessionOptionsNotApplied => {
+            "Warning: driver options are session settings and are not applied through this pooler. Set them on the role instead (ALTER ROLE ... SET)."
+        }
     }
 }
 

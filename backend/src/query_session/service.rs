@@ -156,15 +156,9 @@ pub(crate) async fn refresh_transaction_state(
     window: &str,
     payload: SessionPayload,
 ) -> Result<QueryTransactionSnapshot, QuerySessionError> {
-    let connection_id = state
-        .query_sessions
-        .connection_id(&payload.session_id, window)
-        .await?;
-    let connection = hydrated_connection(state, &connection_id).await?;
-    let spec = connect_spec(&connection)?;
     state
         .query_sessions
-        .refresh(&payload.session_id, window, spec)
+        .refresh(&payload.session_id, window)
         .await
 }
 

@@ -1,4 +1,3 @@
-pub(crate) mod observer;
 pub(crate) mod postgres;
 pub(crate) mod protocol;
 pub(crate) mod service;
@@ -13,8 +12,8 @@ use tokio::sync::{watch, Mutex, Notify};
 
 use crate::host::SharedSink;
 use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
+use crate::postgres::dedicated::wire::WireTransaction;
 use crate::postgres::sql_params::{plan_execution, ExecutionPlan, ParameterValue};
-use observer::Observer;
 use protocol::*;
 
 const MAX_SESSIONS_PER_CONNECTION: usize = 7;
@@ -25,6 +24,7 @@ const LEASE: Duration = Duration::from_secs(120);
 /// SQLSTATE `query_canceled`: raised for a cancel request and for a statement
 /// timeout alike.
 const QUERY_CANCELED: &str = "57014";
+const STATUS_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
 struct Credit {
     outstanding: VecDeque<(u64, usize)>,
@@ -202,7 +202,6 @@ struct Session {
     window_label: String,
     tls: crate::postgres::dedicated::TlsConfig,
     connection: Arc<postgres::SessionConnection>,
-    observer: Arc<Mutex<Arc<Observer>>>,
     transaction: Mutex<QueryTransactionSnapshot>,
     probes: ProbeOrder,
     last_liveness: Mutex<Instant>,
@@ -223,7 +222,7 @@ impl postgres::ExecutionControl for Session {
         Box::pin(self.outbox.begin_cleanup())
     }
 }
-/// Orders observer probes by when they started. A probe that started before
+/// Orders transaction-status probes by when they started. A probe that started before
 /// an execution finished can return after the execution's own probe; applying
 /// it would cache a stale `Idle`, and a cursor read would then wrap, and
 /// commit, a transaction the user opened.
@@ -245,14 +244,11 @@ impl ProbeOrder {
 struct ManagerState {
     owners: HashMap<String, String>,
     sessions: HashMap<String, Arc<Session>>,
-    observers: HashMap<String, Arc<Mutex<Arc<Observer>>>>,
     generations: HashMap<String, u64>,
     closing: HashSet<String>,
     opening: HashMap<String, String>,
-    observer_opening: HashMap<String, watch::Sender<bool>>,
     global_closing: bool,
     native_sessions: HashMap<String, NativeSessionTasks>,
-    native_observers: HashMap<String, Vec<crate::postgres::dedicated::DriverJoins>>,
 }
 struct NativeSessionTasks {
     #[cfg(feature = "isolated-profile")]
@@ -369,10 +365,7 @@ impl QuerySessionManager {
         let mut state = self.inner.lock().await;
         state.owners.clear();
         state.opening.clear();
-        state.observer_opening.clear();
-        state.observers.clear();
         state.native_sessions.clear();
-        state.native_observers.clear();
         state.sessions.clear();
     }
     async fn expire_stalled(&self) {
@@ -470,19 +463,16 @@ impl QuerySessionManager {
                 );
             }
         }
-        let observer = match self.observer_for_open(&payload.connection_id, &spec).await {
-            Ok(observer) => observer,
-            Err(error) => {
-                self.release_opening(&payload.session_id).await;
-                return Err(error);
-            }
-        };
         let connection = match postgres::connect_tracked(&spec, session_tasks.as_ref()).await {
             Ok(connection) => connection,
             Err(error) => {
                 self.release_opening(&payload.session_id).await;
                 return Err(error);
             }
+        };
+        let initial = QueryTransactionSnapshot {
+            pooling: connection.pooling,
+            ..Default::default()
         };
         let session = {
             let mut state = self.inner.lock().await;
@@ -513,8 +503,7 @@ impl QuerySessionManager {
                 window_label: window.into(),
                 tls: connection.tls.clone(),
                 connection: Arc::new(connection),
-                observer,
-                transaction: Mutex::new(QueryTransactionSnapshot::default()),
+                transaction: Mutex::new(initial.clone()),
                 probes: ProbeOrder::default(),
                 last_liveness: Mutex::new(Instant::now()),
                 focused: Mutex::new(true),
@@ -528,7 +517,7 @@ impl QuerySessionManager {
             None,
             false,
             QueryEvent::SessionState {
-                transaction: QueryTransactionSnapshot::default(),
+                transaction: initial.clone(),
             },
         )
         .await
@@ -537,63 +526,11 @@ impl QuerySessionManager {
             self.remove_and_close(&session.id, false).await;
             return Err(QuerySessionError::ConnectionLost);
         }
-        Ok(QueryTransactionSnapshot::default())
+        Ok(initial)
     }
     async fn release_opening(&self, session_id: &str) {
         let mut state = self.inner.lock().await;
         release_opening_locked(&mut state, session_id);
-    }
-    async fn observer_for_open(
-        &self,
-        connection_id: &str,
-        spec: &ResolvedPostgresConnectSpec,
-    ) -> Result<Arc<Mutex<Arc<Observer>>>, QuerySessionError> {
-        loop {
-            let wait = {
-                let mut state = self.inner.lock().await;
-                if let Some(observer) = state.observers.get(connection_id) {
-                    return Ok(observer.clone());
-                }
-                if let Some(opening) = state.observer_opening.get(connection_id) {
-                    Some(opening.subscribe())
-                } else {
-                    let (completed, _) = watch::channel(false);
-                    state
-                        .observer_opening
-                        .insert(connection_id.into(), completed);
-                    None
-                }
-            };
-            if let Some(mut wait) = wait {
-                let _ = wait.changed().await;
-                continue;
-            }
-
-            let observer_tasks = self.native_child();
-            if let Some(tasks) = &observer_tasks {
-                self.inner
-                    .lock()
-                    .await
-                    .native_observers
-                    .entry(connection_id.into())
-                    .or_default()
-                    .push(tasks.clone());
-            }
-            let result = Observer::connect_tracked(spec, observer_tasks.as_ref())
-                .await
-                .map(|observer| Arc::new(Mutex::new(observer)));
-            let mut state = self.inner.lock().await;
-            let opening = state.observer_opening.remove(connection_id);
-            if let Ok(observer) = &result {
-                state
-                    .observers
-                    .insert(connection_id.into(), observer.clone());
-            }
-            if let Some(opening) = opening {
-                opening.send_replace(true);
-            }
-            return result;
-        }
     }
     fn check_admission(
         &self,
@@ -638,7 +575,6 @@ impl QuerySessionManager {
             .values()
             .map(|session| &session.connection_id)
             .chain(state.opening.values())
-            .chain(state.observers.keys())
             .collect::<HashSet<_>>()
             .len();
         if count == 0 && active_connections >= MAX_ACTIVE_CONNECTIONS {
@@ -714,12 +650,17 @@ impl QuerySessionManager {
         drop(credit);
         drop(sequence);
         let tracked = session.native_tasks.clone();
+        let scope = postgres::TransactionScope {
+            pooled: session.connection.pooling.pools_transactions(),
+            read_only: safety.policy.read_only,
+        };
         let task = tokio::spawn(run_execution(
             self.clone(),
             session,
             execution_id,
             plan,
             snapshot,
+            scope,
             safety.on_success.map(|on_success| ExecutionAdmission {
                 on_success,
                 intent,
@@ -784,27 +725,17 @@ impl QuerySessionManager {
             postgres::cancel(session.connection.cancel.clone(), session.tls.clone()).await;
         Ok(CancelResult { requested })
     }
+    /// Asks the session's own server for its transaction status. While an
+    /// execution runs, the status it will report is not yet known; the
+    /// cached snapshot is returned and the execution's own probe settles it.
     pub(crate) async fn refresh(
         &self,
         id: &str,
         window: &str,
-        spec: ResolvedPostgresConnectSpec,
     ) -> Result<QueryTransactionSnapshot, QuerySessionError> {
         let session = self.bound(id, window).await?;
-        observe_session(&session).await;
-        if session.transaction.lock().await.status == QueryTransactionStatus::Unknown {
-            let observer_tasks = self.native_child();
-            if let Some(tasks) = &observer_tasks {
-                self.inner
-                    .lock()
-                    .await
-                    .native_observers
-                    .entry(session.connection_id.clone())
-                    .or_default()
-                    .push(tasks.clone());
-            }
-            let replacement = Observer::connect_tracked(&spec, observer_tasks.as_ref()).await?;
-            *session.observer.lock().await = replacement;
+        let running = session.credit.lock().await.execution_id.is_some();
+        if !running {
             observe_session(&session).await;
         }
         let snapshot = session.transaction.lock().await.clone();
@@ -906,36 +837,10 @@ impl QuerySessionManager {
     async fn join_native_sessions(&self, ids: &[String]) {
         let groups = {
             let mut state = self.inner.lock().await;
-            let retired = ids
-                .iter()
+            ids.iter()
                 .filter_map(|id| state.native_sessions.remove(id))
-                .collect::<Vec<_>>();
-            let connections = retired
-                .iter()
-                .map(|entry| entry.connection_id.clone())
-                .collect::<HashSet<_>>();
-            let mut groups = retired
-                .into_iter()
                 .map(|entry| entry.tasks)
-                .collect::<Vec<_>>();
-            for connection in connections {
-                let in_use = state
-                    .native_sessions
-                    .values()
-                    .any(|entry| entry.connection_id == connection)
-                    || state.opening.values().any(|id| id == &connection);
-                if !in_use {
-                    state.observers.remove(&connection);
-                    groups.extend(
-                        state
-                            .native_observers
-                            .remove(&connection)
-                            .into_iter()
-                            .flatten(),
-                    );
-                }
-            }
-            groups
+                .collect::<Vec<_>>()
         };
         // Abort is scoped to these retired sessions. A late query task registered
         // after admission observes the child's latched abort; other tabs survive.
@@ -945,24 +850,7 @@ impl QuerySessionManager {
         futures_util::future::join_all(groups.iter().map(|group| group.drain())).await;
     }
     async fn remove_and_close(&self, id: &str, emit: bool) {
-        let session = {
-            let mut state = self.inner.lock().await;
-            let session = state.sessions.remove(id);
-            if let Some(session) = &session {
-                if !state
-                    .sessions
-                    .values()
-                    .any(|other| other.connection_id == session.connection_id)
-                    && !state
-                        .opening
-                        .values()
-                        .any(|connection_id| connection_id == &session.connection_id)
-                {
-                    state.observers.remove(&session.connection_id);
-                }
-            }
-            session
-        };
+        let session = { self.inner.lock().await.sessions.remove(id) };
         if let Some(session) = session {
             close_session(session, emit).await;
         }
@@ -1000,18 +888,9 @@ impl QuerySessionManager {
                 .filter(|session| predicate(session))
                 .map(|session| session.id.clone())
                 .collect::<Vec<_>>();
-            let sessions = ids
-                .into_iter()
+            ids.into_iter()
                 .filter_map(|id| state.sessions.remove(&id))
-                .collect::<Vec<_>>();
-            let live = state
-                .sessions
-                .values()
-                .map(|session| session.connection_id.clone())
-                .chain(state.opening.values().cloned())
-                .collect::<HashSet<_>>();
-            state.observers.retain(|id, _| live.contains(id));
-            sessions
+                .collect::<Vec<_>>()
         };
         let native_ids = sessions
             .iter()
@@ -1076,17 +955,7 @@ fn assert_statement_policy(
 }
 
 fn release_opening_locked(state: &mut ManagerState, session_id: &str) {
-    let Some(connection_id) = state.opening.remove(session_id) else {
-        return;
-    };
-    if !state
-        .sessions
-        .values()
-        .any(|session| session.connection_id == connection_id)
-        && !state.opening.values().any(|id| id == &connection_id)
-    {
-        state.observers.remove(&connection_id);
-    }
+    state.opening.remove(session_id);
 }
 
 async fn run_execution(
@@ -1095,6 +964,7 @@ async fn run_execution(
     execution_id: String,
     plan: ExecutionPlan,
     initial: QueryTransactionSnapshot,
+    scope: postgres::TransactionScope,
     admission: Option<ExecutionAdmission>,
 ) {
     if send(
@@ -1121,7 +991,7 @@ async fn run_execution(
                 QueryTransactionIsolation::RepeatableRead => "REPEATABLE READ",
                 QueryTransactionIsolation::Serializable => "SERIALIZABLE",
             };
-            postgres::TransactionEntry::Begin(format!("BEGIN ISOLATION LEVEL {isolation}"))
+            postgres::TransactionEntry::Begin(scope.manual_begin(isolation))
         }
         _ => postgres::TransactionEntry::Inside,
     };
@@ -1134,6 +1004,7 @@ async fn run_execution(
         session.connection.notices.clone(),
         plan,
         entry,
+        scope,
         session.clone(),
         session.native_tasks.as_ref(),
     );
@@ -1226,7 +1097,7 @@ async fn run_execution(
         postgres::Outcome::Failed(QuerySessionError::ConnectionLost),
     ));
     // Sampled as soon as the outcome is known: a Stop that arrives during the
-    // observer probe below did not cause this outcome.
+    // transaction-status probe below did not cause this outcome.
     let cancel_requested = session.credit.lock().await.cancel_requested;
     let context = if matches!(outcome, postgres::Outcome::Completed) {
         execution_context(
@@ -1532,15 +1403,24 @@ async fn send(
         .map_err(|_| ())?;
     Ok(current)
 }
+/// The session's server reports its transaction status in every
+/// ReadyForQuery. A response abandoned on error can still be draining, so an
+/// empty query is completed first: its ReadyForQuery is then the latest. The
+/// empty query takes no snapshot and starts no transaction, so it cannot
+/// disturb `SET TRANSACTION` or a pooler's transaction boundaries.
 async fn observe_session(session: &Session) {
     let probe = session.probes.start();
-    let observer = session.observer.lock().await.clone();
-    let status = observer
-        .observe(
-            session.connection.pid,
-            session.connection.backend_start.clone(),
-        )
-        .await;
+    let client = &session.connection.client;
+    let synced = tokio::time::timeout(STATUS_PROBE_TIMEOUT, client.simple_query(""))
+        .await
+        .is_ok_and(|result| result.is_ok());
+    let status = match session.connection.wire.transaction() {
+        Some(_) if !synced => QueryTransactionStatus::Unknown,
+        Some(WireTransaction::Idle) => QueryTransactionStatus::Idle,
+        Some(WireTransaction::InTransaction) => QueryTransactionStatus::Active,
+        Some(WireTransaction::Failed) => QueryTransactionStatus::Failed,
+        None => QueryTransactionStatus::Unknown,
+    };
     let mut transaction = session.transaction.lock().await;
     if session.probes.admit(probe) {
         transaction.status = status;
@@ -3414,7 +3294,6 @@ mod tests {
         let state = manager.inner.lock().await;
         assert!(state.sessions.is_empty());
         assert!(state.opening.is_empty());
-        assert!(state.observers.is_empty());
         drop(state);
         tokio::time::timeout(LIVE_WAIT, async {
             while backends().await != 0 {
@@ -3422,7 +3301,7 @@ mod tests {
             }
         })
         .await
-        .expect("the session and observer backends are released");
+        .expect("the session backend is released");
     }
 
     #[tokio::test]
@@ -3441,6 +3320,130 @@ mod tests {
             live.events.lock().unwrap().last().unwrap()["event"]["kind"],
             "resultSetCompleted"
         );
+    }
+
+    // Pooler acceptance: the stage03 database behind PgBouncer 1.21+ in
+    // transaction mode with `max_prepared_statements = 0` (no statement
+    // tracking, the strictest case) on 26543 and in session mode on 26544,
+    // and the database itself on 25432. `owned_rows(id int, v int)` holds a
+    // row with id 1.
+    const DIRECT_PORT: u16 = 25432;
+    const TRANSACTION_POOLER_PORT: u16 = 26543;
+    const SESSION_POOLER_PORT: u16 = 26544;
+
+    fn spec_on(port: u16, statement_timeout_ms: Option<u32>) -> ResolvedPostgresConnectSpec {
+        ResolvedPostgresConnectSpec {
+            port,
+            ..live_spec(statement_timeout_ms)
+        }
+    }
+
+    async fn open_on(session_id: &str, spec: ResolvedPostgresConnectSpec) -> Live {
+        let manager = manager();
+        manager.register_owner(LIVE_WINDOW, "owner".into()).await;
+        let (sink, events) = recording_sink();
+        manager
+            .open(
+                LIVE_WINDOW,
+                payload(session_id, "live-15432"),
+                sink,
+                spec.clone(),
+            )
+            .await
+            .expect("open pooled session");
+        Live {
+            manager,
+            events,
+            admin: postgres::connect(&spec).await.expect("admin connection"),
+            session_id: session_id.into(),
+            pid: 0,
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL on 25432 and PgBouncer session (26544) and transaction (26543) pools"]
+    async fn pooling_is_classified_on_connect() {
+        for (port, expected) in [
+            (DIRECT_PORT, crate::ConnectionPooling::Direct),
+            // A pooler's mode cannot be proven from the client.
+            (SESSION_POOLER_PORT, crate::ConnectionPooling::Pooler),
+            (TRANSACTION_POOLER_PORT, crate::ConnectionPooling::Pooler),
+        ] {
+            let connection = postgres::connect(&spec_on(port, None))
+                .await
+                .expect("connect");
+            assert_eq!(connection.pooling, expected, "port {port}");
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PgBouncer in transaction mode on 26543"]
+    async fn transaction_pooler_sessions_follow_the_protocol_status() {
+        let live = open_on("pooled", spec_on(TRANSACTION_POOLER_PORT, None)).await;
+        let status = |terminal: &serde_json::Value| terminal["transaction"]["status"].clone();
+        for round in 0..3 {
+            let terminal = live
+                .settle(&format!("read-{round}"), "SELECT 1", None, None)
+                .await;
+            assert_eq!(terminal["status"], "completed");
+            assert_eq!(status(&terminal), "idle");
+            assert_eq!(terminal["transaction"]["pooling"], "pooler");
+        }
+        // Prepared and executed without the pooler tracking statements.
+        let terminal = live
+            .settle(
+                "bound",
+                "UPDATE owned_rows SET v = v WHERE id = :id",
+                Some(&[("id", Some("1"))]),
+                None,
+            )
+            .await;
+        assert_eq!(terminal["status"], "completed");
+        assert_eq!(status(&terminal), "idle");
+
+        let terminal = live.settle("open", "BEGIN; SELECT 1", None, None).await;
+        assert_eq!(status(&terminal), "active");
+        let terminal = live.settle("fail", "SELECT 1/0", None, None).await;
+        assert_eq!(terminal["status"], "failed");
+        assert_eq!(status(&terminal), "failed");
+        live.rollback().await;
+        let snapshot = live.manager.refresh("pooled", LIVE_WINDOW).await.unwrap();
+        assert_eq!(snapshot.status, QueryTransactionStatus::Idle);
+
+        // Observing the status after BEGIN took no snapshot.
+        let terminal = live.settle("begin", "BEGIN", None, None).await;
+        assert_eq!(status(&terminal), "active");
+        let terminal = live
+            .settle(
+                "isolation",
+                "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE",
+                None,
+                None,
+            )
+            .await;
+        assert_eq!(terminal["status"], "completed");
+        live.rollback().await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PgBouncer in transaction mode on 26543"]
+    async fn transaction_pooler_receives_no_session_settings() {
+        let _live = open_on("settings", spec_on(TRANSACTION_POOLER_PORT, Some(1234))).await;
+        let other = postgres::connect(&spec_on(TRANSACTION_POOLER_PORT, None))
+            .await
+            .expect("second client");
+        for _ in 0..4 {
+            let rows = other
+                .client
+                .simple_query("SHOW statement_timeout")
+                .await
+                .expect("show");
+            let value = rows.iter().find_map(|message| match message {
+                tokio_postgres::SimpleQueryMessage::Row(row) => row.get(0).map(str::to_owned),
+                _ => None,
+            });
+            assert_eq!(value.as_deref(), Some("0"));
+        }
     }
 }
 

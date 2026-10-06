@@ -483,6 +483,9 @@ async fn probe_disconnect_and_post_connect_failure_join_owned_sockets() {
             .write_all(b"R\0\0\0\x08\0\0\0\0K\0\0\0\x0c\0\0\0\x01\0\0\0\x02Z\0\0\0\x05I")
             .await
             .unwrap();
+        // The first started session on this endpoint is classified: its
+        // process matches the cancel key, so it is direct and cached.
+        answer_backend_pid(&mut socket).await;
         assert_eq!(socket.read_u8().await.unwrap(), b'Q');
         let length = socket.read_u32().await.unwrap();
         let mut options = vec![0; length as usize - 4];
@@ -544,6 +547,35 @@ async fn probe_disconnect_and_post_connect_failure_join_owned_sockets() {
     .await
     .unwrap()
     .unwrap();
+}
+
+/// Answers `SELECT pg_backend_pid()` with process 1, the synthetic key's.
+async fn answer_backend_pid(socket: &mut tokio::net::TcpStream) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    assert_eq!(socket.read_u8().await.unwrap(), b'Q');
+    let length = socket.read_u32().await.unwrap();
+    let mut query = vec![0; length as usize - 4];
+    socket.read_exact(&mut query).await.unwrap();
+    assert_eq!(query, b"SELECT pg_backend_pid()\0");
+    let mut description = 1u16.to_be_bytes().to_vec();
+    description.extend_from_slice(b"pg_backend_pid\0");
+    description.extend_from_slice(&0u32.to_be_bytes());
+    description.extend_from_slice(&0u16.to_be_bytes());
+    description.extend_from_slice(&23u32.to_be_bytes());
+    description.extend_from_slice(&4i16.to_be_bytes());
+    description.extend_from_slice(&(-1i32).to_be_bytes());
+    description.extend_from_slice(&0u16.to_be_bytes());
+    let row = [&1u16.to_be_bytes()[..], &1u32.to_be_bytes(), b"1"].concat();
+    for (tag, body) in [
+        (b'T', description),
+        (b'D', row),
+        (b'C', b"SELECT 1\0".to_vec()),
+        (b'Z', b"I".to_vec()),
+    ] {
+        socket.write_u8(tag).await.unwrap();
+        socket.write_u32(body.len() as u32 + 4).await.unwrap();
+        socket.write_all(&body).await.unwrap();
+    }
 }
 
 async fn send_pg_error(socket: &mut tokio::net::TcpStream) {

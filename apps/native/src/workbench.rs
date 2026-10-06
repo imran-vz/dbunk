@@ -9,8 +9,8 @@ use crate::{
     sql,
 };
 use dbunk_lib::backend::{
-    self, AckPayload, ExecutePayload, ExecutionPayload, Layout, QueryEvent, QuerySessionError,
-    QueryTransactionIsolation, QueryTransactionMode, QueryTransactionSnapshot,
+    self, AckPayload, ConnectionPooling, ExecutePayload, ExecutionPayload, Layout, QueryEvent,
+    QuerySessionError, QueryTransactionIsolation, QueryTransactionMode, QueryTransactionSnapshot,
     QueryTransactionStatus, TransactionControl,
 };
 use editor::{Editor, EditorEvent};
@@ -1248,7 +1248,15 @@ impl Workbench {
             QueryTransactionStatus::Failed => "failed; rollback required",
             QueryTransactionStatus::Unknown => "unknown; recheck required",
         };
-        format!("{mode} · {status}")
+        match snapshot.pooling {
+            ConnectionPooling::TransactionPooler => {
+                format!("{mode} · {status} · transaction pooler")
+            }
+            ConnectionPooling::Pooler => format!("{mode} · {status} · connection pooler"),
+            ConnectionPooling::Direct | ConnectionPooling::SessionPooler => {
+                format!("{mode} · {status}")
+            }
+        }
     }
 
     fn explain_draft(&mut self, analyze: bool, cx: &mut Context<Self>) {

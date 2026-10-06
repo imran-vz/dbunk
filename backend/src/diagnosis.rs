@@ -195,6 +195,12 @@ pub(crate) enum DiagnosisWarning {
     NotEncrypted,
     PoolHostnameVerificationCaOnly,
     ProductionWithoutVerification,
+    /// A transaction pooler: session state does not persist between
+    /// transactions.
+    TransactionPooler,
+    /// Configured session options (timeouts, search path, role, read-only
+    /// session) are not sent through a transaction pooler.
+    SessionOptionsNotApplied,
 }
 
 // ---------------------------------------------------------------------------
