@@ -87,6 +87,10 @@ impl<C: 'static> PaletteView<C> {
         self.scroll.scroll_to_item(0, gpui::ScrollStrategy::Top);
         cx.notify();
     }
+    /// Closes without choosing, as Escape does (a click outside the palette).
+    pub fn dismiss(&mut self, cx: &mut Context<Self>) {
+        cx.emit(PaletteEvent::Dismissed);
+    }
     fn choose(&mut self, position: usize, cx: &mut Context<Self>) {
         if let Some(&index) = self.ranked.items.get(position) {
             cx.emit(PaletteEvent::Chosen(index));
@@ -161,7 +165,9 @@ impl<C: 'static> Render for PaletteView<C> {
             .aria_label("Open anything")
             .track_focus(&self.root)
             .capture_key_down(cx.listener(Self::key_down))
-            .on_mouse_down_out(cx.listener(|_, _, _, cx| cx.emit(PaletteEvent::Dismissed)))
+            // Clicks inside stay inside; the host's backdrop takes clicks
+            // outside and calls `dismiss`.
+            .occlude()
             .w(px(640.))
             .max_h(px(480.))
             .flex()

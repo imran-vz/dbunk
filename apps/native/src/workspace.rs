@@ -1469,9 +1469,10 @@ impl Workspace {
 
     fn activate(&mut self, operation: Operation, window: &mut Window, cx: &mut Context<Self>) {
         // View-only shell state never waits on persistence or dialogs.
-        let opened_menu = matches!(operation, Operation::ShellMenu(_));
-        if !opened_menu && self.shell.menu.take().is_some() {
-            cx.notify();
+        // Any other action closes an open menu and returns focus first, so
+        // pages opened below record the right focus to restore.
+        if !matches!(operation, Operation::ShellMenu(_)) {
+            self.close_shell_menu(window, cx);
         }
         match &operation {
             Operation::ToggleSidebar => {
@@ -1508,8 +1509,7 @@ impl Workspace {
                 return;
             }
             Operation::ShellMenu(menu) => {
-                self.shell.menu = (self.shell.menu.as_ref() != Some(menu)).then(|| menu.clone());
-                cx.notify();
+                self.toggle_shell_menu(menu.clone(), window, cx);
                 return;
             }
             Operation::SelectProject(project) => {
@@ -1519,17 +1519,36 @@ impl Workspace {
             }
             _ => {}
         }
-        if self.closing
-            || self.busy
-            || self.loading
-            || self.dialog.is_some()
-            || self.palette.is_some()
-            || self.managed.is_some()
-        {
+        // A blocked action says why (DESIGN §6). Pages and the palette cover
+        // the workspace and own their input, so those refuse silently.
+        if self.dialog.is_some() || self.palette.is_some() || self.managed.is_some() {
             return;
         }
-        if self.cleanup_failed && !matches!(operation, Operation::Retry | Operation::Export) {
+        let blocked = if self.closing {
+            Some("The workspace is closing")
+        } else if self.busy {
+            Some("Wait for the current workspace operation to finish")
+        } else if self.loading {
+            Some("The workspace is still loading")
+        } else if self.cleanup_failed && !matches!(operation, Operation::Retry | Operation::Export)
+        {
+            Some("Workspace cleanup failed; retry or export your drafts first")
+        } else {
+            None
+        };
+        if let Some(reason) = blocked {
+            // Keep a cleanup failure's own error (it carries Retry and
+            // Export); shake it again instead.
+            if self.cleanup_failed && self.message.is_some() {
+                self.message_seq = self.message_seq.wrapping_add(1);
+                cx.notify();
+            } else {
+                self.refuse(reason, cx);
+            }
             return;
+        }
+        if let Operation::SelectConnection(id) = &operation {
+            self.follow_connection_project(id);
         }
         self.previous_focus = window.focused(cx);
         self.message = None;
@@ -1563,6 +1582,8 @@ impl Workspace {
                 {
                     self.active = Some(id);
                     self.close_document(window, cx);
+                } else {
+                    self.message = Some("That tab was already closed".into());
                 }
             }
             Operation::Next => self.select_next(false, window, cx),
@@ -1614,12 +1635,16 @@ impl Workspace {
                         Form::rename(self.host.clone(), document.name.clone(), window, cx)
                     });
                     self.show_form(form, Some(id), window, cx);
+                } else {
+                    self.message = Some("Open a tab to rename it".into());
                 }
             }
             Operation::Pin => {
                 if let Some(index) = self.active_index() {
                     self.documents[index].metadata.pinned = !self.documents[index].metadata.pinned;
                     self.changed(cx);
+                } else {
+                    self.message = Some("Open a tab to pin it".into());
                 }
             }
             Operation::Move(left) => {
@@ -1631,6 +1656,8 @@ impl Workspace {
                     };
                     self.documents.swap(index, target);
                     self.changed(cx);
+                } else {
+                    self.message = Some("Open a tab to move it".into());
                 }
             }
             Operation::NewConnection => {
@@ -1725,6 +1752,8 @@ impl Workspace {
                         window,
                         cx,
                     );
+                } else {
+                    self.message = Some("That connection no longer exists".into());
                 }
             }
             Operation::Connect => {
@@ -1732,6 +1761,10 @@ impl Workspace {
                     self.documents[index]
                         .view
                         .update(cx, |view, cx| view.begin_connect(cx));
+                } else {
+                    self.message = Some(
+                        "Open a query or table tab, or select a connection, to connect".into(),
+                    );
                 }
             }
             Operation::Disconnect => {
@@ -1771,6 +1804,8 @@ impl Workspace {
                         })
                         .ok();
                     }));
+                } else {
+                    self.message = Some("No tab is open to disconnect".into());
                 }
             }
             Operation::Console => self.toggle_console(window, cx),
@@ -1785,6 +1820,8 @@ impl Workspace {
                     self.documents[index]
                         .view
                         .update(cx, |view, cx| view.clear_results(cx));
+                } else {
+                    self.message = Some("No tab is open to clear".into());
                 }
             }
             Operation::Retry => {
@@ -2306,7 +2343,14 @@ impl Render for Workspace {
             .as_ref()
             .is_none_or(|project| !projects.contains(project))
         {
-            self.shell.project = projects.first().cloned();
+            // Prefer the selected connection's project, so a restored or
+            // palette selection shows up in the list.
+            self.shell.project = self
+                .selected_connection
+                .as_deref()
+                .and_then(|id| self.connection_project(id))
+                .filter(|project| projects.contains(project))
+                .or_else(|| projects.first().cloned());
         }
         self.render_shell(window, cx)
             .key_context("NativeWorkspace")
@@ -2432,10 +2476,16 @@ impl Render for Workspace {
                 )
             })
             .when_some(self.palette.clone(), |root, palette| {
+                // Occlude: the workspace behind ignores the pointer; a click
+                // outside the palette only dismisses it.
                 root.child(
                     div()
+                        .id("palette-layer")
                         .absolute()
                         .inset_0()
+                        .occlude()
+                        .on_mouse_down(gpui::MouseButton::Left, cx.listener(Self::dismiss_palette))
+                        .on_mouse_down(gpui::MouseButton::Right, cx.listener(Self::dismiss_palette))
                         .flex()
                         .justify_center()
                         .pt(px(64.))

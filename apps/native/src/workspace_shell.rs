@@ -7,19 +7,167 @@ use crate::style;
 use dbunk_lib::backend::DevelopmentEnvironment;
 use editor::Editor;
 use gpui::{
-    AnimationExt, AnyElement, MouseButton, SpringAnimation, SpringConfig, WindowControlArea, rgba,
-    svg,
+    AnimationExt, AnyElement, KeyDownEvent, MouseButton, Pixels, Point, SpringAnimation,
+    SpringConfig, WindowControlArea, anchored, svg,
 };
 
 /// Width of the tab bar's left inset when the sidebar is hidden: room for
 /// the traffic lights plus the show-sidebar button.
 const REVEAL: f32 = style::TRAFFIC_LIGHTS + 28.;
+/// Engine badge label size (DESIGN §2: 14 px badge, 8 px mono label).
+const BADGE_FONT: f32 = 8.;
 
 #[derive(Clone, PartialEq)]
 pub(super) enum ShellMenu {
     Projects,
     Tools,
     Connection(String),
+}
+
+/// One row of an open shell menu; rendering and keys share the list.
+struct MenuEntry {
+    id: SharedString,
+    label: String,
+    operation: Operation,
+}
+
+/// What a key does in an open menu.
+#[derive(Debug, PartialEq)]
+enum MenuKey {
+    Close,
+    Move(usize),
+    Activate,
+    Ignore,
+}
+
+/// Menu keys: Escape closes, Up/Down (and Tab/Shift-Tab, so focus stays in
+/// the menu) move with wrap, Home/End jump, Return/Space activate.
+fn menu_key(key: &str, shift: bool, selected: usize, len: usize) -> MenuKey {
+    if key == "escape" {
+        return MenuKey::Close;
+    }
+    if len == 0 {
+        return MenuKey::Ignore;
+    }
+    let last = len - 1;
+    let selected = selected.min(last);
+    let down = MenuKey::Move(if selected >= last { 0 } else { selected + 1 });
+    let up = MenuKey::Move(if selected == 0 { last } else { selected - 1 });
+    match key {
+        "enter" | "space" => MenuKey::Activate,
+        "down" => down,
+        "up" => up,
+        "tab" if shift => up,
+        "tab" => down,
+        "home" | "pageup" => MenuKey::Move(0),
+        "end" | "pagedown" => MenuKey::Move(last),
+        _ => MenuKey::Ignore,
+    }
+}
+
+/// Tools menu entries. `engine` is `Some(can_clear)` while an engine
+/// surface is selected: its PostgreSQL-only tools are left out, the
+/// app-wide ones stay. `general` is the general PostgreSQL profile, the
+/// only one with bastion and managed servers.
+fn tool_entries(engine: Option<bool>, general: bool) -> Vec<(&'static str, Operation)> {
+    let mut entries = match engine {
+        None => vec![
+            ("Query history", Operation::Library(WorkspaceTool::History)),
+            (
+                "Saved queries",
+                Operation::Library(WorkspaceTool::SavedQueries),
+            ),
+            ("Objects", Operation::Library(WorkspaceTool::Objects)),
+            (
+                "Administration",
+                Operation::Library(WorkspaceTool::Administration),
+            ),
+            ("Schema map", Operation::Library(WorkspaceTool::SchemaMap)),
+            (
+                "Compare schemas",
+                Operation::Library(WorkspaceTool::SchemaCompare),
+            ),
+            (
+                "Backup / Restore",
+                Operation::Library(WorkspaceTool::BackupRestore),
+            ),
+            (
+                "CSV transfer",
+                Operation::Library(WorkspaceTool::CsvTransfer),
+            ),
+            ("Copy table", Operation::Library(WorkspaceTool::TableCopy)),
+            ("Open table by name", Operation::OpenTable),
+            ("Save query", Operation::SaveQuery),
+            ("Rename tab", Operation::Rename),
+            ("Pin tab", Operation::Pin),
+            ("Connect tab", Operation::Connect),
+            ("Disconnect tab", Operation::Disconnect),
+            ("Clear results", Operation::Clear),
+        ],
+        Some(can_clear) => {
+            let mut entries = vec![
+                ("Connect", Operation::Connect),
+                ("Disconnect", Operation::Disconnect),
+            ];
+            if can_clear {
+                entries.push(("Clear results", Operation::Clear));
+            }
+            entries
+        }
+    };
+    if general {
+        entries.push(("Bastion servers", Operation::Bastions));
+        entries.push(("Managed servers", Operation::ManagedServers));
+    }
+    entries.push(("Credentials", Operation::Credentials));
+    entries
+}
+
+/// A connection's stored colour as `0xRRGGBB`. The form takes free text;
+/// `#rgb`, `#rrggbb` (with or without `#`) and a few basic names render,
+/// anything else shows no dot.
+pub(super) fn connection_color(stored: &str) -> Option<u32> {
+    let value = stored.trim().to_ascii_lowercase();
+    let named = match value.as_str() {
+        "" => return None,
+        "red" => Some(0xf85149),
+        "orange" => Some(0xdb6d28),
+        "yellow" => Some(0xd29922),
+        "green" => Some(0x3fb950),
+        "teal" | "cyan" => Some(0x39c5cf),
+        "blue" => Some(0x6aa6ff),
+        "purple" | "violet" => Some(0xa371f7),
+        "pink" => Some(0xdb61a2),
+        "gray" | "grey" => Some(0x8a929c),
+        _ => None,
+    };
+    if named.is_some() {
+        return named;
+    }
+    let hex = value.strip_prefix('#').unwrap_or(&value);
+    if !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    match hex.len() {
+        6 => u32::from_str_radix(hex, 16).ok(),
+        3 => {
+            let short = u32::from_str_radix(hex, 16).ok()?;
+            let (r, g, b) = ((short >> 8) & 0xf, (short >> 4) & 0xf, short & 0xf);
+            Some(((r * 0x11) << 16) | ((g * 0x11) << 8) | (b * 0x11))
+        }
+        _ => None,
+    }
+}
+
+/// The status bar's host: `host:port`, or `None` for file engines.
+fn status_host(host: &str, port: Option<u16>) -> Option<String> {
+    if host.is_empty() {
+        return None;
+    }
+    Some(match port {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_owned(),
+    })
 }
 
 pub(super) struct ShellState {
@@ -34,6 +182,13 @@ pub(super) struct ShellState {
     pub project: Option<String>,
     pub env_filter: Option<DevelopmentEnvironment>,
     pub menu: Option<ShellMenu>,
+    /// Keyboard focus while a menu is open; Escape returns it to `menu_return`.
+    menu_focus: FocusHandle,
+    menu_return: Option<FocusHandle>,
+    /// Highlighted entry; Return activates it.
+    menu_selected: usize,
+    /// Window position of the click that opened a connection menu.
+    menu_anchor: Option<Point<Pixels>>,
     pub search: Entity<Editor>,
     pub search_field: Entity<crate::accessible_editor::AccessibleEditor>,
     pub last_latency: std::collections::HashMap<String, u64>,
@@ -70,6 +225,10 @@ impl ShellState {
             project: None,
             env_filter: None,
             menu: None,
+            menu_focus: cx.focus_handle(),
+            menu_return: None,
+            menu_selected: 0,
+            menu_anchor: None,
             search,
             search_field,
             last_latency: Default::default(),
@@ -338,6 +497,184 @@ impl Workspace {
             .find(|connection| &connection.id == id)
     }
 
+    /// The project a saved connection belongs to.
+    pub(super) fn connection_project(&self, id: &str) -> Option<String> {
+        self.connections
+            .iter()
+            .find(|connection| connection.id == id)
+            .map(|connection| project_of(connection).to_owned())
+    }
+
+    /// Selecting a connection shows its project in the switcher and list.
+    pub(super) fn follow_connection_project(&mut self, id: &str) {
+        if let Some(project) = self.connection_project(id) {
+            self.shell.project = Some(project);
+        }
+    }
+
+    /// The general PostgreSQL profile, the only one with bastion and
+    /// managed servers.
+    pub(super) fn general_profile(&self) -> bool {
+        self.host.backend.native_profile_kind()
+            == Some(dbunk_lib::backend::NativeProfileKind::GeneralPostgres)
+    }
+
+    /// A blocked action says why in the error strip (DESIGN §6); a repeat
+    /// shakes again.
+    pub(super) fn refuse(&mut self, reason: impl Into<String>, cx: &mut Context<Self>) {
+        self.message = Some(reason.into());
+        self.message_seq = self.message_seq.wrapping_add(1);
+        cx.notify();
+    }
+
+    /// Opens `menu` with keyboard focus on it, or closes it when it is the
+    /// open one.
+    pub(super) fn toggle_shell_menu(
+        &mut self,
+        menu: ShellMenu,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.shell.menu.as_ref() == Some(&menu) {
+            self.close_shell_menu(window, cx);
+            return;
+        }
+        if self.shell.menu.is_none() {
+            self.shell.menu_return = window.focused(cx);
+        }
+        self.shell.menu_selected = match &menu {
+            ShellMenu::Projects => self
+                .shell
+                .project
+                .as_ref()
+                .and_then(|current| {
+                    projects(&self.connections)
+                        .iter()
+                        .position(|project| project == current)
+                })
+                .unwrap_or(0),
+            _ => 0,
+        };
+        // A click that opened a connection menu records its position after
+        // this runs; keyboard and accessibility opens fall back to a fixed spot.
+        self.shell.menu_anchor = None;
+        self.shell.menu = Some(menu);
+        window.focus(&self.shell.menu_focus, cx);
+        cx.notify();
+    }
+
+    /// Closes the open menu and returns focus to where it was.
+    pub(super) fn close_shell_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.shell.menu.take().is_none() {
+            return;
+        }
+        self.shell.menu_anchor = None;
+        match self.shell.menu_return.take() {
+            Some(focus) => window.focus(&focus, cx),
+            None => self.focus_active(window, cx),
+        }
+        cx.notify();
+    }
+
+    fn menu_entries(&self, menu: &ShellMenu) -> Vec<MenuEntry> {
+        match menu {
+            ShellMenu::Projects => projects(&self.connections)
+                .into_iter()
+                .enumerate()
+                .map(|(index, project)| MenuEntry {
+                    id: SharedString::from(format!("project-{index}")),
+                    label: project.clone(),
+                    operation: Operation::SelectProject(project),
+                })
+                .collect(),
+            ShellMenu::Tools => {
+                tool_entries(self.active_engine_can_clear(), self.general_profile())
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, (label, operation))| MenuEntry {
+                        id: SharedString::from(format!("tool-{index}")),
+                        label: label.to_owned(),
+                        operation,
+                    })
+                    .collect()
+            }
+            ShellMenu::Connection(id) => {
+                let postgres = self
+                    .connections
+                    .iter()
+                    .any(|c| &c.id == id && c.postgres.is_some() && c.unsupported_reason.is_none());
+                let mut entries = vec![
+                    ("conn-edit", "Edit…", Operation::EditConnection(id.clone())),
+                    (
+                        "conn-duplicate",
+                        "Duplicate",
+                        Operation::DuplicateConnection(id.clone()),
+                    ),
+                ];
+                if postgres {
+                    entries.push((
+                        "conn-uri",
+                        "Copy URI",
+                        Operation::CopyConnectionUri(id.clone()),
+                    ));
+                }
+                entries.push((
+                    "conn-favorite",
+                    "Toggle favorite",
+                    Operation::Favorite(id.clone()),
+                ));
+                entries.push((
+                    "conn-delete",
+                    "Delete…",
+                    Operation::DeleteConnection(id.clone()),
+                ));
+                entries
+                    .into_iter()
+                    .map(|(id, label, operation)| MenuEntry {
+                        id: id.into(),
+                        label: label.to_owned(),
+                        operation,
+                    })
+                    .collect()
+            }
+        }
+    }
+
+    fn menu_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(menu) = self.shell.menu.clone() else {
+            return;
+        };
+        let modifiers = &event.keystroke.modifiers;
+        if modifiers.control || modifiers.alt || modifiers.platform {
+            return;
+        }
+        let entries = self.menu_entries(&menu);
+        // Entries can change under an open menu (a reload); stay in range.
+        let selected = self
+            .shell
+            .menu_selected
+            .min(entries.len().saturating_sub(1));
+        match menu_key(
+            event.keystroke.key.as_str(),
+            modifiers.shift,
+            selected,
+            entries.len(),
+        ) {
+            MenuKey::Close => self.close_shell_menu(window, cx),
+            MenuKey::Move(index) => {
+                self.shell.menu_selected = index;
+                cx.notify();
+            }
+            MenuKey::Activate => {
+                if let Some(entry) = entries.into_iter().nth(selected) {
+                    self.activate(entry.operation, window, cx);
+                }
+            }
+            MenuKey::Ignore => return,
+        }
+        cx.stop_propagation();
+    }
+
     fn title_row(&self, cx: &Context<Self>) -> impl IntoElement {
         div()
             .id("sidebar-title")
@@ -367,7 +704,7 @@ impl Workspace {
                         div()
                             .size(px(12.))
                             .rounded(px(3.))
-                            .bg(rgba((self.env_color() << 8) | 0xff)),
+                            .bg(style::with_alpha(self.env_color(), 0xff)),
                     )
                     .child("dbunk"),
             )
@@ -396,19 +733,27 @@ impl Workspace {
                 chip.bg(style::raised()).text_color(style::text())
             })
             .aria_selected(self.shell.env_filter.is_none())
+            .aria_keyshortcuts("Meta+0")
+            .tooltip(crate::ui::tooltip("All environments  ⌘0"))
+            .tooltip_show_delay(crate::ui::tooltip_delay())
             .child("All")
             .into_any_element(),
         ];
-        for environment in style::ENVIRONMENTS {
+        // ⌘1–⌘4 follow `style::ENVIRONMENTS` order.
+        for (index, environment) in style::ENVIRONMENTS.into_iter().enumerate() {
             let selected = self.shell.env_filter == Some(environment);
+            let label = format!("{} only", style::env_label(environment));
             chips.push(
                 self.shell_button(
                     SharedString::from(format!("env-{}", style::env_label(environment))),
-                    format!("{} only", style::env_label(environment)),
+                    label.clone(),
                     Operation::EnvFilter(Some(environment)),
                     cx,
                 )
                 .aria_selected(selected)
+                .aria_keyshortcuts(format!("Meta+{}", index + 1))
+                .tooltip(crate::ui::tooltip(format!("{label}  ⌘{}", index + 1)))
+                .tooltip_show_delay(crate::ui::tooltip_delay())
                 .when(selected, |chip| {
                     chip.bg(style::raised()).text_color(style::text())
                 })
@@ -417,7 +762,7 @@ impl Workspace {
                     div()
                         .size(px(6.))
                         .rounded_full()
-                        .bg(rgba((style::env(Some(environment)) << 8) | 0xff)),
+                        .bg(style::with_alpha(style::env(Some(environment)), 0xff)),
                 )
                 .child(&style::env_label(environment)[..1])
                 .into_any_element(),
@@ -436,6 +781,7 @@ impl Workspace {
                     Operation::ShellMenu(ShellMenu::Projects),
                     cx,
                 )
+                .aria_expanded(self.shell.menu == Some(ShellMenu::Projects))
                 .flex_1()
                 .min_w_0()
                 .h(px(22.))
@@ -496,7 +842,7 @@ impl Workspace {
                         div()
                             .size(px(6.))
                             .rounded_full()
-                            .bg(rgba((style::env(Some(environment)) << 8) | 0xff)),
+                            .bg(style::with_alpha(style::env(Some(environment)), 0xff)),
                     )
                     .child(label.to_uppercase())
                     .into_any_element(),
@@ -541,22 +887,41 @@ impl Workspace {
                     .role(Role::ListBoxOption)
                     .aria_selected(selected)
                     .rounded_none()
+                    .relative()
                     .pl(px(16.))
                     .pr(px(8.))
                     .gap(px(6.))
                     .text_color(style::text())
                     .when(selected, |row| row.bg(style::select()))
+                    // The stored connection colour sits in the left gutter,
+                    // so rows with and without one stay aligned.
+                    .when_some(
+                        connection_color(&connection.organization.color),
+                        |row, color| {
+                            row.child(
+                                div()
+                                    .absolute()
+                                    .left(px(6.))
+                                    .top(px((style::ROW - 6.) / 2.))
+                                    .size(px(6.))
+                                    .rounded_full()
+                                    .bg(style::with_alpha(color, 0xff)),
+                            )
+                        },
+                    )
                     .child(
                         div()
                             .size(px(14.))
+                            .flex_none()
                             .rounded(px(3.))
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_size(px(8.))
+                            .font_family(style::MONO)
+                            .text_size(px(BADGE_FONT))
                             .font_weight(gpui::FontWeight::BOLD)
                             .text_color(style::bg())
-                            .bg(rgba((badge_color << 8) | 0xff))
+                            .bg(style::with_alpha(badge_color, 0xff))
                             .child(badge),
                     )
                     .child(
@@ -630,14 +995,29 @@ impl Workspace {
                     });
                 }
                 if selected {
-                    row = row.child(self.row_button(
-                        SharedString::from(format!("connection-menu-{id}")),
-                        format!("Actions for {}", connection.name),
-                        "icons/ellipsis.svg",
-                        style::dim(),
-                        Operation::ShellMenu(ShellMenu::Connection(id.clone())),
-                        cx,
-                    ));
+                    let menu = ShellMenu::Connection(id.clone());
+                    let open = self.shell.menu.as_ref() == Some(&menu);
+                    row = row.child(
+                        self.row_button(
+                            SharedString::from(format!("connection-menu-{id}")),
+                            format!("Actions for {}", connection.name),
+                            "icons/ellipsis.svg",
+                            style::dim(),
+                            Operation::ShellMenu(menu),
+                            cx,
+                        )
+                        .aria_expanded(open)
+                        // Runs after the open above: the menu opens at the
+                        // click (a keyboard click reports the button's corner).
+                        .on_click(cx.listener(
+                            |this, event: &gpui::ClickEvent, _, cx| {
+                                if matches!(this.shell.menu, Some(ShellMenu::Connection(_))) {
+                                    this.shell.menu_anchor = Some(event.position());
+                                    cx.notify();
+                                }
+                            },
+                        )),
+                    );
                 }
                 rows.push(row.into_any_element());
             }
@@ -697,13 +1077,16 @@ impl Workspace {
                                     .h(px(18.))
                                     .child(self.shell.search_field.clone()),
                             )
-                            .child(self.icon_button(
-                                "new-connection",
-                                "New connection",
-                                "icons/plus.svg",
-                                Operation::NewConnection,
-                                cx,
-                            )),
+                            .child(
+                                self.icon_button(
+                                    "new-connection",
+                                    "New connection  ⌘N",
+                                    "icons/plus.svg",
+                                    Operation::NewConnection,
+                                    cx,
+                                )
+                                .aria_keyshortcuts("Meta+N"),
+                            ),
                     )
                     .child(self.connection_list(cx)),
             )
@@ -777,7 +1160,7 @@ impl Workspace {
                         .left_0()
                         .right_0()
                         .h(px(2.))
-                        .bg(rgba((env << 8) | 0xff)),
+                        .bg(style::with_alpha(env, 0xff)),
                 )
             })
             .child(icon(
@@ -880,27 +1263,29 @@ impl Workspace {
                     .px(px(6.))
                     .border_l_1()
                     .border_color(style::line_soft())
-                    .child(self.icon_button(
-                        "new-query",
-                        "New query",
-                        "icons/plus.svg",
-                        Operation::New,
-                        cx,
-                    ))
-                    // Every tool works on PostgreSQL documents; an engine
-                    // surface keeps only New (a query, or Redis's console).
-                    .when(self.active_engine().is_none(), |actions| {
-                        actions.child(
-                            self.shell_button(
-                                "tools-menu",
-                                "Tools",
-                                Operation::ShellMenu(ShellMenu::Tools),
-                                cx,
-                            )
-                            .child("Tools")
-                            .child(icon("icons/chevron_down.svg", style::faint())),
+                    .child(
+                        self.icon_button(
+                            "new-query",
+                            "New query  ⌘T",
+                            "icons/plus.svg",
+                            Operation::New,
+                            cx,
                         )
-                    }),
+                        .aria_keyshortcuts("Meta+T"),
+                    )
+                    // An engine surface lists only the tools that apply to it
+                    // plus the app-wide ones (see `tool_entries`).
+                    .child(
+                        self.shell_button(
+                            "tools-menu",
+                            "Tools",
+                            Operation::ShellMenu(ShellMenu::Tools),
+                            cx,
+                        )
+                        .aria_expanded(self.shell.menu == Some(ShellMenu::Tools))
+                        .child("Tools")
+                        .child(icon("icons/chevron_down.svg", style::faint())),
+                    ),
             )
     }
 
@@ -914,8 +1299,20 @@ impl Workspace {
                 .tab_index(0)
                 .h(px(4.))
                 .flex_none()
-                .bg(rgba((env << 8) | 0xff))
+                .bg(style::with_alpha(env, 0xff))
                 .cursor_pointer()
+                .aria_keyshortcuts("Meta+J")
+                .tooltip(crate::ui::tooltip("Show status bar  ⌘J"))
+                .tooltip_show_delay(crate::ui::tooltip_delay())
+                .on_a11y_action(gpui::accesskit::Action::Click, {
+                    let weak = cx.weak_entity();
+                    move |_, window, cx| {
+                        weak.update(cx, |this, cx| {
+                            this.activate(Operation::ToggleStatusBar, window, cx)
+                        })
+                        .ok();
+                    }
+                })
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.activate(Operation::ToggleStatusBar, window, cx)
                 }))
@@ -937,10 +1334,14 @@ impl Workspace {
                 format!("{}{database} · {}", c.name, c.engine)
             })
             .unwrap_or_else(|| "No connection".into());
-        let latency = connection
+        let latency_value = connection
             .and_then(|c| self.shell.last_latency.get(&c.id).copied())
-            .map(|ms| format!("last query {ms} ms"))
-            .unwrap_or_else(|| "last query —".into());
+            .map(|ms| format!("{ms} ms"))
+            .unwrap_or_else(|| "—".into());
+        let latency = format!("last query {latency_value}");
+        let host = connection
+            .and_then(|c| c.endpoint())
+            .and_then(|endpoint| status_host(&endpoint.host, endpoint.port));
         let state = match (&phase, connection) {
             (None, _) => "",
             (Some(ConnectionPhase::Connecting), _) => "Connecting",
@@ -954,10 +1355,13 @@ impl Workspace {
             _ => None,
         };
         let announcement = format!(
-            "{state}{} {summary}, {latency}, {save}",
+            "{state}{} {summary}, {latency}{}, {save}",
             failure
                 .as_ref()
                 .map(|error| format!(": {error}"))
+                .unwrap_or_default(),
+            host.as_ref()
+                .map(|host| format!(", host {host}"))
                 .unwrap_or_default()
         );
         div()
@@ -981,7 +1385,7 @@ impl Workspace {
                     div()
                         .px(px(5.))
                         .rounded(px(3.))
-                        .bg(rgba((env << 8) | 0xff))
+                        .bg(style::with_alpha(env, 0xff))
                         .text_color(style::bg())
                         .font_weight(gpui::FontWeight::BOLD)
                         .child(style::env_label(c.environment).to_uppercase()),
@@ -1002,7 +1406,22 @@ impl Workspace {
                 )
             })
             .child(summary)
-            .child(latency)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .child("last query")
+                    .child(div().font_family(style::MONO).child(latency_value)),
+            )
+            .when_some(host, |bar, host| {
+                bar.child(
+                    div()
+                        .font_family(style::MONO)
+                        .text_color(style::faint())
+                        .child(host),
+                )
+            })
             .child(match failure {
                 Some(error) => div()
                     .id("connection-failure")
@@ -1036,26 +1455,30 @@ impl Workspace {
             .child(
                 self.icon_button(
                     "collapse-status",
-                    "Collapse status bar",
+                    "Collapse status bar  ⌘J",
                     "icons/chevron_down.svg",
                     Operation::ToggleStatusBar,
                     cx,
                 )
+                .aria_keyshortcuts("Meta+J")
                 .size(px(16.)),
             )
             .into_any_element()
     }
 
-    fn menu_item(
-        &self,
-        id: impl Into<SharedString>,
-        label: impl Into<SharedString>,
-        operation: Operation,
-        cx: &Context<Self>,
-    ) -> AnyElement {
-        let label = label.into();
+    fn menu_item(&self, entry: MenuEntry, highlighted: bool, cx: &Context<Self>) -> AnyElement {
+        let MenuEntry {
+            id,
+            label,
+            operation,
+        } = entry;
         self.shell_button(id, label.clone(), operation, cx)
             .role(Role::MenuItem)
+            // Focus stays on the menu; the highlighted row is what assistive
+            // technology reads as focused.
+            .when(highlighted, |item| {
+                item.bg(style::hover()).aria_active_descendant()
+            })
             .rounded_none()
             .px(px(10.))
             .text_color(style::text())
@@ -1064,149 +1487,89 @@ impl Workspace {
     }
     fn menu(&self, cx: &Context<Self>) -> Option<AnyElement> {
         let menu = self.shell.menu.clone()?;
-        let mut items: Vec<AnyElement> = Vec::new();
-        let (left, top) = match &menu {
-            ShellMenu::Projects => {
-                for (index, project) in projects(&self.connections).into_iter().enumerate() {
-                    items.push(self.menu_item(
-                        SharedString::from(format!("project-{index}")),
-                        project.clone(),
-                        Operation::SelectProject(project),
-                        cx,
-                    ));
-                }
-                (px(8.), px(style::BAR + 24.))
-            }
-            ShellMenu::Tools => {
-                for (index, (label, operation)) in [
-                    ("Query history", Operation::Library(WorkspaceTool::History)),
-                    (
-                        "Saved queries",
-                        Operation::Library(WorkspaceTool::SavedQueries),
-                    ),
-                    ("Objects", Operation::Library(WorkspaceTool::Objects)),
-                    (
-                        "Administration",
-                        Operation::Library(WorkspaceTool::Administration),
-                    ),
-                    ("Schema map", Operation::Library(WorkspaceTool::SchemaMap)),
-                    (
-                        "Compare schemas",
-                        Operation::Library(WorkspaceTool::SchemaCompare),
-                    ),
-                    (
-                        "Backup / Restore",
-                        Operation::Library(WorkspaceTool::BackupRestore),
-                    ),
-                    (
-                        "CSV transfer",
-                        Operation::Library(WorkspaceTool::CsvTransfer),
-                    ),
-                    ("Copy table", Operation::Library(WorkspaceTool::TableCopy)),
-                    ("Open table by name", Operation::OpenTable),
-                    ("Save query", Operation::SaveQuery),
-                    ("Rename tab", Operation::Rename),
-                    ("Pin tab", Operation::Pin),
-                    ("Connect tab", Operation::Connect),
-                    ("Disconnect tab", Operation::Disconnect),
-                    ("Clear results", Operation::Clear),
-                    ("Bastion servers", Operation::Bastions),
-                    ("Managed servers", Operation::ManagedServers),
-                    ("Credentials", Operation::Credentials),
-                ]
-                .into_iter()
-                .enumerate()
-                {
-                    let general = self.host.backend.native_profile_kind()
-                        == Some(dbunk_lib::backend::NativeProfileKind::GeneralPostgres);
-                    if matches!(operation, Operation::Bastions | Operation::ManagedServers)
-                        && !general
-                    {
-                        continue;
-                    }
-                    items.push(self.menu_item(
-                        SharedString::from(format!("tool-{index}")),
-                        label,
-                        operation,
-                        cx,
-                    ));
-                }
-                (px(0.), px(style::BAR))
-            }
-            ShellMenu::Connection(id) => {
-                let postgres = self
-                    .connections
-                    .iter()
-                    .any(|c| &c.id == id && c.postgres.is_some() && c.unsupported_reason.is_none());
-                items.push(self.menu_item(
-                    "conn-edit",
-                    "Edit…",
-                    Operation::EditConnection(id.clone()),
-                    cx,
-                ));
-                items.push(self.menu_item(
-                    "conn-duplicate",
-                    "Duplicate",
-                    Operation::DuplicateConnection(id.clone()),
-                    cx,
-                ));
-                if postgres {
-                    items.push(self.menu_item(
-                        "conn-uri",
-                        "Copy URI",
-                        Operation::CopyConnectionUri(id.clone()),
-                        cx,
-                    ));
-                }
-                items.push(self.menu_item(
-                    "conn-favorite",
-                    "Toggle favorite",
-                    Operation::Favorite(id.clone()),
-                    cx,
-                ));
-                items.push(self.menu_item(
-                    "conn-delete",
-                    "Delete…",
-                    Operation::DeleteConnection(id.clone()),
-                    cx,
-                ));
-                (px(style::SIDEBAR - 150.), px(style::BAR + 60.))
-            }
-        };
+        let entries = self.menu_entries(&menu);
+        let highlighted = self
+            .shell
+            .menu_selected
+            .min(entries.len().saturating_sub(1));
+        let items: Vec<AnyElement> = entries
+            .into_iter()
+            .enumerate()
+            .map(|(index, entry)| self.menu_item(entry, index == highlighted, cx))
+            .collect();
         let panel = div()
             .id("shell-menu")
             .role(Role::Menu)
-            .aria_label("Menu")
-            .absolute()
-            .top(top)
+            .aria_label(match &menu {
+                ShellMenu::Projects => "Projects",
+                ShellMenu::Tools => "Tools",
+                ShellMenu::Connection(_) => "Connection actions",
+            })
+            .key_context("ShellMenu")
+            .track_focus(&self.shell.menu_focus)
+            .capture_key_down(cx.listener(Self::menu_key_down))
             .min_w(px(170.))
             .py(px(4.))
             .flex()
             .flex_col()
-            .bg(style::raised())
+            .bg(style::panel())
             .border_1()
             .border_color(style::line())
-            .rounded(px(6.))
+            .rounded(px(8.))
             .shadow_lg()
             .occlude()
             .children(items);
-        let panel = match menu {
-            ShellMenu::Tools => panel.right(px(8.)),
-            _ => panel.left(left),
+        // `appear` makes its element relative, so placement lives on a wrapper.
+        let panel = crate::ui::appear("shell-menu-panel", panel);
+        let placed = match (&menu, self.shell.menu_anchor) {
+            (ShellMenu::Connection(_), Some(position)) => anchored()
+                .position(position)
+                .snap_to_window_with_margin(px(8.))
+                .child(panel)
+                .into_any_element(),
+            (ShellMenu::Tools, _) => div()
+                .absolute()
+                .top(px(style::BAR))
+                .right(px(8.))
+                .child(panel)
+                .into_any_element(),
+            (ShellMenu::Projects, _) => div()
+                .absolute()
+                .top(px(style::BAR + 24.))
+                .left(px(8.))
+                .child(panel)
+                .into_any_element(),
+            // Opened without a click position (accessibility action).
+            (ShellMenu::Connection(_), None) => div()
+                .absolute()
+                .top(px(style::BAR + 60.))
+                .left(px(style::SIDEBAR - 150.))
+                .child(panel)
+                .into_any_element(),
         };
+        // The backdrop takes every click outside the menu: it only closes
+        // the menu, nothing underneath reacts.
         Some(
             div()
                 .id("shell-menu-backdrop")
                 .absolute()
                 .inset_0()
+                .occlude()
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(|this, _, _, cx| {
-                        this.shell.menu = None;
-                        cx.notify();
+                    cx.listener(|this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.close_shell_menu(window, cx);
                     }),
                 )
-                .child(crate::ui::appear("shell-menu-panel", panel))
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.close_shell_menu(window, cx);
+                    }),
+                )
+                .child(placed)
                 .into_any_element(),
         )
     }
@@ -1240,11 +1603,11 @@ impl Workspace {
                         .items_center()
                         .gap(px(6.))
                         .px(px(10.))
-                        .bg(style::with_alpha(0xf85149, 0x24))
-                        .text_color(gpui::rgb(0xffb3ad))
+                        .bg(style::bad_fill())
+                        .text_color(style::bad_text())
                         .border_b_1()
-                        .border_color(style::with_alpha(0xf85149, 0x66))
-                        .child(icon("icons/warning.svg", gpui::rgb(0xffb3ad)))
+                        .border_color(style::bad_line())
+                        .child(icon("icons/warning.svg", style::bad_text()))
                         .child("Production · writes require review and confirmation"),
                 )
             })
@@ -1417,7 +1780,7 @@ impl Workspace {
                     .absolute()
                     .inset_0()
                     .border_2()
-                    .border_color(rgba((env << 8) | 0xff))
+                    .border_color(style::with_alpha(env, 0xff))
                     .bg(style::with_alpha(env, 0x0a)),
             )
             .when_some(self.menu(cx), |root, menu| root.child(menu))
@@ -1520,5 +1883,83 @@ mod tests {
             connection_phase(false, [Failed("first".into()), Failed("second".into())]),
             Failed("first".into())
         );
+    }
+
+    #[test]
+    fn menu_keys_wrap_jump_activate_and_close() {
+        assert_eq!(menu_key("down", false, 0, 3), MenuKey::Move(1));
+        assert_eq!(menu_key("down", false, 2, 3), MenuKey::Move(0), "wraps");
+        assert_eq!(menu_key("up", false, 0, 3), MenuKey::Move(2), "wraps");
+        // Tab keeps focus in the menu by moving like the arrows.
+        assert_eq!(menu_key("tab", false, 1, 3), MenuKey::Move(2));
+        assert_eq!(menu_key("tab", true, 1, 3), MenuKey::Move(0));
+        assert_eq!(menu_key("home", false, 2, 3), MenuKey::Move(0));
+        assert_eq!(menu_key("end", false, 0, 3), MenuKey::Move(2));
+        assert_eq!(menu_key("enter", false, 1, 3), MenuKey::Activate);
+        assert_eq!(menu_key("space", false, 1, 3), MenuKey::Activate);
+        assert_eq!(menu_key("escape", false, 1, 3), MenuKey::Close);
+        assert_eq!(menu_key("a", false, 1, 3), MenuKey::Ignore);
+        // A stale selection past a shrunken list stays in range.
+        assert_eq!(menu_key("down", false, 9, 3), MenuKey::Move(0));
+        assert_eq!(menu_key("up", false, 9, 3), MenuKey::Move(1));
+        // An empty menu still closes.
+        assert_eq!(menu_key("escape", false, 0, 0), MenuKey::Close);
+        assert_eq!(menu_key("down", false, 0, 0), MenuKey::Ignore);
+    }
+
+    #[test]
+    fn engine_tools_keep_app_wide_entries_and_drop_postgres_ones() {
+        let labels = |engine, general| -> Vec<&'static str> {
+            tool_entries(engine, general)
+                .into_iter()
+                .map(|(label, _)| label)
+                .collect()
+        };
+        let postgres = labels(None, true);
+        assert!(postgres.contains(&"Query history"));
+        assert!(postgres.contains(&"Bastion servers"));
+        assert_eq!(postgres.last(), Some(&"Credentials"));
+        assert_eq!(
+            labels(Some(true), true),
+            [
+                "Connect",
+                "Disconnect",
+                "Clear results",
+                "Bastion servers",
+                "Managed servers",
+                "Credentials"
+            ]
+        );
+        // No clear for the engine: no dead entry.
+        assert!(!labels(Some(false), true).contains(&"Clear results"));
+        // Bastion and managed servers belong to the general profile only.
+        assert_eq!(
+            labels(Some(false), false),
+            ["Connect", "Disconnect", "Credentials"]
+        );
+        assert!(!labels(None, false).contains(&"Managed servers"));
+    }
+
+    #[test]
+    fn stored_connection_colours_parse_hex_and_basic_names() {
+        assert_eq!(connection_color("#3fb950"), Some(0x3fb950));
+        assert_eq!(connection_color(" 3FB950 "), Some(0x3fb950));
+        assert_eq!(connection_color("#f0a"), Some(0xff00aa));
+        assert_eq!(connection_color("Blue"), Some(0x6aa6ff));
+        assert_eq!(connection_color("grey"), connection_color("gray"));
+        for unknown in ["", "  ", "#12345", "#ggg", "chartreuse", "#1234567"] {
+            assert_eq!(connection_color(unknown), None, "{unknown:?}");
+        }
+    }
+
+    #[test]
+    fn status_host_shows_network_endpoints_only() {
+        assert_eq!(
+            status_host("db.internal", Some(5432)).as_deref(),
+            Some("db.internal:5432")
+        );
+        assert_eq!(status_host("db", None).as_deref(), Some("db"));
+        // SQLite has a path, not a host.
+        assert_eq!(status_host("", None), None);
     }
 }
