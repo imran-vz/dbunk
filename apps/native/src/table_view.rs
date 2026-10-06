@@ -2,13 +2,14 @@
 //! the table runtime owns sockets, cancellation and worker termination.
 use crate::{
     browse_controls::{BrowseControls, BrowseEvent},
-    browse_preferences::{BrowsePreferences, BrowseState, PAGE_SIZES, PreferencePatch},
+    browse_preferences::{BrowsePreferences, BrowseState, PreferencePatch},
     controller::{Host, TableCommand, TableControls, TableMessage, TableReceiver},
-    data_model::{PageAction, RequestTicket, TableDocument, TableQuery},
+    data_model::{PageAction, RequestTicket, TableDocument, TablePolicy, TableQuery},
     fk_navigation::{Navigation, Selection},
     grid::{GridEvent, ResultGrid},
     grid_columns::ColumnAction,
-    table_changes::{ChangesEvent, TableChanges},
+    table_changes::{ChangesCommand, ChangesEvent, TableChanges},
+    ui::popover::{AnchorSlot, anchor_slot},
 };
 use dbunk_lib::backend::{WorkspaceDocument, WorkspaceTableState, data::*};
 use gpui::{
@@ -17,9 +18,16 @@ use gpui::{
 };
 use std::{cell::Cell, collections::HashMap, rc::Rc, sync::Arc};
 
+mod columns_popover;
+mod menus;
+mod pager;
 mod relationship_detail;
+mod sync;
+mod toolbar;
 mod whole_config;
 mod whole_export;
+
+use menus::Popover;
 
 use relationship_detail::{Back, Current, DEPTH, Detail, Origin, ROW_LIMIT, State};
 
@@ -119,20 +127,38 @@ enum Action {
     AutoFit(bool),
     Preferences,
     Connect,
-    Edit,
-    Insert,
-    Duplicate,
     Bulk,
-    Delete,
     First,
     Previous,
     Next,
     Last,
+    Jump(u32),
     Refresh,
     Count,
     Cancel,
-    Sort,
     PageSize(u32),
+}
+
+/// Bounds of the toolbar triggers, recorded each prepaint, so popovers open
+/// under the control that opened them.
+struct Anchors {
+    sort: AnchorSlot,
+    columns: AnchorSlot,
+    pager: AnchorSlot,
+    overflow: AnchorSlot,
+    changes: AnchorSlot,
+}
+
+impl Anchors {
+    fn new() -> Self {
+        Self {
+            sort: anchor_slot(),
+            columns: anchor_slot(),
+            pager: anchor_slot(),
+            overflow: anchor_slot(),
+            changes: anchor_slot(),
+        }
+    }
 }
 
 pub struct TableView {
@@ -177,6 +203,12 @@ pub struct TableView {
     tab_order: Vec<FocusHandle>,
     previous_focus: Option<FocusHandle>,
     _grid_events: Subscription,
+    /// The one open header menu, cell menu or toolbar popover.
+    popover: Option<Popover>,
+    anchors: Anchors,
+    /// A width or auto-fit patch from the grid while the tab was busy; the
+    /// latest wins and it is saved once the tab is idle (§3.5).
+    pending_width: Option<PreferencePatch>,
 }
 impl EventEmitter<TableEvent> for TableView {}
 impl TableView {
@@ -227,22 +259,63 @@ impl TableView {
                         window.focus(&this.grid.focus_handle(cx), cx);
                     }
                 }
+                ChangesEvent::EditOpened {
+                    cell,
+                    source,
+                    popover,
+                } => {
+                    if *popover {
+                        let anchor = this.grid.read(cx).cell_bounds(*cell, *source);
+                        this.changes
+                            .update(cx, |changes, cx| changes.set_popover_anchor(anchor, cx));
+                    }
+                }
+                ChangesEvent::EditClosed { advance } => {
+                    let advance = *advance;
+                    this.grid.update(cx, |grid, cx| grid.advance(advance, cx));
+                    window.focus(&this.grid.focus_handle(cx), cx);
+                }
+                ChangesEvent::OverlayChanged => {}
             }
+            // Every variant can change the overlay, the editor slot or the
+            // editing gate; sync_grid is idempotent.
+            this.sync_grid(cx);
             cx.notify();
         });
         let change_status = cx.observe(&changes, |_, _, cx| cx.notify());
-        let events = cx.subscribe(&grid, |this, _, event, cx| {
-            if !this.editable || this.busy || this.changes.read(cx).navigation_blocked() {
-                return;
-            }
+        let events = cx.subscribe_in(&grid, window, |this, _, event, window, cx| {
             match event {
-                GridEvent::Preferences(patch) => {
-                    if this.preferences_ready {
-                        this.save_preferences(patch.clone(), cx);
-                    } else {
-                        this.preferences_status =
-                            Some("Load table preferences before changing columns".into());
+                GridEvent::Status(message) => this.status = message.to_string(),
+                GridEvent::CheckedRowsChanged => {}
+                GridEvent::Preferences(patch) => this.grid_preferences(patch.clone(), cx),
+                GridEvent::RemoveInsert { change } => {
+                    let change = *change;
+                    this.changes
+                        .update(cx, |changes, cx| changes.remove_insert(change, cx));
+                }
+                // Busy gating must not drop input silently (§7).
+                _ if !this.editable || this.busy => {
+                    this.status = "Wait for the table to finish loading".into();
+                }
+                GridEvent::EditCell { cell, source, seed } => {
+                    let (cell, source, seed) = (*cell, *source, seed.clone());
+                    this.close_popover(cx);
+                    if let Err(reason) = this.changes.update(cx, |changes, cx| {
+                        changes.begin_edit(cell, source, seed, window, cx)
+                    }) {
+                        this.status = reason.to_string();
                     }
+                }
+                GridEvent::HeaderMenu { source, anchor } => {
+                    this.open_header_menu(*source, *anchor, cx)
+                }
+                GridEvent::ContextMenu {
+                    cell,
+                    source,
+                    position,
+                } => this.open_cell_menu(*cell, *source, *position, cx),
+                GridEvent::Sort { .. } if this.changes.read(cx).navigation_blocked() => {
+                    this.status = "Finish or resolve the pending apply before sorting".into();
                 }
                 GridEvent::Sort { column, append } => {
                     if let Some(model) = &mut this.model {
@@ -258,6 +331,7 @@ impl TableView {
                     }
                 }
             }
+            this.sync_grid(cx);
             cx.notify();
         });
         let browse_controls =
@@ -340,6 +414,9 @@ impl TableView {
             tab_order: Vec::new(),
             previous_focus: None,
             _grid_events: events,
+            popover: None,
+            anchors: Anchors::new(),
+            pending_width: None,
         }
     }
     pub fn apply_saved(&mut self, id: u64, result: Result<(), String>, cx: &mut Context<Self>) {
@@ -410,7 +487,11 @@ impl TableView {
         self.changes.update(cx, |changes, cx| {
             changes.set_enabled(editable && !self.busy, cx)
         });
+        if !editable {
+            self.popover = None;
+        }
         self.update_controls(cx);
+        self.sync_grid(cx);
         cx.notify();
     }
     pub fn bind_connection(&mut self, id: String, cx: &mut Context<Self>) {
@@ -419,7 +500,14 @@ impl TableView {
         self.pending_reference = None;
         self.detail = None;
         self.pending_detail = None;
+        self.popover = None;
         self.connection = Some(id);
+        // Strictest policy until the workspace reports the new connection's
+        // metadata (it calls set_connection_metadata right after a rebind).
+        self.changes.update(cx, |changes, cx| {
+            changes.set_policy(TablePolicy::UNKNOWN, cx)
+        });
+        self.sync_grid(cx);
         cx.emit(TableEvent::Changed);
     }
     pub fn begin_connect(&mut self, cx: &mut Context<Self>) {
@@ -509,6 +597,8 @@ impl TableView {
         self.receiver.take();
         self.pending_preferences = None;
         self.after_analysis = None;
+        self.pending_width = None;
+        self.popover = None;
         self.pending_browse_preferences = None;
         self.record_next = None;
         self.restore_query = true;
@@ -518,6 +608,7 @@ impl TableView {
         }
         self.busy = false;
         self.status = "Disconnected".into();
+        self.sync_grid(cx);
         cx.notify();
     }
     pub fn clear_results(&mut self, cx: &mut Context<Self>) {
@@ -572,6 +663,7 @@ impl TableView {
         self.changes.update(cx, |changes, cx| {
             changes.set_enabled(self.editable && !self.busy, cx)
         });
+        self.sync_grid(cx);
         cx.notify();
     }
     fn update_controls(&mut self, cx: &mut Context<Self>) {
@@ -628,6 +720,28 @@ impl TableView {
         }
         self.update_controls(cx);
         cx.notify();
+    }
+    /// Width and auto-fit patches from the grid. While the tab is busy the
+    /// latest one waits in `pending_width`; a patch that cannot be saved at
+    /// all drops the grid's live override so the stored width shows again.
+    fn grid_preferences(&mut self, patch: PreferencePatch, cx: &mut Context<Self>) {
+        if !self.editable || self.controls.is_none() {
+            self.grid
+                .update(cx, |grid, cx| grid.clear_width_overrides(cx));
+            self.preferences_status = Some("Connect this table before changing columns".into());
+            return;
+        }
+        if !self.busy && !self.preferences_ready {
+            self.grid
+                .update(cx, |grid, cx| grid.clear_width_overrides(cx));
+            self.preferences_status = Some("Load table preferences before changing columns".into());
+            return;
+        }
+        if self.busy || self.changes.read(cx).navigation_blocked() {
+            self.pending_width = Some(patch);
+            return;
+        }
+        self.save_preferences(patch, cx);
     }
     fn accept_preferences(
         &mut self,
@@ -1029,21 +1143,6 @@ impl TableView {
                     self.grid.update(cx, |grid, cx| grid.auto_fit(all, cx));
                 }
             }
-            Action::Edit => {
-                if let Some((row, column)) = self.grid.read(cx).selected_cell() {
-                    self.changes
-                        .update(cx, |changes, cx| changes.edit_cell(row, column, window, cx));
-                }
-            }
-            Action::Insert => self
-                .changes
-                .update(cx, |changes, cx| changes.insert(window, cx)),
-            Action::Duplicate => {
-                if let Some((row, _)) = self.grid.read(cx).selected_cell() {
-                    self.changes
-                        .update(cx, |changes, cx| changes.duplicate(row, window, cx));
-                }
-            }
             Action::Bulk => {
                 if let (Some(rows), Some((_, column))) = (
                     self.grid.read(cx).selected_rows(),
@@ -1058,27 +1157,6 @@ impl TableView {
                     }
                 }
             }
-            Action::Delete => {
-                if let Some((row, _)) = self.grid.read(cx).selected_cell() {
-                    self.changes
-                        .update(cx, |changes, cx| changes.delete(row, cx));
-                }
-            }
-            Action::Sort => {
-                if let (Some(column), Some(model)) =
-                    (self.grid.read(cx).selected_column(), &mut self.model)
-                {
-                    match model.cycle_sort(&column, false) {
-                        Ok(()) => {
-                            let sort = model.query().sort.clone();
-                            let mut state = self.browse_controls.read(cx).state().clone();
-                            state.sort = sort;
-                            self.apply_browse(state, true, cx);
-                        }
-                        Err(error) => self.status = format!("Sort refused: {error:?}"),
-                    }
-                }
-            }
             Action::Connect => self.begin_connect(cx),
             Action::Cancel => {
                 if self.whole_export.read.busy() {
@@ -1089,6 +1167,10 @@ impl TableView {
                 }
                 if let Some((_, _, cancelled)) = &mut self.pending_reference {
                     *cancelled = true;
+                }
+                if self.pending_width.take().is_some() {
+                    self.grid
+                        .update(cx, |grid, cx| grid.clear_width_overrides(cx));
                 }
                 let deferred_save = self.after_analysis.take().is_some();
                 if self.pending_browse_preferences.take().is_some() || deferred_save {
@@ -1115,6 +1197,7 @@ impl TableView {
             Action::Previous => self.browse(PageAction::Previous, false, cx),
             Action::Next => self.browse(PageAction::Next, false, cx),
             Action::Last => self.browse(PageAction::Last, false, cx),
+            Action::Jump(page) => self.browse(PageAction::Jump(page), false, cx),
             Action::Refresh => self.browse(PageAction::First, true, cx),
             Action::Count => {
                 if let (Some(model), Some(controls)) = (&mut self.model, &self.controls) {
@@ -1144,6 +1227,7 @@ impl TableView {
         self.changes.update(cx, |changes, cx| {
             changes.set_enabled(self.editable && !self.busy, cx)
         });
+        self.sync_grid(cx);
         cx.notify();
     }
     pub fn has_pending(&self) -> bool {
@@ -1280,7 +1364,12 @@ impl TableView {
                             }
                             self.preferences_status = Some("Table preferences saved".into());
                         }
-                        Err(error) => self.preferences_status = Some(error),
+                        Err(error) => {
+                            // A refused width must not linger as a live override.
+                            self.grid
+                                .update(cx, |grid, cx| grid.clear_width_overrides(cx));
+                            self.preferences_status = Some(error);
+                        }
                     }
                 }
             }
@@ -1316,6 +1405,13 @@ impl TableView {
                         match model.receive_page_with_limit(ticket, page, allowed) {
                             Ok(true) => {
                                 self.busy = false;
+                                if matches!(
+                                    self.popover,
+                                    Some(Popover::Cell { .. } | Popover::Header { .. })
+                                ) {
+                                    // Row and column indexes belong to the old page.
+                                    self.popover = None;
+                                }
                                 let page = model.shared_result().unwrap();
                                 let bytes = model.retained_bytes();
                                 self.grid
@@ -1429,10 +1525,18 @@ impl TableView {
         {
             self.save_preferences(patch, cx);
         }
+        if !self.busy
+            && self.preferences_ready
+            && !self.changes.read(cx).navigation_blocked()
+            && let Some(patch) = self.pending_width.take()
+        {
+            self.save_preferences(patch, cx);
+        }
         self.changes.update(cx, |changes, cx| {
             changes.set_enabled(self.editable && !self.busy, cx)
         });
         self.update_controls(cx);
+        self.sync_grid(cx);
         cx.notify();
         true
     }
@@ -1613,7 +1717,7 @@ impl TableView {
                     && (!matches!(action, Action::Column(_) | Action::AutoFit(_))
                         || self.preferences_ready)
                     && match action {
-                        Action::Duplicate | Action::Bulk => {
+                        Action::Bulk => {
                             self.grid.read(cx).selected_cell().is_some()
                                 && self
                                     .model
@@ -1674,8 +1778,6 @@ impl TableView {
         }
         let icon = match action {
             Action::Refresh => Some("icons/rotate_cw.svg"),
-            Action::Insert => Some("icons/plus.svg"),
-            Action::Delete => Some("icons/trash.svg"),
             Action::Count => Some("icons/hash.svg"),
             Action::ForeignKeys => Some("icons/link.svg"),
             Action::WholeExport => Some("icons/download.svg"),
@@ -1751,81 +1853,9 @@ impl Render for TableView {
             return div().size_full().child(view.clone());
         }
         self.tab_order.clear();
-        let mut toolbar = crate::ui::toolbar()
-            .child(crate::ui::crumbs(
-                format!("{}.", self.state.schema),
-                self.state.table.clone(),
-            ))
-            .child(crate::ui::separator());
-        for (label, action) in [
-            ("Connect", Action::Connect),
-            (
-                "Backup",
-                Action::FileJob(crate::pg_tool_jobs::Operation::Backup),
-            ),
-            (
-                "Restore",
-                Action::FileJob(crate::pg_tool_jobs::Operation::Restore),
-            ),
-            (
-                "Import CSV",
-                Action::CsvTransfer(dbunk_lib::backend::csv_transfers::CsvDirection::Import),
-            ),
-            (
-                "Export CSV",
-                Action::CsvTransfer(dbunk_lib::backend::csv_transfers::CsvDirection::Export),
-            ),
-            ("Export table", Action::WholeExport),
-            ("Copy table", Action::TableCopy),
-            ("Seed table", Action::TableSeed),
-            ("Structure", Action::Structure),
-            ("Refresh", Action::Refresh),
-            ("Edit cell", Action::Edit),
-            ("Insert row", Action::Insert),
-            ("Duplicate row", Action::Duplicate),
-            ("Bulk edit", Action::Bulk),
-            ("Delete row", Action::Delete),
-            ("Follow foreign key", Action::ForeignKeys),
-            ("Count", Action::Count),
-            ("Sort selected column", Action::Sort),
-            ("Cancel", Action::Cancel),
-        ] {
-            // Groups follow the existing keyboard order: connection, table
-            // tools, then row editing and page actions.
-            if matches!(
-                action,
-                Action::FileJob(_) | Action::Refresh | Action::Cancel
-            ) && !matches!(
-                action,
-                Action::FileJob(crate::pg_tool_jobs::Operation::Restore)
-            ) {
-                toolbar = toolbar.child(crate::ui::separator());
-            }
-            toolbar = toolbar.child(self.button(label, action, cx));
-        }
-        let mut columns = crate::ui::toolbar().child(
-            div()
-                .pr_1()
-                .text_color(crate::style::faint())
-                .child("Columns"),
-        );
-        for (label, action) in [
-            ("Narrow column", Action::Column(ColumnAction::Narrow)),
-            ("Widen column", Action::Column(ColumnAction::Widen)),
-            ("Auto-fit column", Action::AutoFit(false)),
-            ("Auto-fit visible columns", Action::AutoFit(true)),
-            ("Move column left", Action::Column(ColumnAction::Left)),
-            ("Move column right", Action::Column(ColumnAction::Right)),
-            (
-                "Pin / unpin column",
-                Action::Column(ColumnAction::TogglePin),
-            ),
-            ("Hide column", Action::Column(ColumnAction::Hide)),
-            ("Show all columns", Action::Column(ColumnAction::ShowAll)),
-            ("Reload preferences", Action::Preferences),
-        ] {
-            columns = columns.child(self.button(label, action, cx));
-        }
+        let summary = self.changes.read(cx).summary();
+        let toolbar = self.render_toolbar(&summary, cx);
+        let notices = self.render_notices(&summary, cx);
         self.update_controls(cx);
         self.tab_order.push(self.grid.focus_handle(cx));
         let mut reference = div().flex().flex_col().flex_shrink_0().text_sm();
@@ -1921,43 +1951,58 @@ impl Render for TableView {
         if let Some(panel) = self.render_detail(cx) {
             reference = reference.child(panel);
         }
-        let mut paging = div().flex().flex_wrap().items_center().gap(px(2.));
-        for (label, action) in [
-            ("First", Action::First),
-            ("Previous", Action::Previous),
-            ("Next", Action::Next),
-            ("Last", Action::Last),
-        ] {
-            paging = paging.child(self.button(label, action, cx));
-        }
-        paging = paging.child(crate::ui::separator());
-        for size in PAGE_SIZES {
-            paging = paging.child(self.button(&size.to_string(), Action::PageSize(size), cx));
-        }
-        let summary = self.model.as_ref().and_then(|model| {
-            let result = model.result()?;
-            let total = model
-                .exact_count()
-                .map(|count| (count.value, false))
-                .or_else(|| match result.count.kind {
-                    BrowseCountKind::Unknown => None,
-                    kind => result
-                        .count
-                        .value
-                        .map(|value| (value, kind == BrowseCountKind::Estimated)),
-                });
-            Some((
-                page_summary(
-                    model.page(),
-                    model.query().page_size,
-                    result.rows.len(),
-                    total,
-                ),
-                format!("{} ms", result.runtime_ms),
-            ))
-        });
-        let staged = self.changes.read(cx).staged_len();
+        let popover = self.render_popover(window, cx);
+        let checked = self.grid.read(cx).checked_rows().len();
+        let page = self.model.as_ref().map(TableDocument::page);
+        let footer = crate::ui::status_line()
+            .child(
+                div()
+                    .id("table-status")
+                    .role(Role::Status)
+                    .aria_label(self.status.clone())
+                    .a11y_synthetic_children(|builder| {
+                        builder
+                            .parent_node()
+                            .set_live(gpui::accesskit::Live::Polite)
+                    })
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(crate::style::dim())
+                    .child(self.status.clone()),
+            )
+            .when(
+                !summary.message.is_empty() && *summary.message != *self.status,
+                |footer| {
+                    footer.child(
+                        div()
+                            .id("table-changes-message")
+                            .role(Role::Status)
+                            .aria_label(summary.message.clone())
+                            .flex_shrink()
+                            .min_w_0()
+                            .max_w(px(360.))
+                            .truncate()
+                            .text_color(crate::style::dim())
+                            .child(summary.message.clone()),
+                    )
+                },
+            )
+            .when(checked > 0, |footer| {
+                footer.child(format!("{checked} selected"))
+            })
+            .when(summary.staged > 0, |footer| {
+                footer.child(
+                    div()
+                        .text_color(crate::style::warn())
+                        .child(format!("{} staged", summary.staged)),
+                )
+            })
+            .when_some(page, |footer, page| {
+                footer.child(format!("page {}", page.max(1)))
+            });
         div()
+            .relative()
             .flex()
             .flex_col()
             .size_full()
@@ -1975,7 +2020,40 @@ impl Render for TableView {
                     return;
                 }
                 let modifiers = event.keystroke.modifiers;
-                if event.keystroke.key == "escape"
+                let key = event.keystroke.key.as_str();
+                if this.popover.is_some() && !modifiers.modified() {
+                    let handled = match key {
+                        "escape" => {
+                            this.close_popover(cx);
+                            window.focus(&this.grid.focus_handle(cx), cx);
+                            true
+                        }
+                        "enter" if matches!(this.popover, Some(Popover::Pager { .. })) => {
+                            this.submit_jump(window, cx);
+                            true
+                        }
+                        _ => this.menu_key(key, window, cx),
+                    };
+                    if handled {
+                        this.sync_grid(cx);
+                        cx.stop_propagation();
+                        return;
+                    }
+                }
+                if key == "s"
+                    && modifiers.platform
+                    && !modifiers.shift
+                    && !modifiers.alt
+                    && !modifiers.control
+                {
+                    // ⌘S opens the review; the dialog itself gates the apply.
+                    if !this.busy && this.changes.read(cx).summary().can_review.is_ok() {
+                        this.changes_command(ChangesCommand::Review, window, cx);
+                    }
+                    cx.stop_propagation();
+                    return;
+                }
+                if key == "escape"
                     && !modifiers.modified()
                     && this
                         .detail_handles()
@@ -2032,102 +2110,14 @@ impl Render for TableView {
                 }
             }))
             .child(toolbar)
-            .child(columns)
-            .children(self.preferences_status.as_ref().map(|message| {
-                div()
-                    .id("column-preferences-status")
-                    .role(Role::Status)
-                    .aria_label(message.clone())
-                    .px_2()
-                    .py_1()
-                    .text_sm()
-                    .text_color(crate::style::dim())
-                    .border_b_1()
-                    .border_color(crate::style::line_soft())
-                    .child(message.clone())
-            }))
             .child(self.browse_controls.clone())
+            .children(notices)
             .child(div().flex_1().min_h_0().child(self.grid.clone()))
             .child(reference)
-            .child(self.changes.clone())
-            .child(
-                crate::ui::status_line()
-                    .child(paging)
-                    .when_some(summary.as_ref(), |footer, (rows, _)| {
-                        footer.child(rows.clone())
-                    })
-                    .when(staged > 0, |footer| {
-                        footer.child(div().text_color(crate::style::warn()).child(format!(
-                            "{staged} staged change{}",
-                            if staged == 1 { "" } else { "s" }
-                        )))
-                    })
-                    .child(
-                        div()
-                            .id("table-status")
-                            .role(Role::Status)
-                            .aria_label(self.status.clone())
-                            .a11y_synthetic_children(|builder| {
-                                builder
-                                    .parent_node()
-                                    .set_live(gpui::accesskit::Live::Polite)
-                            })
-                            .flex_1()
-                            .min_w_0()
-                            .text_color(crate::style::dim())
-                            .child(self.status.clone()),
-                    )
-                    .when_some(summary, |footer, (_, latency)| footer.child(latency)),
-            )
-    }
-}
-
-/// Footer row range, e.g. `rows 101–200 of 18,204 (estimate) · page 2`.
-fn page_summary(page: u32, page_size: u32, rows: usize, total: Option<(u64, bool)>) -> String {
-    let start = u64::from(page.max(1) - 1) * u64::from(page_size) + 1;
-    let range = if rows == 0 {
-        "no rows".to_owned()
-    } else {
-        format!("rows {start}–{}", start + rows as u64 - 1)
-    };
-    let total = total.map_or(String::new(), |(value, estimate)| {
-        format!(
-            " of {}{}",
-            grouped(value),
-            if estimate { " (estimate)" } else { "" }
-        )
-    });
-    format!("{range}{total} · page {}", page.max(1))
-}
-
-fn grouped(value: u64) -> String {
-    let digits = value.to_string();
-    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
-    for (index, digit) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(digit);
-    }
-    out
-}
-
-#[cfg(test)]
-mod footer_tests {
-    use super::*;
-
-    #[test]
-    fn page_summary_reports_one_based_ranges_and_marks_estimates() {
-        assert_eq!(
-            page_summary(1, 50, 50, Some((18_204, true))),
-            "rows 1–50 of 18,204 (estimate) · page 1"
-        );
-        assert_eq!(
-            page_summary(3, 100, 7, Some((207, false))),
-            "rows 201–207 of 207 · page 3"
-        );
-        assert_eq!(page_summary(1, 100, 0, None), "no rows · page 1");
-        assert_eq!(grouped(1_000_000), "1,000,000");
-        assert_eq!(grouped(999), "999");
+            .child(footer)
+            // Overlay layer: review/discard/virtual-key dialogs, the popover
+            // cell editor and the change list. Idle, it has no hitbox.
+            .child(div().absolute().inset_0().child(self.changes.clone()))
+            .children(popover)
     }
 }

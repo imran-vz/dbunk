@@ -798,8 +798,16 @@ impl DocumentView {
         connections: &[dbunk_lib::backend::DevelopmentConnection],
         cx: &mut Context<Self>,
     ) {
-        if let Content::Admin(view) = &self.content {
-            view.update(cx, |view, cx| view.set_connection_metadata(connections, cx));
+        match &self.content {
+            Content::Admin(view) => {
+                view.update(cx, |view, cx| view.set_connection_metadata(connections, cx))
+            }
+            // Plan 032 §3.2: the table tab takes environment, safe mode and
+            // read-only from its own connection, not the sidebar selection.
+            Content::Table(view) => {
+                view.update(cx, |view, cx| view.set_connection_metadata(connections, cx))
+            }
+            _ => {}
         }
     }
     pub fn set_library_connections(
