@@ -40,9 +40,9 @@ impl Section {
         Self::Overview,
         Self::Columns,
         Self::PrimaryKey,
+        Self::Indexes,
         Self::ForeignKeys,
         Self::ReferencedBy,
-        Self::Indexes,
         Self::Constraints,
         Self::Triggers,
         Self::Policies,
@@ -172,6 +172,15 @@ impl Capture {
             table: self.data.table.clone(),
             expected: Some(self.data.identity),
         }
+    }
+    pub fn schema(&self) -> &str {
+        &self.data.schema
+    }
+    pub fn table(&self) -> &str {
+        &self.data.table
+    }
+    pub fn kind_label(&self) -> &'static str {
+        kind(self.data.kind)
     }
     pub fn qualified_name(&self) -> String {
         format!(
@@ -731,5 +740,7 @@ fn action(value: StructureReferentialAction) -> &'static str {
         StructureReferentialAction::SetDefault => "SET DEFAULT",
     }
 }
+mod grid;
+pub use grid::{ColumnSpec, Shown, Tone};
 #[cfg(test)]
 mod tests;

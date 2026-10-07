@@ -1161,6 +1161,10 @@ impl Render for ResultGrid {
             .copy_status
             .as_ref()
             .map_or(status.clone(), |copy| format!("{status} · {copy}"));
+        // Wheel deltas land unclamped and the row list only clamps them during
+        // its prepaint, after this header has already read the offset. Clamp
+        // first so trackpad overscroll never drags the header past its edge.
+        self.clamp_horizontal_scroll();
         let header = (columns > 0).then(|| self.render_header(cx));
         let bare = self.table_mode();
         let band = self.render_insert_band(cx);

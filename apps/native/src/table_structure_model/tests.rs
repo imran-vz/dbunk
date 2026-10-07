@@ -14,7 +14,7 @@ fn column(number: i32, name: &str) -> StructureColumn {
         collation_name: None,
     }
 }
-fn snapshot() -> TableStructureSnapshot {
+pub(super) fn snapshot() -> TableStructureSnapshot {
     TableStructureSnapshot {
         identity: TableIdentity {
             database_oid: 11,
@@ -48,7 +48,7 @@ fn snapshot() -> TableStructureSnapshot {
         partitions: vec![],
     }
 }
-fn capture(data: TableStructureSnapshot) -> Capture {
+pub(super) fn capture(data: TableStructureSnapshot) -> Capture {
     Capture::new(data, Rc::new(Cell::new(0))).unwrap()
 }
 #[test]
@@ -86,9 +86,9 @@ fn section_order_exact_unicode_numeric_text_and_null_empty_are_distinct() {
             "Overview",
             "Columns",
             "Primary key",
+            "Indexes",
             "Foreign keys",
             "Referenced by",
-            "Indexes",
             "Constraints",
             "Triggers",
             "Policies",
