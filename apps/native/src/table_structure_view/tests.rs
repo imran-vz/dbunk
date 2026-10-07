@@ -22,6 +22,10 @@ fn section_arrows_preserve_order_and_stop_at_the_edges() {
     assert_eq!(move_section(12, 13, "left"), Some(11));
     assert_eq!(move_section(13, 13, "right"), None);
     assert_eq!(move_section(0, 0, "right"), None);
+    // The outline is vertical: up/down mirror left/right.
+    assert_eq!(move_section(3, 13, "up"), Some(2));
+    assert_eq!(move_section(3, 13, "down"), Some(4));
+    assert_eq!(move_section(12, 13, "down"), Some(12));
 }
 
 #[test]

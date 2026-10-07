@@ -1,5 +1,7 @@
-//! Read-only table Structure inspector. Capture owns the payload allowance;
-//! only one selected editor is retained, and navigation carries observed OIDs.
+//! Read-only table Structure inspector. Every section is a compact table on
+//! one virtualized page, with a section outline on the left and the exact
+//! selected details on the right. Capture owns the payload allowance; only one
+//! selected editor is retained, and navigation carries observed OIDs.
 use crate::{
     accessible_editor::AccessibleEditor,
     table_structure_model::{Capture, Section},
@@ -36,22 +38,59 @@ enum Action {
     Cancel,
     Copy,
     Open,
+    Details,
     Section(usize),
 }
-const ACTIONS: [(Action, &str); 6] = [
-    (Action::Back, "Catalog"),
-    (Action::Refresh, "Refresh"),
+/// Toolbar actions first, then the details-pane actions; Tab follows this
+/// order around the section outline and the list.
+const ACTIONS: [(Action, &str); 7] = [
     (Action::Cancel, "Cancel read"),
-    (Action::Copy, "Copy selected details"),
-    (Action::Open, "Open related table"),
+    (Action::Refresh, "Refresh"),
+    (Action::Details, "Details"),
+    (Action::Back, "Catalog"),
+    (Action::Copy, "Copy"),
+    (Action::Open, "Open table"),
     (Action::Edit, "Comment / rename"),
 ];
+const TOOLBAR_ACTIONS: usize = 4;
+
+/// One 28 px line of the structure page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Item {
+    /// Section heading, with the empty message inline when it has no rows.
+    Title(Section),
+    /// Scope note under a heading (relation grants).
+    Note(Section),
+    /// Column titles of a non-empty section.
+    Head(Section),
+    Row(Section, usize),
+}
+/// Page lines in section order; empty sections collapse to their heading.
+fn layout(capture: &Capture) -> Vec<Item> {
+    let mut items = Vec::new();
+    for section in Section::ALL {
+        let count = capture.count(section);
+        items.push(Item::Title(section));
+        if section == Section::RelationGrants {
+            items.push(Item::Note(section));
+        }
+        if count > 0 {
+            items.push(Item::Head(section));
+            items.extend((0..count).map(|index| Item::Row(section, index)));
+        }
+    }
+    items
+}
+
 struct SelectedEditor {
     editor: Entity<Editor>,
     accessible: Entity<AccessibleEditor>,
 }
 pub struct StructureView {
     capture: Capture,
+    items: Vec<Item>,
+    /// Every selectable row in page order, for arrow navigation across sections.
+    rows: Vec<(Section, usize)>,
     section: Section,
     selected: Option<usize>,
     editor: Option<SelectedEditor>,
@@ -60,6 +99,7 @@ pub struct StructureView {
     buttons: Vec<FocusHandle>,
     sections: Vec<FocusHandle>,
     scroll: UniformListScrollHandle,
+    show_details: bool,
     ready: bool,
     busy: bool,
     editable: bool,
@@ -70,9 +110,19 @@ pub struct StructureView {
 impl EventEmitter<StructureEvent> for StructureView {}
 impl StructureView {
     pub fn new(capture: Capture, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let items = layout(&capture);
+        let rows = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Row(section, index) => Some((*section, *index)),
+                _ => None,
+            })
+            .collect();
         let section = Section::ALL[0];
         let mut view = Self {
             capture,
+            items,
+            rows,
             section,
             selected: None,
             editor: None,
@@ -81,6 +131,7 @@ impl StructureView {
             buttons: ACTIONS.iter().map(|_| cx.focus_handle()).collect(),
             sections: Section::ALL.iter().map(|_| cx.focus_handle()).collect(),
             scroll: UniformListScrollHandle::new(),
+            show_details: true,
             ready: false,
             busy: false,
             editable: true,
@@ -88,7 +139,13 @@ impl StructureView {
             status: String::new(),
             message: None,
         };
-        view.select(section, 0, window, cx);
+        // Columns are what people open Structure for; the table row is above.
+        let first = if view.capture.count(Section::Columns) > 0 {
+            Section::Columns
+        } else {
+            section
+        };
+        view.select(first, 0, window, cx);
         view
     }
     pub fn request(&self) -> TableStructureRequest {
@@ -136,17 +193,18 @@ impl StructureView {
         cx.notify();
     }
     fn enabled(&self, action: Action) -> bool {
-        if matches!(action, Action::Cancel) {
-            return self.busy;
+        match action {
+            Action::Cancel => return self.busy,
+            Action::Details => return true,
+            _ => {}
         }
         if !self.editable {
             return false;
         }
         match action {
-            Action::Back => true,
-            Action::Section(_) => true,
+            Action::Back | Action::Section(_) => true,
             Action::Refresh => self.ready && !self.busy,
-            Action::Cancel => self.busy,
+            Action::Cancel | Action::Details => unreachable!(),
             Action::Copy => self.editor.is_some(),
             Action::Edit => {
                 self.ready
@@ -189,6 +247,7 @@ impl StructureView {
                 cx.emit(StructureEvent::Refresh(self.request()));
             }
             Action::Cancel => cx.emit(StructureEvent::Cancel),
+            Action::Details => self.show_details = !self.show_details,
             Action::Copy => {
                 if let Some(editor) = &self.editor {
                     cx.write_to_clipboard(ClipboardItem::new_string(
@@ -210,7 +269,7 @@ impl StructureView {
                 }
             }
         }
-        if !matches!(action, Action::Back)
+        if !matches!(action, Action::Back | Action::Section(_))
             && let Some(index) = ACTIONS.iter().position(|(item, _)| *item == action)
         {
             window.focus(&self.buttons[index], cx);
@@ -266,8 +325,13 @@ impl StructureView {
         self.section = section;
         self.selected = (index < self.capture.count(section)).then_some(index);
         self.message = None;
-        self.scroll
-            .scroll_to_item(index, gpui::ScrollStrategy::Nearest);
+        let item = self
+            .selected
+            .map_or(Item::Title(section), |index| Item::Row(section, index));
+        if let Some(position) = self.items.iter().position(|candidate| *candidate == item) {
+            self.scroll
+                .scroll_to_item(position, gpui::ScrollStrategy::Nearest);
+        }
         cx.notify();
     }
     fn select_section(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -278,7 +342,14 @@ impl StructureView {
             return;
         };
         self.select(section, 0, window, cx);
-        self.scroll.scroll_to_item(0, gpui::ScrollStrategy::Top);
+        if let Some(position) = self
+            .items
+            .iter()
+            .position(|item| *item == Item::Title(section))
+        {
+            self.scroll
+                .scroll_to_item(position, gpui::ScrollStrategy::Top);
+        }
         window.focus(&self.sections[index], cx);
     }
     fn select_row(
@@ -288,27 +359,38 @@ impl StructureView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // A queued AX row action from an earlier section cannot select a row in
-        // the newly displayed section with the same numeric index.
-        if section != self.section || index >= self.capture.count(section) {
+        // A queued AX row action against a replaced capture cannot select a
+        // row that no longer exists.
+        if index >= self.capture.count(section) {
             return;
         }
         self.select(section, index, window, cx);
         window.focus(&self.list, cx);
     }
     fn focus_control(&mut self, reverse: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let mut handles = ACTIONS
+        let enabled = |(index, (action, _)): (usize, &(Action, &str))| {
+            self.enabled(*action).then(|| self.buttons[index].clone())
+        };
+        let mut handles = ACTIONS[..TOOLBAR_ACTIONS]
             .iter()
             .enumerate()
-            .filter(|(_, (action, _))| self.enabled(*action))
-            .map(|(index, _)| self.buttons[index].clone())
+            .filter_map(enabled)
             .collect::<Vec<_>>();
         if self.editable {
             handles.extend(self.sections.iter().cloned());
         }
         handles.push(self.list.clone());
-        if let Some(editor) = &self.editor {
-            handles.push(editor.editor.focus_handle(cx));
+        if self.show_details {
+            handles.extend(
+                ACTIONS
+                    .iter()
+                    .enumerate()
+                    .skip(TOOLBAR_ACTIONS)
+                    .filter_map(enabled),
+            );
+            if let Some(editor) = &self.editor {
+                handles.push(editor.editor.focus_handle(cx));
+            }
         }
         let current = handles.iter().position(|handle| handle.is_focused(window));
         let next = if reverse {
@@ -329,7 +411,7 @@ impl StructureView {
         match event.keystroke.key.as_str() {
             "tab" => self.focus_control(modifiers.shift, window, cx),
             "escape" => self.activate(Action::Back, window, cx),
-            key @ ("left" | "right")
+            key @ ("left" | "right" | "up" | "down")
                 if self.sections.iter().any(|handle| handle.is_focused(window)) =>
             {
                 let current = self
@@ -343,15 +425,21 @@ impl StructureView {
             }
             "enter" if self.list.is_focused(window) => {
                 if let Some(editor) = &self.editor {
+                    self.show_details = true;
                     window.focus(&editor.editor.focus_handle(cx), cx);
                 }
             }
             key if self.list.is_focused(window) => {
-                let Some(index) = move_index(self.selected, self.capture.count(self.section), key)
-                else {
+                let current = self.selected.and_then(|index| {
+                    self.rows
+                        .iter()
+                        .position(|row| *row == (self.section, index))
+                });
+                let Some(next) = move_index(current, self.rows.len(), key) else {
                     return;
                 };
-                self.select(self.section, index, window, cx);
+                let (section, index) = self.rows[next];
+                self.select(section, index, window, cx);
             }
             _ => return,
         }
@@ -376,13 +464,14 @@ fn move_index(current: Option<usize>, count: usize, key: &str) -> Option<usize> 
         _ => return None,
     })
 }
+/// The outline is vertical, so up/down move like left/right.
 fn move_section(current: usize, count: usize, key: &str) -> Option<usize> {
     if current >= count {
         return None;
     }
     match key {
-        "left" => Some(current.saturating_sub(1)),
-        "right" => Some(current.saturating_add(1).min(count - 1)),
+        "left" | "up" => Some(current.saturating_sub(1)),
+        "right" | "down" => Some(current.saturating_add(1).min(count - 1)),
         _ => None,
     }
 }
