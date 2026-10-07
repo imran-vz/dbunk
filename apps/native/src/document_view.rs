@@ -807,6 +807,10 @@ impl DocumentView {
             Content::Table(view) => {
                 view.update(cx, |view, cx| view.set_connection_metadata(connections, cx))
             }
+            // Query-result edits follow the same policy as table tabs.
+            Content::Query(view) => {
+                view.update(cx, |view, cx| view.set_connection_metadata(connections, cx))
+            }
             _ => {}
         }
     }

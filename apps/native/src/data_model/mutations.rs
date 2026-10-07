@@ -112,7 +112,10 @@ impl MutationDraft {
         changes.remove(index);
         self.publish(changes)
     }
+    /// Dropping the analysis changes what `overlay` paints, so the revision
+    /// moves with it. An in-flight apply keeps its own ticket revision.
     pub fn invalidate(&mut self) {
+        self.revision = self.revision.saturating_add(1);
         self.invalidated = true;
         self.analysis = None;
     }
@@ -492,6 +495,8 @@ impl MutationDraft {
             return Err(ModelError::Unavailable);
         }
         let mut changes = self.changes.clone();
+        // Rows sharing one identity merge into one change; count changes.
+        let mut staged = Vec::with_capacity(rows.len());
         for (row, hidden) in rows {
             let captured = self.capture(table, row, *hidden, truncated)?;
             let existing = Self::existing_in(&changes, &captured)?;
@@ -507,9 +512,13 @@ impl MutationDraft {
             if changes.len() > CHANGE_LIMIT {
                 return Err(ModelError::Budget);
             }
+            let index = existing.unwrap_or(changes.len() - 1);
+            if !staged.contains(&index) {
+                staged.push(index);
+            }
         }
         self.publish(changes)?;
-        Ok(rows.len())
+        Ok(staged.len())
     }
     /// The staged insert, its analysed target table and its position.
     fn insert_change(&self, id: Uuid) -> Result<(usize, &AnalyzedTable), ModelError> {

@@ -8,6 +8,8 @@ use dbunk_lib::backend::data::{
 
 /// Values in the diff and parameter lines are cut at this many characters.
 pub const DIFF_TEXT_CHARS: usize = 256;
+/// Characters of a bound value published as its accessibility label.
+pub const PARAM_LABEL_CHARS: usize = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiffValue {
@@ -65,7 +67,12 @@ fn diff_value(value: &Option<String>) -> DiffValue {
 
 /// The first `DIFF_TEXT_CHARS` characters, on a char boundary.
 fn cut(text: &str) -> (&str, bool) {
-    match text.char_indices().nth(DIFF_TEXT_CHARS) {
+    cut_at(text, DIFF_TEXT_CHARS)
+}
+
+/// The first `chars` characters, on a char boundary.
+fn cut_at(text: &str, chars: usize) -> (&str, bool) {
+    match text.char_indices().nth(chars) {
         Some((end, _)) => (&text[..end], true),
         None => (text, false),
     }
@@ -73,10 +80,14 @@ fn cut(text: &str) -> (&str, bool) {
 
 /// A SQL-style literal for display: NULL, a bare number, or a quoted string.
 fn literal(value: &Option<String>, quote_numbers: bool) -> String {
+    literal_within(value, quote_numbers, DIFF_TEXT_CHARS)
+}
+
+fn literal_within(value: &Option<String>, quote_numbers: bool, chars: usize) -> String {
     let Some(text) = value else {
         return "NULL".into();
     };
-    let (shown, truncated) = cut(text);
+    let (shown, truncated) = cut_at(text, chars);
     let ellipsis = if truncated { "…" } else { "" };
     if !quote_numbers && is_number(text) {
         return format!("{shown}{ellipsis}");
@@ -197,6 +208,17 @@ pub fn diff_summary(changes: &[DiffChange]) -> String {
 pub fn format_param(index: usize, param: &DmlParam) -> String {
     let DmlParam::Text { value } = param;
     format!("${} = {}", index + 1, literal(value, true))
+}
+
+/// The accessibility label for a bound parameter: the same literal as
+/// `format_param`, with a longer cut.
+pub fn param_label(index: usize, param: &DmlParam) -> String {
+    let DmlParam::Text { value } = param;
+    format!(
+        "Parameter {}: {}",
+        index + 1,
+        literal_within(value, true, PARAM_LABEL_CHARS)
+    )
 }
 
 fn sqlstate(code: &str) -> Option<&'static str> {
@@ -539,6 +561,26 @@ mod tests {
                 }
             ),
             "$2 = '42'"
+        );
+    }
+
+    #[test]
+    fn param_labels_quote_like_the_visible_line_with_a_longer_cut() {
+        let quoted = DmlParam::Text {
+            value: Some("O'Brien".into()),
+        };
+        assert_eq!(format_param(0, &quoted), "$1 = 'O''Brien'");
+        assert_eq!(param_label(0, &quoted), "Parameter 1: 'O''Brien'");
+        assert_eq!(
+            param_label(1, &DmlParam::Text { value: None }),
+            "Parameter 2: NULL"
+        );
+        let long = DmlParam::Text {
+            value: Some("a".repeat(PARAM_LABEL_CHARS + 1)),
+        };
+        assert_eq!(
+            param_label(0, &long),
+            format!("Parameter 1: '{}…'", "a".repeat(PARAM_LABEL_CHARS))
         );
     }
 

@@ -11,13 +11,14 @@ pub(super) mod files;
 mod probe_credentials_tests;
 mod settings;
 mod workspace;
+pub use connections::row_write_policy;
 pub use connections::{
     DevelopmentClickHouseConnection, DevelopmentConnection, DevelopmentConnectionFailure,
     DevelopmentConnectionOrganization, DevelopmentConnectionTest, DevelopmentDriverOptions,
     DevelopmentEndpoint, DevelopmentEngineConnection, DevelopmentEnvironment,
     DevelopmentMySqlConnection, DevelopmentPostgresConnection, DevelopmentRedisConnection,
-    DevelopmentSafeMode, DevelopmentSqliteConnection, DevelopmentSshTunnel, DevelopmentTlsMode,
-    DevelopmentTlsOptions,
+    DevelopmentRowWritePolicy, DevelopmentSafeMode, DevelopmentSafetyLevel,
+    DevelopmentSqliteConnection, DevelopmentSshTunnel, DevelopmentTlsMode, DevelopmentTlsOptions,
 };
 pub use connections::{
     RedisConsoleOutcome, RedisDatabase, RedisKey, RedisKeyInspection, RedisKeyValue, RedisOverview,

@@ -1,7 +1,11 @@
-//! Plan 032 write-safety rules for the table grid. This mirrors the backend's
-//! `resolve_policy` only to choose the review dialog; the backend stays the
-//! enforcement boundary (ADR-0024) and its refusal always wins.
-use dbunk_lib::backend::{DevelopmentConnection, DevelopmentEnvironment, DevelopmentSafeMode};
+//! Plan 032 write-safety rules for the table grid. The safe-mode level and
+//! whether apply needs confirmation come from the backend's own resolution
+//! (`row_write_policy`) and only choose the review dialog; the backend stays
+//! the enforcement boundary (ADR-0024) and its refusal always wins.
+use dbunk_lib::backend::{
+    DevelopmentConnection, DevelopmentEnvironment, DevelopmentSafeMode, DevelopmentSafetyLevel,
+    row_write_policy,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EffectiveSafeMode {
@@ -24,6 +28,8 @@ pub struct TablePolicy {
     pub environment: Option<DevelopmentEnvironment>,
     pub safe_mode: EffectiveSafeMode,
     pub read_only: bool,
+    /// The backend refuses an unconfirmed apply with `PolicyNeedsConfirmation`.
+    pub backend_confirms: bool,
 }
 
 impl TablePolicy {
@@ -33,31 +39,25 @@ impl TablePolicy {
         environment: None,
         safe_mode: EffectiveSafeMode::Strict,
         read_only: false,
+        backend_confirms: true,
     };
 
-    /// Inherit resolves development and test to disabled, staging to
-    /// protected and production to strict, as the backend does.
+    /// The backend's resolution for this connection's settings.
     pub fn resolve(
         environment: DevelopmentEnvironment,
         safe_mode: DevelopmentSafeMode,
         read_only: bool,
     ) -> Self {
-        let safe_mode = match safe_mode {
-            DevelopmentSafeMode::Disabled => EffectiveSafeMode::Disabled,
-            DevelopmentSafeMode::Protected => EffectiveSafeMode::Protected,
-            DevelopmentSafeMode::Strict => EffectiveSafeMode::Strict,
-            DevelopmentSafeMode::Inherit => match environment {
-                DevelopmentEnvironment::Development | DevelopmentEnvironment::Test => {
-                    EffectiveSafeMode::Disabled
-                }
-                DevelopmentEnvironment::Staging => EffectiveSafeMode::Protected,
-                DevelopmentEnvironment::Production => EffectiveSafeMode::Strict,
-            },
-        };
+        let resolved = row_write_policy(environment, safe_mode, read_only);
         Self {
             environment: Some(environment),
-            safe_mode,
+            safe_mode: match resolved.level {
+                DevelopmentSafetyLevel::Disabled => EffectiveSafeMode::Disabled,
+                DevelopmentSafetyLevel::Protected => EffectiveSafeMode::Protected,
+                DevelopmentSafetyLevel::Strict => EffectiveSafeMode::Strict,
+            },
             read_only,
+            backend_confirms: resolved.apply_needs_confirmation,
         }
     }
 
@@ -69,6 +69,14 @@ impl TablePolicy {
             .map_or(Self::UNKNOWN, |postgres| {
                 Self::resolve(postgres.environment, postgres.safe_mode, postgres.read_only)
             })
+    }
+
+    /// The policy for the connection `id` among `records`. A missing record,
+    /// a non-PostgreSQL record or an unbound tab gets the strictest `UNKNOWN`
+    /// policy; the backend stays authoritative either way (ADR-0024).
+    pub fn for_connection(records: &[DevelopmentConnection], id: Option<&str>) -> Self {
+        id.and_then(|id| records.iter().find(|record| record.id == id))
+            .map_or(Self::UNKNOWN, Self::from_connection)
     }
 
     /// `None` when the review cannot be opened at all (read-only).
@@ -85,10 +93,9 @@ impl TablePolicy {
     }
 
     /// Whether the backend will refuse an unconfirmed apply with
-    /// `PolicyNeedsConfirmation` (protected and strict both gate row
-    /// mutations since Plan 032).
+    /// `PolicyNeedsConfirmation`.
     pub fn expects_backend_confirmation(&self) -> bool {
-        !self.read_only && self.safe_mode != EffectiveSafeMode::Disabled
+        !self.read_only && self.backend_confirms
     }
 
     pub fn read_only_reason(&self) -> Option<&'static str> {
@@ -164,47 +171,6 @@ mod tests {
     use dbunk_lib::backend::DevelopmentSafeMode::{Disabled, Inherit, Protected, Strict};
 
     const ENVIRONMENTS: [DevelopmentEnvironment; 4] = [Development, Test, Staging, Production];
-
-    #[test]
-    fn resolution_matches_the_backend_matrix() {
-        // Rows: environment. Columns: Inherit, Disabled, Protected, Strict.
-        // Inherit follows `inherit_resolution_follows_environment`
-        // (backend/src/safety/policy.rs); explicit modes always win.
-        let expected = [
-            [
-                EffectiveSafeMode::Disabled,
-                EffectiveSafeMode::Disabled,
-                EffectiveSafeMode::Protected,
-                EffectiveSafeMode::Strict,
-            ],
-            [
-                EffectiveSafeMode::Disabled,
-                EffectiveSafeMode::Disabled,
-                EffectiveSafeMode::Protected,
-                EffectiveSafeMode::Strict,
-            ],
-            [
-                EffectiveSafeMode::Protected,
-                EffectiveSafeMode::Disabled,
-                EffectiveSafeMode::Protected,
-                EffectiveSafeMode::Strict,
-            ],
-            [
-                EffectiveSafeMode::Strict,
-                EffectiveSafeMode::Disabled,
-                EffectiveSafeMode::Protected,
-                EffectiveSafeMode::Strict,
-            ],
-        ];
-        for (environment, row) in ENVIRONMENTS.into_iter().zip(expected) {
-            for (safe_mode, level) in [Inherit, Disabled, Protected, Strict].into_iter().zip(row) {
-                let policy = TablePolicy::resolve(environment, safe_mode, false);
-                assert_eq!(policy.safe_mode, level, "{environment:?} {safe_mode:?}");
-                assert_eq!(policy.environment, Some(environment));
-                assert!(!policy.read_only);
-            }
-        }
-    }
 
     #[test]
     fn confirm_style_follows_environment_and_safe_mode() {
@@ -323,6 +289,7 @@ mod tests {
                 environment: Some(Staging),
                 safe_mode: EffectiveSafeMode::Protected,
                 read_only: false,
+                backend_confirms: true,
             }
         );
         assert!(

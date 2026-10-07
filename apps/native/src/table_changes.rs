@@ -22,12 +22,19 @@ use gpui::{
 use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
-    rc::Rc,
+    rc::{Rc, Weak},
 };
 use uuid::Uuid;
 
 /// The overlay last built, keyed by draft revision, page and failed change.
-type CachedOverlay = (OverlayKey, Option<Uuid>, Rc<DraftOverlay>);
+/// The `Weak` pins the page allocation, so a later page cannot reuse the
+/// address in `OverlayKey::page` and match a stale entry.
+struct CachedOverlay {
+    key: OverlayKey,
+    page: Option<Weak<BrowseTableResult>>,
+    failed: Option<Uuid>,
+    overlay: Rc<DraftOverlay>,
+}
 
 pub enum ChangesEvent {
     Changed,
@@ -1847,17 +1854,27 @@ impl TableChanges {
                 .as_ref()
                 .map_or(0, |page| Rc::as_ptr(page) as usize),
         };
-        if let Some((cached, failed, overlay)) = &*self.overlay_cache.borrow()
-            && *cached == key
-            && *failed == self.last_failed
+        if let Some(cached) = &*self.overlay_cache.borrow()
+            && cached.key == key
+            && cached.failed == self.last_failed
+            && match (&cached.page, &self.page) {
+                (Some(cached), Some(page)) => Weak::ptr_eq(cached, &Rc::downgrade(page)),
+                (None, None) => true,
+                _ => false,
+            }
         {
-            return overlay.clone();
+            return cached.overlay.clone();
         }
         let overlay = Rc::new(match (&self.draft, &self.page) {
             (Some(draft), Some(page)) => draft.overlay(page, key.page, self.last_failed),
             (_, page) => DraftOverlay::empty(page.as_ref().map_or(0, |page| page.rows.len())),
         });
-        *self.overlay_cache.borrow_mut() = Some((key, self.last_failed, overlay.clone()));
+        *self.overlay_cache.borrow_mut() = Some(CachedOverlay {
+            key,
+            page: self.page.as_ref().map(Rc::downgrade),
+            failed: self.last_failed,
+            overlay: overlay.clone(),
+        });
         overlay
     }
     /// The inline cell editor the grid hosts, if one is open.
@@ -2414,7 +2431,11 @@ mod tests {
         assert!(!Rc::ptr_eq(&second, &third));
         view.page = Some(Rc::new(example_page()));
         view.overlay_cache.borrow_mut().take();
-        assert!(!Rc::ptr_eq(&third, &view.overlay()));
+        let fourth = view.overlay();
+        assert!(!Rc::ptr_eq(&third, &fourth));
+        // A replaced page misses the cache even without an explicit clear.
+        view.page = Some(Rc::new(example_page()));
+        assert!(!Rc::ptr_eq(&fourth, &view.overlay()));
     }
 
     #[test]

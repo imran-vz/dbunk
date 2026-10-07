@@ -131,6 +131,9 @@ pub struct Workbench {
     completion_status: String,
     completion_composing: bool,
     query_changes: query_changes::QueryChanges,
+    /// Write policy of the bound connection, applied to every result-change
+    /// view so review asks for the same confirmation a table tab would.
+    query_policy: crate::data_model::TablePolicy,
     query_changes_return_focus: bool,
     document: Option<DocumentBinding>,
     receiver: Option<mailbox::Receiver>,
@@ -255,6 +258,7 @@ impl Workbench {
             completion_status: String::new(),
             completion_composing: false,
             query_changes: query_changes::QueryChanges::default(),
+            query_policy: crate::data_model::TablePolicy::UNKNOWN,
             query_changes_return_focus: false,
             document: None,
             receiver: None,
@@ -400,6 +404,8 @@ impl Workbench {
         if let Some(binding) = &mut self.document {
             binding.connection_id = Some(id);
         }
+        // The host sends the new connection's metadata right after binding.
+        self.query_policy = crate::data_model::TablePolicy::UNKNOWN;
         self.reset_completion(false, cx);
         cx.emit(WorkbenchEvent::DraftChanged);
     }

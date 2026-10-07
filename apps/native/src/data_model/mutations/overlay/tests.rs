@@ -252,8 +252,13 @@ fn overlay_survives_invalidation_without_analysis() {
     draft.stage_insert(0, vec![]).unwrap();
     let page = page(vec![row], None);
     let before = draft.overlay(&page, 1, None);
+    let revision = draft.revision();
     draft.invalidate();
     assert!(draft.analysis.is_none());
+    assert!(
+        draft.revision() > revision,
+        "dropping the analysis must change the overlay cache key"
+    );
     let after = draft.overlay(&page, 1, None);
     assert_eq!(after.rows, before.rows);
     assert_eq!(after.inserts, before.inserts);
