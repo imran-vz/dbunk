@@ -16,7 +16,12 @@ use gpui::{
     Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, SharedString,
     Subscription, Window, div, prelude::*, px,
 };
-use std::{cell::Cell, collections::HashMap, rc::Rc, sync::Arc};
+use std::{
+    cell::Cell,
+    collections::{HashMap, VecDeque},
+    rc::Rc,
+    sync::Arc,
+};
 
 mod columns_popover;
 mod menus;
@@ -206,9 +211,30 @@ pub struct TableView {
     /// The one open header menu, cell menu or toolbar popover.
     popover: Option<Popover>,
     anchors: Anchors,
-    /// A width or auto-fit patch from the grid while the tab was busy; the
-    /// latest wins and it is saved once the tab is idle (§3.5).
-    pending_width: Option<PreferencePatch>,
+    /// Grid patches (width, auto-fit, pin, hide, move) made while the tab was
+    /// busy, saved in order once it is idle (§3.5).
+    pending_grid: VecDeque<PreferencePatch>,
+}
+
+/// Most grid patches the tab holds while busy before refusing new ones.
+const PENDING_GRID_LIMIT: usize = 32;
+
+/// Queues `patch` behind earlier busy-time patches. A repeated drag of the
+/// same column replaces its queued width. False when the queue is full.
+fn queue_grid_patch(queue: &mut VecDeque<PreferencePatch>, patch: PreferencePatch) -> bool {
+    if let (
+        Some(PreferencePatch::ColumnWidth { name: queued, .. }),
+        PreferencePatch::ColumnWidth { name, .. },
+    ) = (queue.back(), &patch)
+        && queued == name
+    {
+        queue.pop_back();
+    }
+    if queue.len() >= PENDING_GRID_LIMIT {
+        return false;
+    }
+    queue.push_back(patch);
+    true
 }
 impl EventEmitter<TableEvent> for TableView {}
 impl TableView {
@@ -416,7 +442,7 @@ impl TableView {
             _grid_events: events,
             popover: None,
             anchors: Anchors::new(),
-            pending_width: None,
+            pending_grid: VecDeque::new(),
         }
     }
     pub fn apply_saved(&mut self, id: u64, result: Result<(), String>, cx: &mut Context<Self>) {
@@ -597,7 +623,7 @@ impl TableView {
         self.receiver.take();
         self.pending_preferences = None;
         self.after_analysis = None;
-        self.pending_width = None;
+        self.pending_grid.clear();
         self.popover = None;
         self.pending_browse_preferences = None;
         self.record_next = None;
@@ -724,9 +750,9 @@ impl TableView {
         self.update_controls(cx);
         cx.notify();
     }
-    /// Width and auto-fit patches from the grid. While the tab is busy the
-    /// latest one waits in `pending_width`; a patch that cannot be saved at
-    /// all drops the grid's live override so the stored width shows again.
+    /// Column patches from the grid. While the tab is busy they wait in
+    /// `pending_grid`; a patch that cannot be saved at all drops the grid's
+    /// live override so the stored width shows again.
     fn grid_preferences(&mut self, patch: PreferencePatch, cx: &mut Context<Self>) {
         if !self.editable || self.controls.is_none() {
             self.grid
@@ -741,7 +767,12 @@ impl TableView {
             return;
         }
         if self.busy || self.changes.read(cx).navigation_blocked() {
-            self.pending_width = Some(patch);
+            if !queue_grid_patch(&mut self.pending_grid, patch) {
+                self.grid
+                    .update(cx, |grid, cx| grid.clear_width_overrides(cx));
+                self.preferences_status =
+                    Some("Too many column changes while busy; wait for the table".into());
+            }
             return;
         }
         self.save_preferences(patch, cx);
@@ -1172,7 +1203,7 @@ impl TableView {
                 if let Some((_, _, cancelled)) = &mut self.pending_reference {
                     *cancelled = true;
                 }
-                if self.pending_width.take().is_some() {
+                if !std::mem::take(&mut self.pending_grid).is_empty() {
                     self.grid
                         .update(cx, |grid, cx| grid.clear_width_overrides(cx));
                 }
@@ -1533,7 +1564,7 @@ impl TableView {
         if !self.busy
             && self.preferences_ready
             && !self.changes.read(cx).navigation_blocked()
-            && let Some(patch) = self.pending_width.take()
+            && let Some(patch) = self.pending_grid.pop_front()
         {
             self.save_preferences(patch, cx);
         }
@@ -2124,5 +2155,56 @@ impl Render for TableView {
             // cell editor and the change list. Idle, it has no hitbox.
             .child(div().absolute().inset_0().child(self.changes.clone()))
             .children(popover)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn width(name: &str, width: f32) -> PreferencePatch {
+        PreferencePatch::ColumnWidth {
+            name: name.into(),
+            width,
+        }
+    }
+
+    #[test]
+    fn busy_grid_patches_keep_every_column_in_order() {
+        let mut queue = VecDeque::new();
+        assert!(queue_grid_patch(&mut queue, width("a", 80.0)));
+        assert!(queue_grid_patch(
+            &mut queue,
+            PreferencePatch::PinColumn {
+                selected: "b".into(),
+                pinned: true,
+            }
+        ));
+        assert!(queue_grid_patch(&mut queue, width("b", 90.0)));
+        // Dragging the same column again replaces only its own queued width.
+        assert!(queue_grid_patch(&mut queue, width("b", 120.0)));
+        assert_eq!(queue.len(), 3);
+        assert!(matches!(&queue[0], PreferencePatch::ColumnWidth { name, .. } if name == "a"));
+        assert!(
+            matches!(&queue[1], PreferencePatch::PinColumn { selected, .. } if selected == "b")
+        );
+        assert!(matches!(
+            &queue[2],
+            PreferencePatch::ColumnWidth { name, width } if name == "b" && *width == 120.0
+        ));
+    }
+
+    #[test]
+    fn a_full_busy_queue_refuses_instead_of_dropping_earlier_patches() {
+        let mut queue = VecDeque::new();
+        for index in 0..PENDING_GRID_LIMIT {
+            assert!(queue_grid_patch(
+                &mut queue,
+                width(&index.to_string(), 50.0)
+            ));
+        }
+        assert!(!queue_grid_patch(&mut queue, width("late", 50.0)));
+        assert_eq!(queue.len(), PENDING_GRID_LIMIT);
+        assert!(matches!(&queue[0], PreferencePatch::ColumnWidth { name, .. } if name == "0"));
     }
 }

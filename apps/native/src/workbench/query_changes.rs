@@ -3,6 +3,7 @@
 use super::*;
 use crate::{
     controller::{TableControls, TableMessage, TableReceiver},
+    data_model::TablePolicy,
     query_result::{ExecutedSource, Provenance, QueryRows},
     table_changes::{ChangesEvent, TableChanges},
 };
@@ -51,7 +52,30 @@ impl Workbench {
             view.update(cx, |view, cx| view.apply_saved(id, result, cx));
         }
     }
+    /// Takes environment, safe mode and read-only from the bound connection,
+    /// as a table tab does (Plan 032 §3.2).
+    pub fn set_connection_metadata(
+        &mut self,
+        records: &[backend::DevelopmentConnection],
+        cx: &mut Context<Self>,
+    ) {
+        let connection = self
+            .document
+            .as_ref()
+            .and_then(|document| document.connection_id.as_deref());
+        let policy = TablePolicy::for_connection(records, connection);
+        if self.query_policy == policy {
+            return;
+        }
+        self.query_policy = policy;
+        if let Some(view) = &self.query_changes.view {
+            view.update(cx, |view, cx| view.set_policy(policy, cx));
+        }
+        cx.notify();
+    }
     pub(super) fn install_changes(&mut self, view: Entity<TableChanges>, cx: &mut Context<Self>) {
+        let policy = self.query_policy;
+        view.update(cx, |view, cx| view.set_policy(policy, cx));
         self.query_changes.events = Some(cx.subscribe(&view, |this, _, event, cx| {
             match event {
                 ChangesEvent::Changed => cx.emit(WorkbenchEvent::DraftChanged),

@@ -36,7 +36,7 @@ pub use mutations::{
 };
 pub use review_diff::{
     DiffCell, DiffChange, DiffKind, DiffValue, apply_error_message, diff_summary, format_param,
-    review_diff,
+    param_label, review_diff,
 };
 #[cfg(test)]
 pub use write_safety::EffectiveSafeMode;

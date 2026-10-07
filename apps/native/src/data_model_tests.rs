@@ -1175,6 +1175,22 @@ fn bulk_deletes_are_atomic_and_convert_existing_updates() {
 }
 
 #[test]
+fn bulk_deletes_count_merged_rows_once() {
+    let mut draft = MutationDraft::new(analysis(MutationIdentityKind::PrimaryKey)).unwrap();
+    let first = row();
+    let duplicate = row();
+    assert_eq!(
+        draft.stage_deletes(
+            0,
+            &[(first.as_slice(), None), (duplicate.as_slice(), None)],
+            false
+        ),
+        Ok(1)
+    );
+    assert_eq!(draft.len(), 1);
+}
+
+#[test]
 fn bulk_deletes_check_the_change_limit_before_publishing() {
     let mut draft = MutationDraft::new(analysis(MutationIdentityKind::PrimaryKey)).unwrap();
     for _ in 0..CHANGE_LIMIT - 1 {

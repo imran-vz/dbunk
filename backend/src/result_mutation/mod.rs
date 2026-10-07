@@ -42,7 +42,7 @@ pub(crate) type VirtualKeyLookup = Arc<
         + Sync,
 >;
 
-fn apply_write_intent(plan: &MutationPlan) -> crate::safety::policy::WriteIntent {
+pub(crate) fn apply_write_intent(plan: &MutationPlan) -> crate::safety::policy::WriteIntent {
     crate::safety::policy::WriteIntent::ApplyMutations {
         classes: plan
             .operations

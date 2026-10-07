@@ -8,15 +8,6 @@ use crate::{
 use dbunk_lib::backend::DevelopmentConnection;
 use gpui::{Context, SharedString};
 
-/// The policy for the connection `id` among `records`. A missing record, a
-/// non-PostgreSQL record or an unbound tab gets the strictest `UNKNOWN`
-/// policy; the backend stays authoritative either way (ADR-0024).
-pub(super) fn policy_for(records: &[DevelopmentConnection], id: Option<&str>) -> TablePolicy {
-    id.and_then(|id| records.iter().find(|record| record.id == id))
-        .filter(|record| record.postgres.is_some())
-        .map_or(TablePolicy::UNKNOWN, TablePolicy::from_connection)
-}
-
 /// What the grid may offer. `live` is false while disconnected, loading or
 /// otherwise unable to accept a staged edit; checkboxes stay visible then so
 /// the layout does not jump, but are hidden on read-only connections.
@@ -43,7 +34,7 @@ impl TableView {
         records: &[DevelopmentConnection],
         cx: &mut Context<Self>,
     ) {
-        let policy = policy_for(records, self.connection.as_deref());
+        let policy = TablePolicy::for_connection(records, self.connection.as_deref());
         if self.changes.read(cx).policy() != policy {
             self.changes
                 .update(cx, |changes, cx| changes.set_policy(policy, cx));
@@ -129,12 +120,12 @@ mod tests {
             postgres("dev", DevelopmentEnvironment::Development, false),
             postgres("prod", DevelopmentEnvironment::Production, false),
         ];
-        let policy = policy_for(&records, Some("prod"));
+        let policy = TablePolicy::for_connection(&records, Some("prod"));
         assert_eq!(policy, TablePolicy::from_connection(&records[1]));
         assert_eq!(policy.environment, Some(DevelopmentEnvironment::Production));
         assert_eq!(policy.safe_mode, EffectiveSafeMode::Strict);
         assert_eq!(
-            policy_for(&records, Some("dev")),
+            TablePolicy::for_connection(&records, Some("dev")),
             TablePolicy::from_connection(&records[0])
         );
     }
@@ -142,7 +133,7 @@ mod tests {
     #[test]
     fn read_only_record_yields_a_read_only_policy() {
         let records = [postgres("ro", DevelopmentEnvironment::Staging, true)];
-        assert!(policy_for(&records, Some("ro")).read_only);
+        assert!(TablePolicy::for_connection(&records, Some("ro")).read_only);
     }
 
     #[test]
@@ -151,10 +142,22 @@ mod tests {
             postgres("dev", DevelopmentEnvironment::Development, false),
             other("lite", "sqlite"),
         ];
-        assert_eq!(policy_for(&records, Some("gone")), TablePolicy::UNKNOWN);
-        assert_eq!(policy_for(&records, None), TablePolicy::UNKNOWN);
-        assert_eq!(policy_for(&records, Some("lite")), TablePolicy::UNKNOWN);
-        assert_eq!(policy_for(&[], Some("dev")), TablePolicy::UNKNOWN);
+        assert_eq!(
+            TablePolicy::for_connection(&records, Some("gone")),
+            TablePolicy::UNKNOWN
+        );
+        assert_eq!(
+            TablePolicy::for_connection(&records, None),
+            TablePolicy::UNKNOWN
+        );
+        assert_eq!(
+            TablePolicy::for_connection(&records, Some("lite")),
+            TablePolicy::UNKNOWN
+        );
+        assert_eq!(
+            TablePolicy::for_connection(&[], Some("dev")),
+            TablePolicy::UNKNOWN
+        );
     }
 
     #[test]

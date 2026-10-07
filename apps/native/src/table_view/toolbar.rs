@@ -846,6 +846,7 @@ mod tests {
             environment: None,
             safe_mode: EffectiveSafeMode::Disabled,
             read_only: false,
+            backend_confirms: false,
         }
     }
 

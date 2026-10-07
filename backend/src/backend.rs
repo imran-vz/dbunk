@@ -79,6 +79,7 @@ pub use bastions::{
     DevelopmentBastionSecrets, DevelopmentBastionTest, DevelopmentHostKeyStatus,
     DevelopmentSecretInput,
 };
+pub use development::row_write_policy;
 pub use development::WorkspaceShell;
 pub use development::{
     DevelopmentClickHouseConnection, DevelopmentEndpoint, DevelopmentEngineConnection,
@@ -88,17 +89,18 @@ pub use development::{
     DevelopmentConnection, DevelopmentConnectionFailure, DevelopmentConnectionOrganization,
     DevelopmentConnectionTest, DevelopmentCredentialState, DevelopmentDriverOptions,
     DevelopmentEnvironment, DevelopmentFixtures, DevelopmentPostgresConnection,
-    DevelopmentSafeMode, DevelopmentSettings, DevelopmentSshTunnel, DevelopmentStorageMode,
-    DevelopmentTlsMode, DevelopmentTlsOptions, WorkspaceAdminAction, WorkspaceAdminControl,
-    WorkspaceApplyState, WorkspaceDensity, WorkspaceDocument, WorkspaceError, WorkspaceLoad,
-    WorkspaceMaintenance, WorkspaceMaintenanceAction, WorkspaceMaintenanceKind,
-    WorkspaceMaintenanceState, WorkspaceMutationDraft, WorkspaceQueryChanges, WorkspaceRevision,
-    WorkspaceSchemaAlter, WorkspaceSchemaChanges, WorkspaceSelection, WorkspaceSnapshot,
-    WorkspaceStagedChange, WorkspaceTableCopy, WorkspaceTableCopyState, WorkspaceTableDdl,
-    WorkspaceTableSeed, WorkspaceTableSeedState, WorkspaceTableState, WorkspaceTool,
-    NATIVE_WORKSPACE_MAX_BYTES, NATIVE_WORKSPACE_MAX_DOCUMENTS, WORKSPACE_COPY_MAX_JOBS,
-    WORKSPACE_MUTATION_MAX_BYTES, WORKSPACE_MUTATION_MAX_CHANGES, WORKSPACE_SCHEMA_ALTER_MAX_BYTES,
-    WORKSPACE_SEED_MAX_JOBS, WORKSPACE_TABLE_DDL_MAX_BYTES,
+    DevelopmentRowWritePolicy, DevelopmentSafeMode, DevelopmentSafetyLevel, DevelopmentSettings,
+    DevelopmentSshTunnel, DevelopmentStorageMode, DevelopmentTlsMode, DevelopmentTlsOptions,
+    WorkspaceAdminAction, WorkspaceAdminControl, WorkspaceApplyState, WorkspaceDensity,
+    WorkspaceDocument, WorkspaceError, WorkspaceLoad, WorkspaceMaintenance,
+    WorkspaceMaintenanceAction, WorkspaceMaintenanceKind, WorkspaceMaintenanceState,
+    WorkspaceMutationDraft, WorkspaceQueryChanges, WorkspaceRevision, WorkspaceSchemaAlter,
+    WorkspaceSchemaChanges, WorkspaceSelection, WorkspaceSnapshot, WorkspaceStagedChange,
+    WorkspaceTableCopy, WorkspaceTableCopyState, WorkspaceTableDdl, WorkspaceTableSeed,
+    WorkspaceTableSeedState, WorkspaceTableState, WorkspaceTool, NATIVE_WORKSPACE_MAX_BYTES,
+    NATIVE_WORKSPACE_MAX_DOCUMENTS, WORKSPACE_COPY_MAX_JOBS, WORKSPACE_MUTATION_MAX_BYTES,
+    WORKSPACE_MUTATION_MAX_CHANGES, WORKSPACE_SCHEMA_ALTER_MAX_BYTES, WORKSPACE_SEED_MAX_JOBS,
+    WORKSPACE_TABLE_DDL_MAX_BYTES,
 };
 pub use development::{
     RedisConsoleOutcome, RedisDatabase, RedisKey, RedisKeyInspection, RedisKeyValue, RedisOverview,

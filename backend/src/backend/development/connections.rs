@@ -890,6 +890,49 @@ fn stored_safe_mode(mode: DevelopmentSafeMode) -> crate::SafeMode {
     }
 }
 
+/// The safe-mode level a connection resolves to; `Inherit` follows the
+/// environment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DevelopmentSafetyLevel {
+    Disabled,
+    Protected,
+    Strict,
+}
+
+/// What applying staged row changes on a connection requires, from the same
+/// rules the result-mutation apply enforces. Clients use it to choose their
+/// confirmation UI; the apply still refuses on its own (ADR-0024).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DevelopmentRowWritePolicy {
+    pub level: DevelopmentSafetyLevel,
+    /// An unconfirmed apply is refused with `PolicyNeedsConfirmation`.
+    pub apply_needs_confirmation: bool,
+}
+
+pub fn row_write_policy(
+    environment: DevelopmentEnvironment,
+    safe_mode: DevelopmentSafeMode,
+    read_only: bool,
+) -> DevelopmentRowWritePolicy {
+    use crate::safety::policy::{requires_confirmation, resolve_policy, SafetyLevel};
+    let policy = resolve_policy(crate::ConnectionPolicy {
+        environment: stored_environment(environment),
+        safe_mode: stored_safe_mode(safe_mode),
+        read_only,
+    });
+    let intent = crate::result_mutation::apply_write_intent(&crate::backend::data::MutationPlan {
+        operations: Vec::new(),
+    });
+    DevelopmentRowWritePolicy {
+        level: match policy.level {
+            SafetyLevel::Disabled => DevelopmentSafetyLevel::Disabled,
+            SafetyLevel::Protected => DevelopmentSafetyLevel::Protected,
+            SafetyLevel::Strict => DevelopmentSafetyLevel::Strict,
+        },
+        apply_needs_confirmation: requires_confirmation(&policy, &intent),
+    }
+}
+
 /// An enabled form route replaces the stored one. Disabling a route keeps its
 /// other stored options (as the Tauri form does) so re-enabling loses nothing.
 fn tunnel_config(
@@ -1200,6 +1243,9 @@ async fn settle_probe(
 #[cfg(test)]
 #[path = "connection_bounds_tests.rs"]
 mod bounds_tests;
+#[cfg(test)]
+#[path = "row_write_policy_tests.rs"]
+mod row_write_policy_tests;
 #[cfg(test)]
 #[path = "tunnel_record_tests.rs"]
 mod tunnel_record_tests;

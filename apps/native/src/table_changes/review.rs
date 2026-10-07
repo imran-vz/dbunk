@@ -7,7 +7,7 @@ use super::*;
 use crate::{
     data_model::{
         ConfirmStyle, DiffCell, DiffChange, DiffKind, DiffValue, diff_summary, format_param,
-        preconfirmation, review_diff,
+        param_label, preconfirmation, review_diff,
     },
     style,
     ui::{
@@ -23,8 +23,6 @@ use gpui::AnyElement;
 const DIFF_CHANGES: usize = 128;
 /// Cells rendered per change before a "+N more columns" note.
 const DIFF_CELLS: usize = 32;
-/// Characters of a bound value published as its AX label.
-const PARAM_LABEL_CHARS: usize = 4096;
 
 pub(super) struct ReviewStatement {
     sql: SharedString,
@@ -178,20 +176,9 @@ fn statements(preview: &PreviewResult) -> Vec<ReviewStatement> {
                 .iter()
                 .enumerate()
                 .map(|(index, param)| {
-                    let line = format_param(index, param);
-                    let value = match param {
-                        DmlParam::Text { value: Some(value) } => {
-                            let mut text: String = value.chars().take(PARAM_LABEL_CHARS).collect();
-                            if text.len() < value.len() {
-                                text.push('…');
-                            }
-                            format!("'{text}'")
-                        }
-                        DmlParam::Text { value: None } => "NULL".to_owned(),
-                    };
                     (
-                        SharedString::from(line),
-                        SharedString::from(format!("Parameter {}: {value}", index + 1)),
+                        SharedString::from(format_param(index, param)),
+                        SharedString::from(param_label(index, param)),
                     )
                 })
                 .collect(),
