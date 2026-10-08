@@ -412,10 +412,15 @@ fn column_tags(d: &TableStructureSnapshot, c: &StructureColumn) -> Vec<Tag> {
         tags.push(tag("FK", Tone::Key));
     }
     let unique = d.indexes.iter().any(|i| {
+        // INCLUDE columns are payload, not part of the uniqueness key.
+        let mut keys = i.keys.iter().filter(|k| !k.included);
         i.unique
             && !i.primary
             && i.predicate.is_none()
-            && matches!(i.keys.as_slice(), [key] if key.column_number == Some(c.number))
+            && matches!(
+                (keys.next(), keys.next()),
+                (Some(key), None) if key.column_number == Some(c.number)
+            )
     });
     if unique {
         tags.push(tag("unique", Tone::Key));
@@ -453,20 +458,26 @@ pub fn clip(value: &str) -> String {
     }
     out
 }
+/// Comma-joined, copying at most `NAMES_BYTES`: enough for `clip` to fill
+/// and mark a full cell without copying a whole oversized expression.
 fn names<'a>(items: impl Iterator<Item = &'a str>) -> String {
     let mut out = String::new();
     for item in items {
         if !out.is_empty() {
             out.push_str(", ");
         }
-        out.push_str(item);
-        // Stop early; `clip` bounds the final cell.
-        if out.len() > CELL_CHARS * 4 {
+        let room = NAMES_BYTES.saturating_sub(out.len());
+        if item.len() > room {
+            out.push_str(&item[..item.floor_char_boundary(room)]);
             break;
         }
+        out.push_str(item);
     }
     out
 }
+/// Past `CELL_CHARS` characters even when every character is 4 bytes, so a
+/// cut list still reaches `clip`'s ellipsis.
+const NAMES_BYTES: usize = (CELL_CHARS + 1) * 4;
 fn text(value: String) -> Shown {
     Shown::Text(value)
 }
@@ -617,6 +628,63 @@ mod tests {
         assert_eq!(fk[2], Shown::Text("s.u (id)".into()));
         assert_eq!(fk[3], Shown::Faint("NO ACTION".into()));
         assert_eq!(fk[4], Shown::Text("CASCADE".into()));
+    }
+
+    #[test]
+    fn included_columns_do_not_hide_or_grant_uniqueness() {
+        let key = |number, name: &str, included| StructureIndexKey {
+            position: if number == 1 { 1 } else { 2 },
+            column_number: Some(number),
+            column_name: Some(name.into()),
+            definition: name.into(),
+            included,
+        };
+        let index = |oid, keys| StructureIndex {
+            oid,
+            name: "u".into(),
+            method: "btree".into(),
+            unique: true,
+            primary: false,
+            valid: true,
+            ready: true,
+            keys,
+            predicate: None,
+            definition: "CREATE UNIQUE INDEX".into(),
+            constraint_oid: None,
+        };
+        let mut data = snapshot();
+        // UNIQUE (a) INCLUDE (b): only `a` is unique.
+        data.indexes
+            .push(index(3, vec![key(1, "a", false), key(3, "b", true)]));
+        let tags = |data: &TableStructureSnapshot| {
+            let capture = capture(data.clone());
+            (0..2)
+                .map(
+                    |row| match &capture.cells(Section::Columns, row).unwrap()[5] {
+                        Shown::Tags(tags) => {
+                            tags.iter().map(|t| t.text.clone()).collect::<Vec<_>>()
+                        }
+                        other => panic!("{other:?}"),
+                    },
+                )
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(tags(&data), [vec!["unique".to_owned()], vec![]]);
+        // UNIQUE (a, b) makes neither column unique on its own.
+        data.indexes[0] = index(3, vec![key(1, "a", false), key(3, "b", false)]);
+        assert_eq!(tags(&data), [Vec::<String>::new(), vec![]]);
+    }
+
+    #[test]
+    fn index_columns_never_copy_a_whole_oversized_expression() {
+        let huge = "é".repeat(1 << 19);
+        let joined = names([huge.as_str(), "b"].into_iter());
+        assert!(joined.len() <= NAMES_BYTES);
+        assert!(clip(&joined).ends_with('…'));
+        let joined = names(["a", "€".repeat(CELL_CHARS * 2).as_str()].into_iter());
+        assert!(joined.len() <= NAMES_BYTES);
+        assert!(clip(&joined).ends_with('…'));
+        assert_eq!(names(["a", "b"].into_iter()), "a, b");
     }
 
     #[test]

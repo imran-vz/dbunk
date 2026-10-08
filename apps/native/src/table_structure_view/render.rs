@@ -11,6 +11,8 @@ const OUTLINE: f32 = 176.;
 const DETAILS: f32 = 380.;
 /// Horizontal inset of the section tables inside the page.
 const INSET: f32 = 16.;
+/// Narrowest a section column shrinks to before its text truncates away.
+const MIN_CELL: f32 = 32.;
 
 impl StructureView {
     /// Focus, AX, click and keyboard wiring shared by every control.
@@ -180,8 +182,13 @@ impl StructureView {
             .gap(px(4.))
             .overflow_hidden()
             .whitespace_nowrap()
-            .when(spec.fill, |cell| cell.flex_1().min_w(px(spec.width)))
-            .when(!spec.fill, |cell| cell.flex_none().w(px(spec.width)))
+            // `width` is the preferred size, not a floor: every column shrinks
+            // (and truncates) so no column is pushed past a narrow page.
+            .flex_basis(px(spec.width))
+            .flex_shrink_1()
+            .min_w(px(spec.width.min(MIN_CELL)))
+            .when(spec.fill, |cell| cell.flex_grow_1())
+            .when(!spec.fill, |cell| cell.flex_grow_0())
             .when(spec.mono, |cell| cell.font_family(style::MONO));
         match cell {
             Some(Shown::Text(text)) => base.child(div().min_w_0().truncate().child(text)),
