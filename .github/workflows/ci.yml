@@ -13,7 +13,7 @@ concurrency:
 jobs:
   backend:
     name: Backend (fmt + clippy + test)
-    runs-on: [self-hosted, Linux, ARM64, homeserver, docker, orbstack]
+    runs-on: [self-hosted, Linux, ARM64, homeserver, docker, sand]
     # Credential tests still share the legacy AES key/password cache (Plan 027).
     env:
       RUST_TEST_THREADS: "1"
