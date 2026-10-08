@@ -3,8 +3,13 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore: &docs
+      - "**/*.md"
+      - designs/**
+      - marketing/**
   pull_request:
     branches: [main]
+    paths-ignore: *docs
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -36,9 +41,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: backend
+      # No rust-cache here: on this self-hosted runner the GitHub cache moves at
+      # ~3 MB/s, so restoring (~2-4 min) and saving (~4 min) the 640 MB target
+      # cost far more than the ~30 s of dependency compilation it saves.
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -50,10 +55,12 @@ jobs:
       - run: cargo test --features isolated-profile
 
   native:
-    name: Native macOS (pinned GPUI checks)
+    name: Native macOS (dev checks)
     runs-on: macos-15
     env:
       RUST_TEST_THREADS: "1"
+      # Backtraces keep file:line; full debuginfo only grows the cache and link.
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     defaults:
       run:
         working-directory: apps/native
@@ -66,13 +73,40 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/native
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo clippy --locked --features fixture-verification --all-targets -- -D warnings
       - run: cargo test --locked
-      - run: cargo clippy --release --locked --all-targets -- -D warnings
-      - run: cargo test --release --locked
       - run: python3 ../../tools/native/dependencies.py
       - run: python3 -m unittest discover -s ../../tools/native -p 'test_*.py'
-      - run: python3 ../../tools/native/package.py --out "$RUNNER_TEMP/ci-bundle"
       # Interactive AX, VoiceOver and PostgreSQL E2E remain explicit fixture gates.
+
+  native-release:
+    name: Native macOS (release checks + bundle)
+    runs-on: macos-15
+    env:
+      RUST_TEST_THREADS: "1"
+      # The shipping profile (thin LTO, codegen-units = 1) serialises codegen of
+      # dbunk-native and took ~20 min per release build on this runner. CI keeps
+      # opt-level 3 and release semantics but parallel codegen without LTO;
+      # release.yml still builds the shipping profile.
+      CARGO_PROFILE_RELEASE_LTO: "off"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+      CARGO_PROFILE_RELEASE_DEBUG: "false"
+    defaults:
+      run:
+        working-directory: apps/native
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/native
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo clippy --release --locked --all-targets -- -D warnings
+      - run: cargo test --release --locked
+      - run: python3 ../../tools/native/package.py --out "$RUNNER_TEMP/ci-bundle"
