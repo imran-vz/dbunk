@@ -36,3 +36,51 @@ fn long_runtime_status_is_bounded_without_splitting_utf8() {
     assert!(bounded.ends_with(" [truncated]"));
     assert_eq!(bounded_status("Exact error"), "Exact error");
 }
+
+#[test]
+fn page_geometry_matches_section_layout_without_per_row_storage() {
+    use crate::table_structure_model::Section::*;
+    // Overview 1 row, Columns 3, Indexes empty, Relation grants 2, rest empty.
+    let mut counts = [0; Section::ALL.len()];
+    let slot = |section| Section::ALL.iter().position(|s| *s == section).unwrap();
+    counts[slot(Overview)] = 1;
+    counts[slot(Columns)] = 3;
+    counts[slot(RelationGrants)] = 2;
+    let page = Page::from_counts(counts);
+    // The layout every lookup must agree with, built the obvious way.
+    let mut expected = Vec::new();
+    for (section, count) in Section::ALL.into_iter().zip(counts) {
+        expected.push(Item::Title(section));
+        if section == RelationGrants {
+            expected.push(Item::Note(section));
+        }
+        if count > 0 {
+            expected.push(Item::Head(section));
+            expected.extend((0..count).map(|index| Item::Row(section, index)));
+        }
+    }
+    assert_eq!(page.lines, expected.len());
+    assert_eq!(page.rows, 6);
+    for (position, item) in expected.iter().enumerate() {
+        assert_eq!(page.item(position), Some(*item), "line {position}");
+        assert_eq!(page.position(*item), Some(position), "{item:?}");
+    }
+    assert_eq!(page.item(expected.len()), None);
+    assert_eq!(page.position(Item::Head(Indexes)), None);
+    assert_eq!(page.position(Item::Row(Columns, 3)), None);
+    assert_eq!(page.position(Item::Note(Columns)), None);
+    let rows: Vec<_> = expected
+        .iter()
+        .filter_map(|item| match item {
+            Item::Row(section, index) => Some((*section, *index)),
+            _ => None,
+        })
+        .collect();
+    for (number, (section, index)) in rows.iter().enumerate() {
+        assert_eq!(page.row(number), Some((*section, *index)));
+        assert_eq!(page.row_number(*section, *index), Some(number));
+    }
+    assert_eq!(page.row(rows.len()), None);
+    assert_eq!(page.row_number(Columns, 3), None);
+    assert_eq!(page.row_number(Indexes, 0), None);
+}

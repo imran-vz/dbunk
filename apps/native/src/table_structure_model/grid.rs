@@ -207,7 +207,9 @@ impl Capture {
                     ),
                 },
                 match (&d.partition_key, &d.partition_bound) {
-                    (Some(key), _) => text(clip(&format!("BY {key}"))),
+                    (Some(key), _) => {
+                        text(clip_chars("BY ".chars().chain(key.chars()), 3 + key.len()))
+                    }
                     (None, Some(bound)) => text(clip(bound)),
                     (None, None) => faint("—"),
                 },
@@ -439,9 +441,13 @@ fn column_tags(d: &TableStructureSnapshot, c: &StructureColumn) -> Vec<Tag> {
 /// One line, at most `CELL_CHARS` characters. Line breaks and tabs collapse
 /// to single spaces; other control characters show as U+FFFD.
 pub fn clip(value: &str) -> String {
-    let mut out = String::with_capacity(value.len().min(CELL_CHARS * 4));
+    clip_chars(value.chars(), value.len())
+}
+/// `clip` over a lazy sequence, so a prefixed value is never copied whole.
+fn clip_chars(value: impl Iterator<Item = char>, len: usize) -> String {
+    let mut out = String::with_capacity(len.min(CELL_CHARS * 4));
     let mut chars = 0;
-    for c in value.chars() {
+    for c in value {
         if chars == CELL_CHARS {
             out.push('…');
             break;
@@ -690,6 +696,25 @@ mod tests {
         let breaks = "\n".repeat(1 << 19);
         assert_eq!(clip(&names([breaks.as_str()].into_iter())), " …");
         assert_eq!(names(["a", "b"].into_iter()), "a, b");
+    }
+
+    #[test]
+    fn partition_key_cell_is_prefixed_and_bounded() {
+        let mut data = snapshot();
+        data.partition_key = Some(format!("RANGE ({})", "k".repeat(512 * 1024)));
+        let capture = capture(data);
+        let column = Section::Overview
+            .columns()
+            .iter()
+            .position(|spec| spec.title == "Partitioning")
+            .unwrap();
+        let Shown::Text(cell) = &capture.cells(Section::Overview, 0).unwrap()[column] else {
+            panic!("partition key should show as text");
+        };
+        assert!(cell.starts_with("BY RANGE (kkk"));
+        assert_eq!(cell.chars().count(), CELL_CHARS + 1);
+        assert!(cell.ends_with('…'));
+        assert!(cell.capacity() <= CELL_CHARS * 4);
     }
 
     #[test]
