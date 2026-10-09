@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend (fmt + clippy + test)
+    name: Backend (test)
     runs-on: [self-hosted, Linux, ARM64, homeserver, docker, sand]
     # Credential tests still share the legacy AES key/password cache (Plan 027).
     env:
@@ -39,8 +39,6 @@ jobs:
           fi
           echo "$cargo_home/bin" >> "$GITHUB_PATH"
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
       # No rust-cache here: on this self-hosted runner the GitHub cache moves at
       # ~3 MB/s, so restoring (~2-4 min) and saving (~4 min) the 640 MB target
       # cost far more than the ~30 s of dependency compilation it saves.
@@ -48,14 +46,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libssl-dev
-      - run: cargo fmt -- --check
-      - run: cargo clippy --all-targets -- -D warnings
+      # fmt and clippy run in lint.yml.
       - run: cargo test
-      - run: cargo clippy --features isolated-profile --all-targets -- -D warnings
       - run: cargo test --features isolated-profile
 
   native:
-    name: Native macOS (dev checks)
+    name: Native macOS (dev tests)
     runs-on: macos-15
     env:
       RUST_TEST_THREADS: "1"
@@ -69,21 +65,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.98.1
-          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/native
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo fmt --check
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      - run: cargo clippy --locked --features fixture-verification --all-targets -- -D warnings
+      # fmt and clippy run in lint.yml.
       - run: cargo test --locked
       - run: python3 ../../tools/native/dependencies.py
       - run: python3 -m unittest discover -s ../../tools/native -p 'test_*.py'
       # Interactive AX, VoiceOver and PostgreSQL E2E remain explicit fixture gates.
 
   native-release:
-    name: Native macOS (release checks + bundle)
+    name: Native macOS (release tests + bundle)
     runs-on: macos-15
     env:
       RUST_TEST_THREADS: "1"
@@ -102,11 +95,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.98.1
-          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/native
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: cargo clippy --release --locked --all-targets -- -D warnings
       - run: cargo test --release --locked
       - run: python3 ../../tools/native/package.py --out "$RUNNER_TEMP/ci-bundle"
