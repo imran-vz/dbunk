@@ -459,7 +459,8 @@ pub fn clip(value: &str) -> String {
     out
 }
 /// Comma-joined, copying at most `NAMES_BYTES`: enough for `clip` to fill
-/// and mark a full cell without copying a whole oversized expression.
+/// and mark a full cell without copying a whole oversized expression. A cut
+/// list ends in `…` itself, since `clip` may collapse it below a full cell.
 fn names<'a>(items: impl Iterator<Item = &'a str>) -> String {
     let mut out = String::new();
     for item in items {
@@ -469,6 +470,7 @@ fn names<'a>(items: impl Iterator<Item = &'a str>) -> String {
         let room = NAMES_BYTES.saturating_sub(out.len());
         if item.len() > room {
             out.push_str(&item[..item.floor_char_boundary(room)]);
+            out.push('…');
             break;
         }
         out.push_str(item);
@@ -679,11 +681,14 @@ mod tests {
     fn index_columns_never_copy_a_whole_oversized_expression() {
         let huge = "é".repeat(1 << 19);
         let joined = names([huge.as_str(), "b"].into_iter());
-        assert!(joined.len() <= NAMES_BYTES);
+        assert!(joined.len() <= NAMES_BYTES + '…'.len_utf8());
         assert!(clip(&joined).ends_with('…'));
         let joined = names(["a", "€".repeat(CELL_CHARS * 2).as_str()].into_iter());
-        assert!(joined.len() <= NAMES_BYTES);
+        assert!(joined.len() <= NAMES_BYTES + '…'.len_utf8());
         assert!(clip(&joined).ends_with('…'));
+        // Line breaks collapse in `clip`; the cut must still be marked.
+        let breaks = "\n".repeat(1 << 19);
+        assert_eq!(clip(&names([breaks.as_str()].into_iter())), " …");
         assert_eq!(names(["a", "b"].into_iter()), "a, b");
     }
 
