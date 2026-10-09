@@ -41,16 +41,16 @@ enum Action {
     Details,
     Section(usize),
 }
-/// Toolbar actions first, then the details-pane actions; Tab follows this
-/// order around the section outline and the list.
+/// Toolbar actions first, then the details-pane actions in the order the pane
+/// draws them; Tab follows this order around the section outline and the list.
 const ACTIONS: [(Action, &str); 7] = [
     (Action::Cancel, "Cancel read"),
     (Action::Refresh, "Refresh"),
     (Action::Details, "Details"),
     (Action::Back, "Catalog"),
-    (Action::Copy, "Copy"),
     (Action::Open, "Open table"),
     (Action::Edit, "Comment / rename"),
+    (Action::Copy, "Copy"),
 ];
 const TOOLBAR_ACTIONS: usize = 4;
 
@@ -66,20 +66,104 @@ enum Item {
     Row(Section, usize),
 }
 /// Page lines in section order; empty sections collapse to their heading.
-fn layout(capture: &Capture) -> Vec<Item> {
-    let mut items = Vec::new();
-    for section in Section::ALL {
-        let count = capture.count(section);
-        items.push(Item::Title(section));
-        if section == Section::RelationGrants {
-            items.push(Item::Note(section));
+/// Derived from section counts alone, so the view retains no per-row index
+/// outside the capture's admitted allowance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Page {
+    /// Per section, in `Section::ALL` order: first line and row count.
+    sections: [(usize, usize); Section::ALL.len()],
+    lines: usize,
+    rows: usize,
+}
+impl Page {
+    fn new(capture: &Capture) -> Self {
+        Self::from_counts(Section::ALL.map(|section| capture.count(section)))
+    }
+    fn from_counts(counts: [usize; Section::ALL.len()]) -> Self {
+        let mut sections = [(0, 0); Section::ALL.len()];
+        let (mut lines, mut rows) = (0, 0);
+        for (slot, (section, count)) in sections
+            .iter_mut()
+            .zip(Section::ALL.into_iter().zip(counts))
+        {
+            *slot = (lines, count);
+            lines += 1 + Self::note(section);
+            if count > 0 {
+                lines += 1 + count;
+            }
+            rows += count;
         }
-        if count > 0 {
-            items.push(Item::Head(section));
-            items.extend((0..count).map(|index| Item::Row(section, index)));
+        Self {
+            sections,
+            lines,
+            rows,
         }
     }
-    items
+    fn note(section: Section) -> usize {
+        usize::from(section == Section::RelationGrants)
+    }
+    fn item(&self, position: usize) -> Option<Item> {
+        if position >= self.lines {
+            return None;
+        }
+        let slot = self
+            .sections
+            .iter()
+            .rposition(|(start, _)| *start <= position)?;
+        let (section, (start, count)) = (Section::ALL[slot], self.sections[slot]);
+        let offset = position - start;
+        let note = Self::note(section);
+        match offset {
+            0 => Some(Item::Title(section)),
+            _ if offset <= note => Some(Item::Note(section)),
+            _ if offset == note + 1 => (count > 0).then_some(Item::Head(section)),
+            _ => {
+                let index = offset - note - 2;
+                (index < count).then_some(Item::Row(section, index))
+            }
+        }
+    }
+    fn position(&self, item: Item) -> Option<usize> {
+        let slot = |section| {
+            Section::ALL
+                .iter()
+                .position(|candidate| *candidate == section)
+        };
+        let (section, offset) = match item {
+            Item::Title(section) => (section, 0),
+            Item::Note(section) if Self::note(section) == 1 => (section, 1),
+            Item::Head(section) => (section, 1 + Self::note(section)),
+            Item::Row(section, index) => (section, 2 + Self::note(section) + index),
+            Item::Note(_) => return None,
+        };
+        let (start, count) = self.sections[slot(section)?];
+        match item {
+            Item::Head(_) if count == 0 => None,
+            Item::Row(_, index) if index >= count => None,
+            _ => Some(start + offset),
+        }
+    }
+    /// The `number`th selectable row in page order.
+    fn row(&self, mut number: usize) -> Option<(Section, usize)> {
+        for (section, (_, count)) in Section::ALL.into_iter().zip(self.sections) {
+            if number < count {
+                return Some((section, number));
+            }
+            number -= count;
+        }
+        None
+    }
+    /// Page-order number of a selectable row.
+    fn row_number(&self, section: Section, index: usize) -> Option<usize> {
+        let mut before = 0;
+        for (candidate, (_, count)) in Section::ALL.into_iter().zip(self.sections) {
+            if candidate == section {
+                return (index < count).then_some(before + index);
+            }
+            before += count;
+        }
+        None
+    }
 }
 
 struct SelectedEditor {
@@ -88,9 +172,7 @@ struct SelectedEditor {
 }
 pub struct StructureView {
     capture: Capture,
-    items: Vec<Item>,
-    /// Every selectable row in page order, for arrow navigation across sections.
-    rows: Vec<(Section, usize)>,
+    page: Page,
     section: Section,
     selected: Option<usize>,
     editor: Option<SelectedEditor>,
@@ -110,19 +192,11 @@ pub struct StructureView {
 impl EventEmitter<StructureEvent> for StructureView {}
 impl StructureView {
     pub fn new(capture: Capture, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let items = layout(&capture);
-        let rows = items
-            .iter()
-            .filter_map(|item| match item {
-                Item::Row(section, index) => Some((*section, *index)),
-                _ => None,
-            })
-            .collect();
+        let page = Page::new(&capture);
         let section = Section::ALL[0];
         let mut view = Self {
             capture,
-            items,
-            rows,
+            page,
             section,
             selected: None,
             editor: None,
@@ -328,7 +402,7 @@ impl StructureView {
         let item = self
             .selected
             .map_or(Item::Title(section), |index| Item::Row(section, index));
-        if let Some(position) = self.items.iter().position(|candidate| *candidate == item) {
+        if let Some(position) = self.page.position(item) {
             self.scroll
                 .scroll_to_item(position, gpui::ScrollStrategy::Nearest);
         }
@@ -342,11 +416,7 @@ impl StructureView {
             return;
         };
         self.select(section, 0, window, cx);
-        if let Some(position) = self
-            .items
-            .iter()
-            .position(|item| *item == Item::Title(section))
-        {
+        if let Some(position) = self.page.position(Item::Title(section)) {
             self.scroll
                 .scroll_to_item(position, gpui::ScrollStrategy::Top);
         }
@@ -430,15 +500,14 @@ impl StructureView {
                 }
             }
             key if self.list.is_focused(window) => {
-                let current = self.selected.and_then(|index| {
-                    self.rows
-                        .iter()
-                        .position(|row| *row == (self.section, index))
-                });
-                let Some(next) = move_index(current, self.rows.len(), key) else {
+                let current = self
+                    .selected
+                    .and_then(|index| self.page.row_number(self.section, index));
+                let Some((section, index)) =
+                    move_index(current, self.page.rows, key).and_then(|next| self.page.row(next))
+                else {
                     return;
                 };
-                let (section, index) = self.rows[next];
                 self.select(section, index, window, cx);
             }
             _ => return,

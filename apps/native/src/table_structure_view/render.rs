@@ -233,7 +233,10 @@ impl StructureView {
     }
     fn item(&self, position: usize, cx: &Context<Self>) -> AnyElement {
         let line = div().w_full().h(px(LINE)).px(px(INSET));
-        match self.items[position] {
+        let Some(item) = self.page.item(position) else {
+            return line.into_any_element();
+        };
+        match item {
             Item::Title(section) => {
                 let count = self.capture.count(section);
                 line.flex()
@@ -365,7 +368,7 @@ impl StructureView {
     fn page(&self, cx: &mut Context<Self>) -> AnyElement {
         let label = format!(
             "{} rows in {} sections; arrows select, Enter inspects",
-            self.rows.len(),
+            self.page.rows,
             Section::ALL.len()
         );
         div()
@@ -382,7 +385,7 @@ impl StructureView {
             .child(
                 uniform_list(
                     "structure-rows",
-                    self.items.len(),
+                    self.page.lines,
                     cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
                         range.map(|position| this.item(position, cx)).collect()
                     }),
