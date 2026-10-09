@@ -1,0 +1,68 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: &docs
+      - "**/*.md"
+      - designs/**
+      - marketing/**
+  pull_request:
+    branches: [main]
+    paths-ignore: *docs
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The only fmt and clippy gate. CI runs tests and the release bundle; lints
+# are identical across profiles (no cfg(debug_assertions) items), so clippy
+# runs once per crate graph in the dev profile.
+jobs:
+  backend:
+    name: Backend (fmt + clippy)
+    runs-on: [self-hosted, Linux, ARM64, homeserver, docker, sand]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      # See ci.yml: install rustup without editing the read-only ~/.profile.
+      - name: Install rustup
+        run: |
+          cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+          if ! command -v rustup >/dev/null 2>&1 && [ ! -x "$cargo_home/bin/rustup" ]; then
+            curl --proto '=https' --tlsv1.2 --retry 10 --retry-connrefused --location --silent --show-error --fail https://sh.rustup.rs \
+              | sh -s -- --default-toolchain none --no-modify-path -y
+          fi
+          echo "$cargo_home/bin" >> "$GITHUB_PATH"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev
+      - run: cargo fmt -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --features isolated-profile --all-targets -- -D warnings
+
+  native:
+    name: Native macOS (fmt + clippy)
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apps/native
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/native
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo clippy --locked --features fixture-verification --all-targets -- -D warnings
