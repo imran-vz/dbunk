@@ -84,6 +84,7 @@ mod sqlite_documents;
 mod sqlite_model;
 mod sqlite_workspace;
 mod stream;
+mod structure_table;
 mod style;
 mod table_changes;
 mod table_copy_store;

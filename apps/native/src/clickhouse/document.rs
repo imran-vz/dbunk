@@ -12,13 +12,13 @@ use crate::{
     controller::Host,
     document_view::ConnectionPhase,
     grid::{GridEvent, ResultGrid},
-    sql, style, ui,
+    sql, structure_table, style, ui,
     workbench::{RunStatement, StopQuery},
 };
 use dbunk_lib::backend::{
     clickhouse::{
         ClickHouseError, ClickHouseErrorKind, ClickHouseQueryOutcome, ClickHouseRows,
-        ClickHouseSession, ClickHouseStructure, StatementClassSummary,
+        ClickHouseSession, StatementClassSummary,
     },
     select_sql_range,
 };
@@ -87,6 +87,12 @@ struct Confirmation {
     statements: Vec<StatementClassSummary>,
 }
 
+/// A loaded structure, kept only as what the page shows.
+struct StructurePage {
+    tables: Vec<structure_table::SectionTable>,
+    ddl: SharedString,
+}
+
 pub struct ClickHouseDocument {
     host: Arc<Host>,
     sessions: Entity<ClickHouseSessions>,
@@ -95,8 +101,10 @@ pub struct ClickHouseDocument {
     editor: Option<(Entity<Editor>, Entity<AccessibleEditor>)>,
     grid: Entity<ResultGrid>,
     paging: Paging,
+    /// Rows the shown page kept; `None` before the first page.
+    rows: Option<usize>,
     has_more: bool,
-    structure: Option<Rc<ClickHouseStructure>>,
+    structure: Option<StructurePage>,
     /// The session the last data/structure load used. A different session
     /// (a reconnect) loads again; the same one never reloads on its own.
     attempted: Option<ClickHouseSession>,
@@ -172,6 +180,7 @@ impl ClickHouseDocument {
             editor,
             grid,
             paging: Paging::default(),
+            rows: None,
             has_more: false,
             structure: None,
             attempted: None,
@@ -383,7 +392,10 @@ impl ClickHouseDocument {
                                     structure.columns.len(),
                                     structure.engine
                                 );
-                                this.structure = Some(Rc::new(structure));
+                                this.structure = Some(StructurePage {
+                                    tables: document_model::structure_tables(&structure),
+                                    ddl: structure.ddl.into(),
+                                });
                             }
                             (Ok(Err(error)), Some(session)) => this.fail(&session, error, cx),
                             _ => this.status = "Stopped".into(),
@@ -407,6 +419,7 @@ impl ClickHouseDocument {
     fn show_page(&mut self, rows: ClickHouseRows, request: u64, cx: &mut Context<Self>) {
         let (rows, has_more) = document_model::take_page(rows);
         self.has_more = has_more;
+        self.rows = Some(rows.rows.len());
         self.status =
             document_model::page_summary(&self.paging, rows.rows.len(), has_more, rows.runtime_ms);
         if rows.approximate_order {
@@ -536,6 +549,7 @@ impl ClickHouseDocument {
         let running = self.run.is_some();
         let phase = self.connection_phase(cx);
         let connected = phase == ConnectionPhase::Connected;
+        let idle = connected && !running;
         let mut bar = ui::toolbar();
         match &self.mode {
             Mode::Query => {
@@ -566,80 +580,63 @@ impl ClickHouseDocument {
                     );
             }
             Mode::Data { .. } => {
-                bar = bar
-                    .child(
-                        ui::tool_button(
-                            "clickhouse-refresh",
-                            "Refresh",
-                            Some("icons/rotate_cw.svg"),
-                            connected && !running,
-                            false,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| this.load(cx))),
-                    )
-                    .child(
-                        ui::tool_button(
-                            "clickhouse-previous",
-                            "Previous page",
-                            None,
-                            connected && !running && self.paging.offset > 0,
-                            false,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| this.page(false, cx))),
-                    )
-                    .child(
-                        ui::tool_button(
-                            "clickhouse-next",
-                            "Next page",
-                            None,
-                            connected && !running && self.has_more,
-                            false,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| this.page(true, cx))),
-                    )
+                bar = ui::toolbar_strip()
+                    .child(self.switch(false, cx))
+                    .child(ui::separator())
+                    .child(self.crumbs())
                     .when_some(self.paging.sort.as_ref(), |bar, (column, desc)| {
                         bar.child(ui::badge(format!(
                             "{column} {}",
                             if *desc { "desc" } else { "asc" }
                         )))
                     })
-                    .child(ui::separator())
+                    .child(ui::grow())
                     .child(
-                        ui::tool_button(
-                            "clickhouse-open-structure",
-                            "Structure",
-                            Some("icons/list_tree.svg"),
-                            true,
-                            false,
+                        ui::icon_button(
+                            "clickhouse-previous",
+                            "Previous page",
+                            "icons/chevron_left.svg",
+                            idle && self.paging.offset > 0,
                         )
-                        .on_click(cx.listener(|_, _, _, cx| {
-                            cx.emit(DocumentEvent::Open { structure: true })
-                        })),
+                        .on_click(cx.listener(|this, _, _, cx| this.page(false, cx))),
+                    )
+                    .child(ui::range_status(
+                        "clickhouse-range",
+                        self.rows.map(|rows| (self.paging.offset, rows)),
+                    ))
+                    .child(
+                        ui::icon_button(
+                            "clickhouse-next",
+                            "Next page",
+                            "icons/chevron_right.svg",
+                            idle && self.has_more,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.page(true, cx))),
+                    )
+                    .child(
+                        ui::icon_button(
+                            "clickhouse-refresh",
+                            "Refresh",
+                            "icons/rotate_cw.svg",
+                            idle,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.load(cx))),
                     );
             }
             Mode::Structure { .. } => {
-                bar = bar
+                bar = ui::toolbar_strip()
+                    .child(self.switch(true, cx))
+                    .child(ui::separator())
+                    .child(self.crumbs())
+                    .child(ui::grow())
                     .child(
-                        ui::tool_button(
+                        ui::icon_button(
                             "clickhouse-refresh",
                             "Refresh",
-                            Some("icons/rotate_cw.svg"),
-                            connected && !running,
-                            false,
+                            "icons/rotate_cw.svg",
+                            idle,
                         )
                         .on_click(cx.listener(|this, _, _, cx| this.load(cx))),
-                    )
-                    .child(
-                        ui::tool_button(
-                            "clickhouse-open-data",
-                            "Data",
-                            Some("icons/table.svg"),
-                            true,
-                            false,
-                        )
-                        .on_click(cx.listener(|_, _, _, cx| {
-                            cx.emit(DocumentEvent::Open { structure: false })
-                        })),
                     );
             }
         }
@@ -659,165 +656,50 @@ impl ClickHouseDocument {
                 .on_click(cx.listener(|this, _, _, cx| this.connect(cx))),
             );
         }
-        let crumbs = match self.mode.object() {
+        if self.mode == Mode::Query {
+            bar = bar.child(ui::grow()).child(self.crumbs());
+        }
+        bar
+    }
+
+    fn crumbs(&self) -> gpui::Div {
+        match self.mode.object() {
             Some((database, name, kind)) => ui::crumbs(
                 format!("{database} ·"),
                 format!("{name} ({})", kind.label()),
             ),
             None => ui::crumbs("ClickHouse", "query"),
-        };
-        bar.child(ui::grow()).child(crumbs)
+        }
     }
 
-    fn structure_view(structure: &ClickHouseStructure) -> gpui::AnyElement {
-        let mono = |text: String| {
-            div()
-                .font_family(style::MONO)
-                .text_color(style::text())
-                .child(text)
-        };
-        let field = |label: &'static str, value: Option<String>| {
-            value.map(|value| {
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .child(
-                        div()
-                            .w(px(110.))
-                            .flex_none()
-                            .text_color(style::dim())
-                            .child(label),
-                    )
-                    .child(mono(value))
-            })
-        };
-        let mut summary = vec![structure.engine.clone()];
-        if let Some(rows) = structure.total_rows {
-            summary.push(format!("{rows} rows"));
-        }
-        if let Some(bytes) = structure.total_bytes {
-            summary.push(document_model::bytes(bytes));
-        }
+    /// The Data | Structure switch; the other side opens its own document.
+    fn switch(&self, structure: bool, cx: &Context<Self>) -> gpui::Div {
+        ui::view_switch(
+            "clickhouse-view",
+            structure,
+            cx.listener(move |_, _, _, cx| {
+                cx.emit(DocumentEvent::Open {
+                    structure: !structure,
+                })
+            }),
+        )
+    }
+
+    fn structure_view(page: &StructurePage) -> gpui::AnyElement {
         div()
             .flex()
             .flex_col()
-            .gap(px(10.))
-            .p(px(12.))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .child(ui::section_label("Table"))
-                    .children(field("Engine", Some(summary.join(" · "))))
-                    .children(field(
-                        "Sorting key",
-                        (!structure.sorting_key.is_empty())
-                            .then(|| structure.sorting_key.join(", ")),
-                    ))
-                    .children(field("Partition by", structure.partition_by.clone()))
-                    .children(field("Sample by", structure.sample_by.clone())),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(ui::section_label(format!(
-                        "Columns {}",
-                        structure.columns.len()
-                    )))
-                    .children(structure.columns.iter().map(|column| {
-                        div()
-                            .h(px(style::ROW))
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .border_b_1()
-                            .border_color(style::line_soft())
-                            .child(
-                                div()
-                                    .w(px(12.))
-                                    .flex_none()
-                                    .text_color(style::warn())
-                                    .child(if column.in_sorting_key { "K" } else { "" }),
-                            )
-                            .child(
-                                div()
-                                    .w(px(200.))
-                                    .flex_none()
-                                    .overflow_hidden()
-                                    .child(column.name.clone()),
-                            )
-                            .child(
-                                div()
-                                    .w(px(220.))
-                                    .flex_none()
-                                    .overflow_hidden()
-                                    .font_family(style::MONO)
-                                    .text_color(style::number())
-                                    .child(column.type_name.clone()),
-                            )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .overflow_hidden()
-                                    .font_family(style::MONO)
-                                    .text_color(style::faint())
-                                    .child(column.default.clone().unwrap_or_default()),
-                            )
-                    })),
-            )
-            .when(!structure.skip_indexes.is_empty(), |root| {
-                root.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(2.))
-                        .child(ui::section_label(format!(
-                            "Skip indexes {}",
-                            structure.skip_indexes.len()
-                        )))
-                        .children(structure.skip_indexes.iter().map(|index| {
-                            mono(format!(
-                                "{}  {}  ({})",
-                                index.name, index.expression, index.kind
-                            ))
-                        })),
-                )
-            })
-            .when(!structure.constraints.is_empty(), |root| {
-                root.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(2.))
-                        .child(ui::section_label("Constraints"))
-                        .children(
-                            structure
-                                .constraints
-                                .iter()
-                                .map(|(name, check)| mono(format!("{name}  CHECK {check}"))),
-                        ),
-                )
-            })
-            .when(!structure.ddl.is_empty(), |root| {
-                root.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.))
-                        .child(ui::section_label("DDL"))
-                        .child(
-                            div()
-                                .p(px(8.))
-                                .rounded(px(5.))
-                                .bg(style::panel())
-                                .border_1()
-                                .border_color(style::line_soft())
-                                .child(mono(structure.ddl.clone())),
-                        ),
-                )
+            .child(structure_table::sections(
+                "clickhouse-structure-sections",
+                "Table structure, read only",
+                &page.tables,
+            ))
+            .when(!page.ddl.is_empty(), |body| {
+                body.child(structure_table::definition(
+                    "clickhouse-ddl",
+                    "DDL",
+                    page.ddl.clone(),
+                ))
             })
             .into_any_element()
     }
@@ -861,7 +743,7 @@ impl Render for ClickHouseDocument {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .children(self.structure.as_deref().map(Self::structure_view))
+                .children(self.structure.as_ref().map(Self::structure_view))
                 .into_any_element(),
         };
         div()

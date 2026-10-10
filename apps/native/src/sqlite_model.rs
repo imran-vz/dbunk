@@ -5,8 +5,12 @@
 use std::collections::BTreeSet;
 use std::ops::Range;
 
+use crate::structure_table::{
+    ColumnSpec, KEYED_COLUMNS, SectionTable, Shown, Tone, clip, fill, fixed, key_tag, mono,
+    nullable, optional, or_dash, ordinal, referential, tag, tags, text,
+};
 use dbunk_lib::backend::sqlite_session::{
-    SqliteDatabase, SqliteExecution, SqliteObjects, SqlitePage, SqliteResultSet,
+    SqliteDatabase, SqliteExecution, SqliteObjects, SqlitePage, SqliteResultSet, SqliteStructure,
 };
 use dbunk_lib::backend::{
     QueryEvent, QueryTransactionSnapshot, RowLimitOutcome, StatementClassKind,
@@ -665,6 +669,129 @@ pub fn sql_to_run(sql: &str, selection: Range<usize>) -> Option<Range<usize>> {
         .cloned()
 }
 
+const INDEXES: &[ColumnSpec] = &[
+    fill("Name", 160.),
+    mono(fill("Columns", 160.)),
+    fixed("Attributes", 220.),
+];
+const FOREIGN_KEYS: &[ColumnSpec] = &[
+    mono(fill("Columns", 120.)),
+    mono(fill("References", 180.)),
+    fixed("On update", 100.),
+    fixed("On delete", 100.),
+];
+const TRIGGERS: &[ColumnSpec] = &[fill("Name", 160.), mono(fill("Definition", 320.))];
+
+/// The Structure page's section tables. Views only have columns.
+pub fn structure_tables(structure: &SqliteStructure) -> Vec<SectionTable> {
+    let composite = structure
+        .columns
+        .iter()
+        .filter(|column| column.primary_key > 0)
+        .count()
+        > 1;
+    let columns = structure
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| {
+            let key =
+                (column.primary_key > 0).then(|| key_tag(column.primary_key as usize, composite));
+            let foreign = structure
+                .foreign_keys
+                .iter()
+                .any(|key| key.columns.contains(&column.name));
+            let unique = structure.indexes.iter().any(|index| {
+                index.unique
+                    && index.origin != "pk"
+                    && !index.partial
+                    && index.columns == [column.name.as_str()]
+            });
+            vec![
+                ordinal(index),
+                text(clip(&column.name)),
+                or_dash(&column.declared_type),
+                optional(&column.default_value),
+                nullable(!column.not_null),
+                tags([
+                    key,
+                    foreign.then(|| tag("FK", Tone::Key)),
+                    unique.then(|| tag("unique", Tone::Key)),
+                    match column.hidden {
+                        2 | 3 => Some(tag("generated", Tone::Plain)),
+                        1 => Some(tag("hidden", Tone::Plain)),
+                        _ => None,
+                    },
+                ]),
+            ]
+        })
+        .collect();
+    let mut tables = vec![SectionTable::new(
+        "Columns",
+        KEYED_COLUMNS,
+        columns,
+        "No columns",
+    )];
+    if structure.kind != "table" {
+        return tables;
+    }
+    let indexes = structure
+        .indexes
+        .iter()
+        .map(|index| {
+            vec![
+                text(clip(&index.name)),
+                text(clip(&index.columns.join(", "))),
+                tags([
+                    (index.origin == "pk").then(|| tag("primary", Tone::Key)),
+                    (index.unique && index.origin != "pk").then(|| tag("unique", Tone::Key)),
+                    (index.origin == "u").then(|| tag("constraint", Tone::Plain)),
+                    index.partial.then(|| tag("partial", Tone::Plain)),
+                ]),
+            ]
+        })
+        .collect();
+    let foreign_keys = structure
+        .foreign_keys
+        .iter()
+        .map(|key| {
+            let referenced = if key.referenced.iter().all(String::is_empty) {
+                "primary key".to_owned()
+            } else {
+                key.referenced.join(", ")
+            };
+            vec![
+                text(clip(&key.columns.join(", "))),
+                text(clip(&format!("{} ({referenced})", key.table))),
+                rule(&key.on_update),
+                rule(&key.on_delete),
+            ]
+        })
+        .collect();
+    let triggers = structure
+        .triggers
+        .iter()
+        .map(|trigger| vec![text(clip(&trigger.name)), optional(&trigger.definition)])
+        .collect();
+    tables.extend([
+        SectionTable::new("Indexes", INDEXES, indexes, "No indexes"),
+        SectionTable::new(
+            "Foreign keys",
+            FOREIGN_KEYS,
+            foreign_keys,
+            "No foreign keys",
+        ),
+        SectionTable::new("Triggers", TRIGGERS, triggers, "No triggers"),
+    ]);
+    tables
+}
+
+/// SQLite's default, `NO ACTION`, is faint.
+fn rule(rule: &str) -> Shown {
+    let rule = if rule.is_empty() { "NO ACTION" } else { rule };
+    referential(rule, rule == "NO ACTION")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1041,5 +1168,63 @@ mod tests {
         assert!(changes_objects("attach 'x.db' as x"));
         assert!(!changes_objects("SELECT created_at FROM t"));
         assert!(!changes_objects("UPDATE t SET dropped = 1"));
+    }
+
+    #[test]
+    fn structure_tables_tag_keys_and_views_only_list_columns() {
+        use dbunk_lib::backend::sqlite_session::{SqliteColumn, SqliteForeignKey, SqliteIndex};
+        let column = |name: &str, primary_key, hidden| SqliteColumn {
+            name: name.into(),
+            declared_type: "INTEGER".into(),
+            not_null: primary_key > 0,
+            default_value: None,
+            primary_key,
+            hidden,
+        };
+        let mut structure = SqliteStructure {
+            kind: "table".into(),
+            definition: None,
+            columns: vec![
+                column("org", 1, 0),
+                column("id", 2, 0),
+                column("email", 0, 0),
+                column("total", 0, 2),
+            ],
+            indexes: vec![SqliteIndex {
+                name: "email_key".into(),
+                unique: true,
+                origin: "u".into(),
+                partial: false,
+                columns: vec!["email".into()],
+            }],
+            foreign_keys: vec![SqliteForeignKey {
+                id: 0,
+                columns: vec!["org".into()],
+                table: "orgs".into(),
+                referenced: vec![String::new()],
+                on_update: "NO ACTION".into(),
+                on_delete: "CASCADE".into(),
+            }],
+            triggers: Vec::new(),
+        };
+        let tables = structure_tables(&structure);
+        assert_eq!(
+            tables.iter().map(|t| t.title).collect::<Vec<_>>(),
+            ["Columns", "Indexes", "Foreign keys", "Triggers"]
+        );
+        let keys = |row: usize| match &tables[0].rows()[row][5] {
+            Shown::Tags(tags) => tags.iter().map(|t| t.text.clone()).collect::<Vec<_>>(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(keys(0), ["PK 1", "FK"]);
+        assert_eq!(keys(1), ["PK 2"]);
+        assert_eq!(keys(2), ["unique"]);
+        assert_eq!(keys(3), ["generated"]);
+        let fk = &tables[2].rows()[0];
+        assert_eq!(fk[1], Shown::Text("orgs (primary key)".into()));
+        assert_eq!(fk[2], Shown::Faint("NO ACTION".into()));
+        assert_eq!(fk[3], Shown::Text("CASCADE".into()));
+        structure.kind = "view".into();
+        assert_eq!(structure_tables(&structure).len(), 1);
     }
 }

@@ -240,6 +240,70 @@ pub fn count_badge(text: impl Into<SharedString>) -> Div {
         .child(text.into())
 }
 
+/// The Data | Structure switch of a table document. Only the unselected
+/// side is clickable; it opens the other view through `on_other`.
+pub fn view_switch(
+    id: &'static str,
+    structure: bool,
+    on_other: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> Div {
+    let side = |index: usize, label: &'static str, selected: bool| {
+        segment((id, index), label, selected, true)
+            .aria_selected(selected)
+            .tab_index(0)
+    };
+    let (data, view) = (side(0, "Data", !structure), side(1, "Structure", structure));
+    if structure {
+        segment_group().child(data.on_click(on_other)).child(view)
+    } else {
+        segment_group().child(data).child(view.on_click(on_other))
+    }
+}
+
+/// Thousands separators: `18204` → `18,204`.
+pub fn grouped(value: u64) -> String {
+    let digits = value.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, digit) in digits.chars().enumerate() {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
+
+/// The range of `rows` rows starting after `offset` rows: `401–600`, or
+/// `No rows`.
+pub fn offset_range_label(offset: u64, rows: usize) -> String {
+    if rows == 0 {
+        return "No rows".to_owned();
+    }
+    format!(
+        "{}–{}",
+        grouped(offset.saturating_add(1)),
+        grouped(offset.saturating_add(rows as u64))
+    )
+}
+
+/// The `401–600` status between an offset pager's arrows: `(offset, rows)`
+/// of the shown page, or `None` before the first page.
+pub fn range_status(id: impl Into<ElementId>, page: Option<(u64, usize)>) -> Stateful<Div> {
+    let range = page.map_or_else(
+        || "–".to_owned(),
+        |(offset, rows)| offset_range_label(offset, rows),
+    );
+    div()
+        .id(id)
+        .role(Role::Status)
+        .aria_label(SharedString::from(format!("Rows {range}")))
+        .flex_none()
+        .px(px(4.))
+        .font_family(style::MONO)
+        .text_color(style::dim())
+        .child(range)
+}
+
 /// A 20 px bordered row of `segment`s (Data | Structure).
 pub fn segment_group() -> Div {
     div()
@@ -854,6 +918,24 @@ pub fn choice_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offset_ranges_follow_the_rows_actually_kept() {
+        // A byte-bounded page kept 37 of 200 rows after row 400.
+        assert_eq!(offset_range_label(400, 37), "401–437");
+        assert_eq!(offset_range_label(1_234_000, 0), "No rows");
+        assert_eq!(
+            offset_range_label(u64::MAX, 3),
+            format!("{0}–{0}", grouped(u64::MAX))
+        );
+    }
+
+    #[test]
+    fn grouped_inserts_thousands_separators() {
+        assert_eq!(grouped(1_000_000), "1,000,000");
+        assert_eq!(grouped(999), "999");
+        assert_eq!(grouped(0), "0");
+    }
 
     #[test]
     fn shake_starts_and_ends_at_rest_within_its_amplitude() {

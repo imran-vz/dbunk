@@ -7,7 +7,7 @@ use crate::grid::ResultGrid;
 use crate::sqlite_model::{self, Paging};
 use crate::sqlite_workspace::SqliteContext;
 use crate::workbench::{RunScript, RunStatement, StopQuery};
-use crate::{sql, style, ui};
+use crate::{sql, structure_table, style, ui};
 use dbunk_lib::backend::QueryEvent;
 use dbunk_lib::backend::sqlite_session::{
     SqliteExecution, SqlitePage, SqliteSessionError, SqliteStructure,
@@ -135,6 +135,28 @@ fn icon_tool(
     primary: bool,
 ) -> gpui::Stateful<gpui::Div> {
     ui::tool_button(id, label, Some(icon), enabled, primary).tab_index(0)
+}
+
+/// The Data | Structure switch; the other side opens its own tab.
+fn table_switch<V: EventEmitter<SqliteDocEvent>>(
+    schema: &str,
+    name: &str,
+    structure: bool,
+    cx: &mut Context<V>,
+) -> gpui::Div {
+    let target = (schema.to_owned(), name.to_owned());
+    ui::view_switch(
+        "sqlite-view",
+        structure,
+        cx.listener(move |_, _, _, cx| {
+            let (schema, name) = target.clone();
+            cx.emit(if structure {
+                SqliteDocEvent::OpenData { schema, name }
+            } else {
+                SqliteDocEvent::OpenStructure { schema, name }
+            })
+        }),
+    )
 }
 
 pub struct SqliteQueryView {
@@ -645,11 +667,6 @@ impl Render for SqliteDataView {
         let idle = connected && self.loading.is_none();
         let has_previous = idle && self.paging.offset > 0;
         let has_next = idle && self.page.as_ref().is_some_and(|page| page.has_more);
-        let label = match (&self.loading, &self.page) {
-            (Some(_), _) => "Loading…".to_string(),
-            (None, Some(page)) => self.paging.label(page),
-            (None, None) => String::new(),
-        };
         let notes = diagnostics(&self.grid, cx);
         div()
             .id("sqlite-data")
@@ -657,29 +674,19 @@ impl Render for SqliteDataView {
             .flex()
             .flex_col()
             .child(
-                ui::toolbar()
-                    .child(ui::crumbs(format!("{}.", self.schema), self.name.clone()))
+                ui::toolbar_strip()
+                    .child(table_switch(&self.schema, &self.name, false, cx))
                     .child(ui::separator())
+                    .child(ui::crumbs(format!("{}.", self.schema), self.name.clone()))
+                    .child(ui::grow())
                     .child(
-                        icon_tool(
-                            "sqlite-data-refresh",
-                            "Refresh",
-                            "icons/rotate_cw.svg",
-                            idle,
-                            false,
-                        )
-                        .when(idle, |button| {
-                            button.on_click(cx.listener(|this, _, _, cx| this.reload(cx)))
-                        }),
-                    )
-                    .child(
-                        icon_tool(
+                        ui::icon_button(
                             "sqlite-data-previous",
-                            "Previous",
+                            "Previous page",
                             "icons/chevron_left.svg",
                             has_previous,
-                            false,
                         )
+                        .tab_index(0)
                         .when(has_previous, |button| {
                             button.on_click(cx.listener(|this, _, _, cx| {
                                 let paging = this.paging.previous();
@@ -687,14 +694,20 @@ impl Render for SqliteDataView {
                             }))
                         }),
                     )
+                    .child(ui::range_status(
+                        "sqlite-data-range",
+                        self.page
+                            .as_ref()
+                            .map(|page| (page.offset, page.set.rows.len())),
+                    ))
                     .child(
-                        icon_tool(
+                        ui::icon_button(
                             "sqlite-data-next",
-                            "Next",
+                            "Next page",
                             "icons/chevron_right.svg",
                             has_next,
-                            false,
                         )
+                        .tab_index(0)
                         .when(has_next, |button| {
                             button.on_click(cx.listener(|this, _, _, cx| {
                                 // Advance by the rows the page kept.
@@ -706,29 +719,16 @@ impl Render for SqliteDataView {
                         }),
                     )
                     .child(
-                        div()
-                            .id("sqlite-data-range")
-                            .role(Role::Status)
-                            .aria_label(label.clone())
-                            .font_family(style::MONO)
-                            .text_color(style::faint())
-                            .child(label),
-                    )
-                    .child(ui::grow())
-                    .child(
-                        icon_tool(
-                            "sqlite-data-structure",
-                            "Structure",
-                            "icons/list_tree.svg",
-                            true,
-                            false,
+                        ui::icon_button(
+                            "sqlite-data-refresh",
+                            "Refresh",
+                            "icons/rotate_cw.svg",
+                            idle,
                         )
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            cx.emit(SqliteDocEvent::OpenStructure {
-                                schema: this.schema.clone(),
-                                name: this.name.clone(),
-                            })
-                        })),
+                        .tab_index(0)
+                        .when(idle, |button| {
+                            button.on_click(cx.listener(|this, _, _, cx| this.reload(cx)))
+                        }),
                     ),
             )
             .when_some(self.error.clone(), |root, error| {
@@ -753,11 +753,30 @@ impl Render for SqliteDataView {
     }
 }
 
+/// A loaded structure, kept only as what the page shows.
+struct LoadedStructure {
+    kind: SharedString,
+    columns: usize,
+    tables: Vec<structure_table::SectionTable>,
+    definition: Option<SharedString>,
+}
+
+impl LoadedStructure {
+    fn new(structure: SqliteStructure) -> Self {
+        Self {
+            tables: sqlite_model::structure_tables(&structure),
+            columns: structure.columns.len(),
+            definition: structure.definition.map(Into::into),
+            kind: structure.kind.into(),
+        }
+    }
+}
+
 pub struct SqliteStructureView {
     context: SqliteContext,
     schema: String,
     name: String,
-    structure: Option<SqliteStructure>,
+    structure: Option<LoadedStructure>,
     loading: Option<(u64, Task<()>)>,
     error: Option<String>,
     attempt: u64,
@@ -799,7 +818,7 @@ impl SqliteStructureView {
         } else {
             self.structure
                 .as_ref()
-                .map(|structure| format!("{} columns", structure.columns.len()))
+                .map(|structure| format!("{} columns", structure.columns))
                 .unwrap_or_else(|| "not loaded".into())
         }
     }
@@ -836,7 +855,7 @@ impl SqliteStructureView {
                     }
                     this.loading = None;
                     match result {
-                        Ok(Ok(structure)) => this.structure = Some(structure),
+                        Ok(Ok(structure)) => this.structure = Some(LoadedStructure::new(structure)),
                         Ok(Err(error)) => this.error = session_error(error),
                         Err(_) => this.error = Some("Structure read failed".into()),
                     }
@@ -863,218 +882,27 @@ impl SqliteStructureView {
     }
 }
 
-/// One row of a structure table; the first cell is the row's AX name.
-fn table_row(
-    id: impl Into<gpui::ElementId>,
-    cells: Vec<(String, f32)>,
-    header: bool,
-) -> gpui::Stateful<gpui::Div> {
-    let label = cells
-        .iter()
-        .map(|(text, _)| text.as_str())
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>()
-        .join(", ");
-    div()
-        .id(id)
-        .role(if header { Role::Row } else { Role::ListItem })
-        .aria_label(label)
-        .min_h(px(style::ROW))
-        .flex()
-        .items_center()
-        .px(px(10.))
-        .border_b_1()
-        .border_color(style::line_soft())
-        .when(header, |row| {
-            row.text_size(px(style::FONT_SMALL))
-                .text_color(style::faint())
-        })
-        .when(!header, |row| {
-            row.font_family(style::MONO).text_color(style::text())
-        })
-        .children(cells.into_iter().map(|(text, width)| {
-            let cell = div()
-                .pr(px(8.))
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_ellipsis();
-            if width > 0. {
-                cell.w(px(width)).flex_none().child(text)
-            } else {
-                cell.flex_1().min_w_0().child(text)
-            }
-        }))
-}
-
-fn section_heading(title: &str, count: usize) -> gpui::Div {
-    div()
-        .flex_none()
-        .px(px(10.))
-        .pt(px(12.))
-        .pb(px(4.))
-        .flex()
-        .items_center()
-        .gap(px(6.))
-        .child(ui::section_label(title.to_string()))
-        .child(ui::badge(count.to_string()))
-}
-
-fn definition_block(id: impl Into<gpui::ElementId>, sql: String) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        .role(Role::Document)
-        .aria_label(sql.clone())
-        .mx(px(10.))
-        .p(px(8.))
-        .rounded(px(5.))
-        .border_1()
-        .border_color(style::line())
-        .bg(style::panel())
-        .font_family(style::MONO)
-        .text_color(style::text())
-        .whitespace_normal()
-        .child(sql)
-}
-
 impl Render for SqliteStructureView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let connected = self.context.session().is_some();
         let idle = connected && self.loading.is_none();
-        let mut body = div().flex().flex_col().pb(px(16.));
-        if let Some(structure) = &self.structure {
-            body = body
-                .child(section_heading("Columns", structure.columns.len()))
-                .child(table_row(
-                    "sqlite-columns-header",
-                    vec![
-                        ("Name".into(), 180.),
-                        ("Type".into(), 120.),
-                        ("Null".into(), 60.),
-                        ("Key".into(), 50.),
-                        ("Default".into(), 0.),
-                    ],
-                    true,
+        let body = self.structure.as_ref().map(|structure| {
+            div()
+                .flex()
+                .flex_col()
+                .child(structure_table::sections(
+                    "sqlite-structure-sections",
+                    format!("{} structure, read only", structure.kind),
+                    &structure.tables,
                 ))
-                .children(structure.columns.iter().enumerate().map(|(index, column)| {
-                    let name = match column.hidden {
-                        2 | 3 => format!("{} (generated)", column.name),
-                        1 => format!("{} (hidden)", column.name),
-                        _ => column.name.clone(),
-                    };
-                    table_row(
-                        ("sqlite-column", index),
-                        vec![
-                            (name, 180.),
-                            (column.declared_type.clone(), 120.),
-                            (if column.not_null { "NOT NULL" } else { "" }.into(), 60.),
-                            (
-                                if column.primary_key > 0 {
-                                    format!("PK {}", column.primary_key)
-                                } else {
-                                    String::new()
-                                },
-                                50.,
-                            ),
-                            (column.default_value.clone().unwrap_or_default(), 0.),
-                        ],
-                        false,
-                    )
-                }));
-            if structure.kind == "table" {
-                body = body
-                    .child(section_heading("Indexes", structure.indexes.len()))
-                    .children(structure.indexes.iter().enumerate().map(|(index, item)| {
-                        let origin = match item.origin.as_str() {
-                            "pk" => "primary key",
-                            "u" => "unique constraint",
-                            _ => {
-                                if item.unique {
-                                    "unique"
-                                } else {
-                                    "index"
-                                }
-                            }
-                        };
-                        table_row(
-                            ("sqlite-index", index),
-                            vec![
-                                (item.name.clone(), 220.),
-                                (
-                                    format!(
-                                        "{origin}{}",
-                                        if item.partial { ", partial" } else { "" }
-                                    ),
-                                    150.,
-                                ),
-                                (item.columns.join(", "), 0.),
-                            ],
-                            false,
-                        )
-                    }))
-                    .child(section_heading(
-                        "Foreign keys",
-                        structure.foreign_keys.len(),
+                .when_some(structure.definition.clone(), |body, sql| {
+                    body.child(structure_table::definition(
+                        "sqlite-definition",
+                        "Definition",
+                        sql,
                     ))
-                    .children(
-                        structure
-                            .foreign_keys
-                            .iter()
-                            .enumerate()
-                            .map(|(index, key)| {
-                                let referenced = if key.referenced.iter().all(String::is_empty) {
-                                    "primary key".to_string()
-                                } else {
-                                    key.referenced.join(", ")
-                                };
-                                table_row(
-                                    ("sqlite-foreign-key", index),
-                                    vec![
-                                        (key.columns.join(", "), 220.),
-                                        (format!("→ {} ({referenced})", key.table), 0.),
-                                        (
-                                            format!(
-                                                "on update {} · on delete {}",
-                                                key.on_update, key.on_delete
-                                            ),
-                                            260.,
-                                        ),
-                                    ],
-                                    false,
-                                )
-                            }),
-                    )
-                    .child(section_heading("Triggers", structure.triggers.len()))
-                    .children(
-                        structure
-                            .triggers
-                            .iter()
-                            .enumerate()
-                            .map(|(index, trigger)| {
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(4.))
-                                    .pb(px(6.))
-                                    .child(table_row(
-                                        ("sqlite-trigger", index),
-                                        vec![(trigger.name.clone(), 0.)],
-                                        false,
-                                    ))
-                                    .when_some(trigger.definition.clone(), |item, sql| {
-                                        item.child(definition_block(
-                                            ("sqlite-trigger-sql", index),
-                                            sql,
-                                        ))
-                                    })
-                            }),
-                    );
-            }
-            if let Some(sql) = structure.definition.clone() {
-                body = body
-                    .child(section_heading("Definition", 1))
-                    .child(definition_block("sqlite-definition", sql));
-            }
-        }
+                })
+        });
         div()
             .id("sqlite-structure")
             .track_focus(&self.focus)
@@ -1083,39 +911,25 @@ impl Render for SqliteStructureView {
             .flex()
             .flex_col()
             .child(
-                ui::toolbar()
+                ui::toolbar_strip()
+                    .child(table_switch(&self.schema, &self.name, true, cx))
+                    .child(ui::separator())
                     .child(ui::crumbs(format!("{}.", self.schema), self.name.clone()))
                     .when_some(self.structure.as_ref(), |bar, structure| {
                         bar.child(ui::badge(structure.kind.clone()))
                     })
-                    .child(ui::separator())
+                    .child(ui::grow())
                     .child(
-                        icon_tool(
+                        ui::icon_button(
                             "sqlite-structure-refresh",
                             "Refresh",
                             "icons/rotate_cw.svg",
                             idle,
-                            false,
                         )
+                        .tab_index(0)
                         .when(idle, |button| {
                             button.on_click(cx.listener(|this, _, _, cx| this.reload(cx)))
                         }),
-                    )
-                    .child(ui::grow())
-                    .child(
-                        icon_tool(
-                            "sqlite-structure-data",
-                            "Data",
-                            "icons/table.svg",
-                            true,
-                            false,
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            cx.emit(SqliteDocEvent::OpenData {
-                                schema: this.schema.clone(),
-                                name: this.name.clone(),
-                            })
-                        })),
                     ),
             )
             .when(self.loading.is_some(), |root| {
@@ -1138,7 +952,7 @@ impl Render for SqliteStructureView {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .child(body),
+                    .children(body),
             )
     }
 }

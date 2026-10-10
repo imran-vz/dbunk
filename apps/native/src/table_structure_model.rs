@@ -741,6 +741,5 @@ fn action(value: StructureReferentialAction) -> &'static str {
     }
 }
 mod grid;
-pub use grid::{ColumnSpec, Shown, Tone};
 #[cfg(test)]
 mod tests;

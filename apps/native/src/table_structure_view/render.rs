@@ -1,18 +1,12 @@
 use super::*;
 use crate::{
+    structure_table::{self as table, INSET},
     style,
-    table_structure_model::{ColumnSpec, Shown, Tone},
 };
 use gpui::{AnyElement, SharedString, Stateful};
 
-/// Every page line: section headings, column titles and rows.
-const LINE: f32 = 28.;
 const OUTLINE: f32 = 176.;
 const DETAILS: f32 = 380.;
-/// Horizontal inset of the section tables inside the page.
-const INSET: f32 = 16.;
-/// Narrowest a section column shrinks to before its text truncates away.
-const MIN_CELL: f32 = 32.;
 
 impl StructureView {
     /// Focus, AX, click and keyboard wiring shared by every control.
@@ -173,106 +167,18 @@ impl StructureView {
             }))
             .into_any_element()
     }
-    fn cell(spec: &ColumnSpec, cell: Option<Shown>) -> AnyElement {
-        let base = div()
-            .h_full()
-            .px(px(8.))
-            .flex()
-            .items_center()
-            .gap(px(4.))
-            .overflow_hidden()
-            .whitespace_nowrap()
-            // `width` is the preferred size, not a floor: every column shrinks
-            // (and truncates) so no column is pushed past a narrow page.
-            .flex_basis(px(spec.width))
-            .flex_shrink_1()
-            .min_w(px(spec.width.min(MIN_CELL)))
-            .when(spec.fill, |cell| cell.flex_grow_1())
-            .when(!spec.fill, |cell| cell.flex_grow_0())
-            .when(spec.mono, |cell| cell.font_family(style::MONO));
-        match cell {
-            Some(Shown::Text(text)) => base.child(div().min_w_0().truncate().child(text)),
-            Some(Shown::Faint(text)) => base
-                .text_color(style::faint())
-                .child(div().min_w_0().truncate().child(text)),
-            Some(Shown::Tags(tags)) => base.children(tags.into_iter().map(|tag| {
-                let (fill, color) = match tag.tone {
-                    Tone::Key => (style::primary_fill(), style::accent()),
-                    Tone::Warn => (style::warn_fill(), style::warn()),
-                    Tone::Plain => (style::raised(), style::dim()),
-                };
-                div()
-                    .flex_none()
-                    .h(px(16.))
-                    .px(px(5.))
-                    .flex()
-                    .items_center()
-                    .rounded(px(3.))
-                    .bg(fill)
-                    .font_family(style::MONO)
-                    .text_size(px(style::FONT_SMALL))
-                    .text_color(color)
-                    .child(tag.text)
-            })),
-            None => base,
-        }
-        .into_any_element()
-    }
-    /// The bordered card segment every table line sits in.
-    fn card(top: bool, bottom: bool) -> gpui::Div {
-        div()
-            .h_full()
-            .flex()
-            .items_center()
-            .border_l_1()
-            .border_r_1()
-            .border_t_1()
-            .border_color(style::line_soft())
-            .when(top, |card| card.rounded_t(px(6.)))
-            .when(bottom, |card| card.border_b_1().rounded_b(px(6.)))
-    }
     fn item(&self, position: usize, cx: &Context<Self>) -> AnyElement {
-        let line = div().w_full().h(px(LINE)).px(px(INSET));
+        let line = table::line();
         let Some(item) = self.page.item(position) else {
             return line.into_any_element();
         };
         match item {
-            Item::Title(section) => {
-                let count = self.capture.count(section);
-                line.flex()
-                    .items_end()
-                    .gap(px(8.))
-                    .pb(px(5.))
-                    .child(
-                        div()
-                            .flex_none()
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(if count == 0 {
-                                style::faint()
-                            } else {
-                                style::text()
-                            })
-                            .child(section.label()),
-                    )
-                    .child(
-                        div()
-                            .flex_none()
-                            .font_family(style::MONO)
-                            .text_size(px(style::FONT_SMALL))
-                            .text_color(style::faint())
-                            .child(count.to_string()),
-                    )
-                    .when(count == 0, |line| {
-                        line.child(
-                            div()
-                                .min_w_0()
-                                .truncate()
-                                .text_color(style::faint())
-                                .child(self.capture.empty_label(section)),
-                        )
-                    })
-                    .into_any_element()
-            }
+            Item::Title(section) => table::title_line(
+                section.label(),
+                self.capture.count(section),
+                Some(self.capture.empty_label(section)),
+            )
+            .into_any_element(),
             Item::Note(_) => line
                 .flex()
                 .items_center()
@@ -291,24 +197,7 @@ impl StructureView {
                         .child(crate::table_structure_model::RELATION_ACL_SCOPE),
                 )
                 .into_any_element(),
-            Item::Head(section) => line
-                .child(
-                    Self::card(true, false)
-                        .bg(style::panel())
-                        .text_size(px(style::FONT_SMALL))
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .text_color(style::faint())
-                        .children(section.columns().iter().map(|spec| {
-                            Self::cell(
-                                &ColumnSpec {
-                                    mono: false,
-                                    ..*spec
-                                },
-                                Some(Shown::Text(spec.title.to_owned())),
-                            )
-                        })),
-                )
-                .into_any_element(),
+            Item::Head(section) => table::head_line(section.columns()).into_any_element(),
             Item::Row(section, index) => {
                 let selected = self.section == section && self.selected == Some(index);
                 let last = index + 1 == self.capture.count(section);
@@ -331,7 +220,7 @@ impl StructureView {
                     .cursor_pointer()
                     .group("structure-row")
                     .child(
-                        Self::card(false, last)
+                        table::card(false, last)
                             .text_color(style::text())
                             .bg(if selected {
                                 style::select()
@@ -345,7 +234,7 @@ impl StructureView {
                                 section
                                     .columns()
                                     .iter()
-                                    .map(|spec| Self::cell(spec, cells.next())),
+                                    .map(|spec| table::cell(spec, cells.next())),
                             ),
                     )
                     .on_click(

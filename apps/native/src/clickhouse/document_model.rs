@@ -1,6 +1,13 @@
 //! Pure state for ClickHouse documents: data paging and sort, conversion of a
 //! bounded result into the shared grid's page shape, and status text.
-use dbunk_lib::backend::clickhouse::{ClickHouseError, ClickHouseRows, ClickHouseTruncation};
+use crate::structure_table::{
+    ColumnSpec, SectionTable, Tone, clip, faint, fill, fixed, mono, optional, or_dash, ordinal,
+    tag, tags, text,
+};
+use crate::ui::{grouped, offset_range_label};
+use dbunk_lib::backend::clickhouse::{
+    ClickHouseError, ClickHouseRows, ClickHouseStructure, ClickHouseTruncation,
+};
 use dbunk_lib::backend::data::{
     BrowseColumn, BrowseCount, BrowseCountKind, BrowseIdentity, BrowseIdentityKind,
     BrowseInspection, BrowsePageInfo, BrowsePageMode, BrowseTableResult,
@@ -103,22 +110,10 @@ pub fn grid_page(
     }
 }
 
-fn count(value: usize) -> String {
-    let digits = value.to_string();
-    let mut out = String::new();
-    for (index, ch) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(ch);
-    }
-    out
-}
-
 fn plural(value: usize, one: &str) -> String {
     format!(
         "{} {one}{}",
-        count(value),
+        grouped(value as u64),
         if value == 1 { "" } else { "s" }
     )
 }
@@ -158,16 +153,13 @@ pub fn page_summary(paging: &Paging, shown: usize, has_more: bool, runtime_ms: u
         } else {
             format!(
                 "No rows after row {} · {runtime_ms} ms",
-                count(paging.offset as usize)
+                grouped(paging.offset)
             )
         };
     }
-    let first = paging.offset as usize + 1;
-    let last = paging.offset as usize + shown;
     format!(
-        "Rows {}–{}{} · {runtime_ms} ms",
-        count(first),
-        count(last),
+        "Rows {}{} · {runtime_ms} ms",
+        offset_range_label(paging.offset, shown),
         if has_more { " of more" } else { "" }
     )
 }
@@ -196,6 +188,90 @@ pub fn bytes(value: u64) -> String {
     } else {
         format!("{size:.1} {}", UNITS[unit])
     }
+}
+
+const OVERVIEW: &[ColumnSpec] = &[
+    mono(fill("Engine", 140.)),
+    mono(fill("Sorting key", 140.)),
+    mono(fill("Partition by", 120.)),
+    mono(fill("Sample by", 100.)),
+    fixed("Rows", 110.),
+    fixed("Size", 90.),
+];
+const COLUMNS: &[ColumnSpec] = &[
+    mono(fixed("#", 40.)),
+    fill("Name", 140.),
+    mono(fill("Type", 140.)),
+    mono(fill("Default", 140.)),
+    fixed("Keys", 110.),
+];
+const SKIP_INDEXES: &[ColumnSpec] = &[
+    fill("Name", 160.),
+    mono(fill("Expression", 200.)),
+    fixed("Type", 120.),
+];
+const CONSTRAINTS: &[ColumnSpec] = &[fill("Name", 160.), mono(fill("Check", 260.))];
+
+/// The Structure page's section tables, in the PostgreSQL page's order.
+pub fn structure_tables(structure: &ClickHouseStructure) -> Vec<SectionTable> {
+    let overview = vec![
+        or_dash(&structure.engine),
+        or_dash(&structure.sorting_key.join(", ")),
+        or_dash(structure.partition_by.as_deref().unwrap_or_default()),
+        or_dash(structure.sample_by.as_deref().unwrap_or_default()),
+        structure
+            .total_rows
+            .map_or_else(|| faint("—"), |rows| text(grouped(rows))),
+        structure
+            .total_bytes
+            .map_or_else(|| faint("—"), |size| text(bytes(size))),
+    ];
+    let columns = structure
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| {
+            vec![
+                ordinal(index),
+                text(clip(&column.name)),
+                text(clip(&column.type_name)),
+                optional(&column.default),
+                tags([column.in_sorting_key.then(|| tag("sorting key", Tone::Key))]),
+            ]
+        })
+        .collect();
+    let skip_indexes = structure
+        .skip_indexes
+        .iter()
+        .map(|index| {
+            vec![
+                text(clip(&index.name)),
+                text(clip(&index.expression)),
+                text(clip(&index.kind)),
+            ]
+        })
+        .collect();
+    let constraints = structure
+        .constraints
+        .iter()
+        .map(|(name, check)| vec![text(clip(name)), text(clip(check))])
+        .collect();
+    vec![
+        SectionTable::new("Overview", OVERVIEW, vec![overview], ""),
+        SectionTable::new("Columns", COLUMNS, columns, "No columns"),
+        SectionTable::new(
+            "Skip indexes",
+            SKIP_INDEXES,
+            skip_indexes,
+            "No skip indexes",
+        ),
+        SectionTable::new(
+            "Constraints",
+            CONSTRAINTS,
+            constraints,
+            "No check constraints",
+        ),
+    ]
 }
 
 #[cfg(test)]
@@ -304,5 +380,50 @@ mod tests {
         assert_eq!(error_text(&long).chars().count(), ERROR_CHARS + 1);
         assert_eq!(bytes(512), "512 B");
         assert_eq!(bytes(1536), "1.5 KiB");
+    }
+
+    #[test]
+    fn structure_tables_show_engine_keys_and_one_cell_per_column() {
+        use crate::structure_table::Shown;
+        use dbunk_lib::backend::clickhouse::{ClickHouseSkipIndex, ClickHouseStructureColumn};
+        let structure = ClickHouseStructure {
+            engine: "MergeTree".into(),
+            total_rows: Some(18_204),
+            total_bytes: Some(2048),
+            sorting_key: vec!["day".into(), "id".into()],
+            columns: vec![
+                ClickHouseStructureColumn {
+                    name: "day".into(),
+                    type_name: "Date".into(),
+                    default: None,
+                    in_sorting_key: true,
+                },
+                ClickHouseStructureColumn {
+                    name: "note".into(),
+                    type_name: "String".into(),
+                    default: Some("DEFAULT ''".into()),
+                    in_sorting_key: false,
+                },
+            ],
+            skip_indexes: vec![ClickHouseSkipIndex {
+                name: "note_idx".into(),
+                expression: "note".into(),
+                kind: "bloom_filter".into(),
+            }],
+            ..Default::default()
+        };
+        let tables = structure_tables(&structure);
+        let overview = &tables[0].rows()[0];
+        assert_eq!(overview[1], Shown::Text("day, id".into()));
+        assert_eq!(overview[2], Shown::Faint("—".into()));
+        assert_eq!(overview[4], Shown::Text("18,204".into()));
+        assert_eq!(overview[5], Shown::Text("2.0 KiB".into()));
+        assert_eq!(
+            tables[1].rows()[0][4],
+            Shown::Tags(vec![crate::structure_table::tag("sorting key", Tone::Key)])
+        );
+        assert_eq!(tables[1].rows()[1][4], Shown::Tags(Vec::new()));
+        assert_eq!(tables[2].rows().len(), 1);
+        assert!(tables[3].rows().is_empty());
     }
 }

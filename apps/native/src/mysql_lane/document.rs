@@ -9,6 +9,10 @@ use crate::{
     accessible_editor::AccessibleEditor,
     controller::Host,
     grid::ResultGrid,
+    structure_table::{
+        self, ColumnSpec, KEYED_COLUMNS, SectionTable, Shown, Tone, clip, faint, fill, fixed,
+        key_tag, mono, nullable, optional, ordinal, referential, tag, tags, text,
+    },
     style, ui,
     workbench::{RunScript, RunStatement, StopQuery},
 };
@@ -84,12 +88,15 @@ pub struct MySqlDocument {
     has_result: bool,
     /// First row of the shown page.
     offset: u64,
+    /// Rows the shown page kept.
+    rows: usize,
     /// Where the next page starts (after the rows actually kept), if any.
     next_offset: Option<u64>,
     /// Start offsets of the pages before this one, for Previous.
     history: Vec<u64>,
-    structure: Load<MySqlStructure>,
-    definition: Load<String>,
+    /// Section tables, built once per load.
+    structure: Load<Vec<SectionTable>>,
+    definition: Load<SharedString>,
     status: String,
     error: Option<String>,
     running: Option<Task<()>>,
@@ -142,6 +149,7 @@ impl MySqlDocument {
             grid,
             has_result: false,
             offset: 0,
+            rows: 0,
             next_offset: None,
             history: Vec::new(),
             structure: Load::Idle,
@@ -443,6 +451,7 @@ impl MySqlDocument {
                             Step::Reload => {}
                         }
                         this.offset = offset;
+                        this.rows = page.rows.len();
                         this.next_offset = next_offset(offset, &page);
                         this.status = page_label(offset, &page);
                         this.show(&page, cx);
@@ -496,7 +505,7 @@ impl MySqlDocument {
                 let result = task.await;
                 this.update(cx, |this, cx| {
                     this.structure = match result {
-                        Ok(Ok(structure)) => Load::Ready(structure),
+                        Ok(Ok(structure)) => Load::Ready(structure_tables(&structure)),
                         Ok(Err(error)) => Load::Failed(error.to_string()),
                         Err(_) => Load::Failed("Request task ended unexpectedly".into()),
                     };
@@ -516,7 +525,7 @@ impl MySqlDocument {
                 let result = task.await;
                 this.update(cx, |this, cx| {
                     this.definition = match result {
-                        Ok(Ok(text)) => Load::Ready(text),
+                        Ok(Ok(text)) => Load::Ready(text.into()),
                         Ok(Err(error)) => Load::Failed(error.to_string()),
                         Err(_) => Load::Failed("Request task ended unexpectedly".into()),
                     };
@@ -537,9 +546,40 @@ impl MySqlDocument {
         cx: &mut Context<Self>,
         action: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> gpui::Stateful<gpui::Div> {
-        ui::tool_button(id, label, icon, enabled, false).when(enabled, |button| {
-            button.on_click(cx.listener(move |this, _, window, cx| action(this, window, cx)))
+        Self::bind(
+            ui::tool_button(id, label, icon, enabled, false),
+            enabled,
+            cx,
+            action,
+        )
+    }
+
+    /// Routes clicks on an enabled control to `action`.
+    fn bind(
+        control: gpui::Stateful<gpui::Div>,
+        enabled: bool,
+        cx: &mut Context<Self>,
+        action: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) -> gpui::Stateful<gpui::Div> {
+        control.when(enabled, |control| {
+            control.on_click(cx.listener(move |this, _, window, cx| action(this, window, cx)))
         })
+    }
+
+    /// The Data | Structure switch; the other side opens its own document.
+    fn switch(&self, object: ObjectRef, cx: &mut Context<Self>) -> gpui::Div {
+        let structure = matches!(self.kind, DocKind::Structure(_));
+        ui::view_switch(
+            "mysql-view",
+            structure,
+            cx.listener(move |_, _, _, cx| {
+                cx.emit(if structure {
+                    DocEvent::Data(object.clone())
+                } else {
+                    DocEvent::Structure(object.clone())
+                })
+            }),
+        )
     }
 
     fn crumbs(&self) -> Option<impl IntoElement + use<>> {
@@ -610,63 +650,61 @@ impl MySqlDocument {
                 ));
             }
             DocKind::Data(object) => {
-                bar = bar
-                    .children(self.crumbs())
+                let idle = connected && !running;
+                bar = ui::toolbar_strip()
+                    .child(self.switch(object, cx))
                     .child(ui::separator())
-                    .child(self.button(
-                        "mysql-refresh",
-                        "Refresh",
-                        Some("icons/rotate_cw.svg"),
-                        connected && !running,
-                        cx,
-                        |this, _, cx| this.load_page(Step::Reload, cx),
-                    ))
-                    .child(self.button(
-                        "mysql-previous",
-                        "Previous",
-                        None,
-                        connected && !running && !self.history.is_empty(),
+                    .children(self.crumbs())
+                    .child(ui::grow())
+                    .child(Self::bind(
+                        ui::icon_button(
+                            "mysql-previous",
+                            "Previous page",
+                            "icons/chevron_left.svg",
+                            idle && !self.history.is_empty(),
+                        ),
+                        idle && !self.history.is_empty(),
                         cx,
                         |this, _, cx| this.load_page(Step::Previous, cx),
                     ))
-                    .child(self.button(
-                        "mysql-next",
-                        "Next",
-                        None,
-                        connected && !running && self.next_offset.is_some(),
+                    .child(ui::range_status(
+                        "mysql-range",
+                        self.has_result.then_some((self.offset, self.rows)),
+                    ))
+                    .child(Self::bind(
+                        ui::icon_button(
+                            "mysql-next",
+                            "Next page",
+                            "icons/chevron_right.svg",
+                            idle && self.next_offset.is_some(),
+                        ),
+                        idle && self.next_offset.is_some(),
                         cx,
                         |this, _, cx| this.load_page(Step::Next, cx),
                     ))
-                    .child(ui::grow())
-                    .child(self.button(
-                        "mysql-open-structure",
-                        "Structure",
-                        Some("icons/list_tree.svg"),
-                        true,
+                    .child(Self::bind(
+                        ui::icon_button("mysql-refresh", "Refresh", "icons/rotate_cw.svg", idle),
+                        idle,
                         cx,
-                        move |_, _, cx| cx.emit(DocEvent::Structure(object.clone())),
+                        |this, _, cx| this.load_page(Step::Reload, cx),
                     ));
             }
             DocKind::Structure(object) => {
-                bar = bar
-                    .children(self.crumbs())
+                bar = ui::toolbar_strip()
+                    .child(self.switch(object, cx))
                     .child(ui::separator())
-                    .child(self.button(
-                        "mysql-refresh",
-                        "Refresh",
-                        Some("icons/rotate_cw.svg"),
+                    .children(self.crumbs())
+                    .child(ui::grow())
+                    .child(Self::bind(
+                        ui::icon_button(
+                            "mysql-refresh",
+                            "Refresh",
+                            "icons/rotate_cw.svg",
+                            connected,
+                        ),
                         connected,
                         cx,
                         |this, _, cx| this.load_details(true, cx),
-                    ))
-                    .child(ui::grow())
-                    .child(self.button(
-                        "mysql-open-data",
-                        "Data",
-                        Some("icons/table.svg"),
-                        true,
-                        cx,
-                        move |_, _, cx| cx.emit(DocEvent::Data(object.clone())),
                     ));
             }
             DocKind::Definition(_) => {
@@ -693,7 +731,7 @@ impl MySqlDocument {
                         cx,
                         move |_, _, cx| {
                             if let Some(text) = &text {
-                                cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+                                cx.write_to_clipboard(ClipboardItem::new_string(text.to_string()));
                             }
                         },
                     ));
@@ -797,24 +835,34 @@ impl MySqlDocument {
     }
 
     fn details(&self) -> impl IntoElement + use<> {
-        let mut body = div()
+        let body = div()
             .id("mysql-details")
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .p(px(10.))
             .flex()
-            .flex_col()
-            .gap(px(10.));
+            .flex_col();
         if matches!(self.kind, DocKind::Structure(_)) {
-            body = match &self.structure {
-                Load::Ready(structure) => body.children(structure_sections(structure)),
+            let structure = match &self.structure {
+                Load::Ready(tables) => structure_table::sections(
+                    "mysql-structure",
+                    "Table structure, read only",
+                    tables,
+                ),
                 Load::Failed(error) => {
-                    body.child(ui::error_banner("mysql-structure-error", error.clone()))
+                    inset(ui::error_banner("mysql-structure-error", error.clone()))
                 }
-                Load::Loading => body.child(note("Loading structure…")),
-                Load::Idle => body.child(note("Connect to load the structure")),
+                Load::Loading => inset(note("Loading structure…")),
+                Load::Idle => inset(note("Connect to load the structure")),
             };
+            let definition = match &self.definition {
+                Load::Ready(text) => {
+                    structure_table::definition("mysql-definition", "Definition", text.clone())
+                        .into_any_element()
+                }
+                _ => inset(self.definition_state()),
+            };
+            return body.child(structure).child(definition);
         }
         let definition = match &self.definition {
             Load::Ready(text) => div()
@@ -827,148 +875,167 @@ impl MySqlDocument {
                 .whitespace_normal()
                 .child(text.clone())
                 .into_any_element(),
+            _ => self.definition_state(),
+        };
+        body.p(px(10.))
+            .gap(px(10.))
+            .child(ui::section_label("Definition"))
+            .child(definition)
+    }
+
+    /// The definition while it is not ready.
+    fn definition_state(&self) -> gpui::AnyElement {
+        match &self.definition {
             Load::Failed(error) => {
                 ui::error_banner("mysql-definition-error", error.clone()).into_any_element()
             }
             Load::Loading => note("Loading definition…").into_any_element(),
-            Load::Idle => note("Connect to load the definition").into_any_element(),
-        };
-        body.child(ui::section_label("Definition"))
-            .child(definition)
+            Load::Idle | Load::Ready(_) => {
+                note("Connect to load the definition").into_any_element()
+            }
+        }
     }
+}
+
+/// A Structure page state, inset like the section tables.
+fn inset(child: impl IntoElement) -> gpui::AnyElement {
+    div()
+        .px(px(structure_table::INSET))
+        .py(px(8.))
+        .child(child)
+        .into_any_element()
 }
 
 fn note(text: &'static str) -> impl IntoElement {
     div().text_color(style::faint()).child(text)
 }
 
-fn structure_sections(structure: &MySqlStructure) -> Vec<gpui::AnyElement> {
-    let mut sections = Vec::new();
-    let table = |rows: Vec<Vec<String>>| {
-        div()
-            .flex()
-            .flex_col()
-            .rounded(px(5.))
-            .border_1()
-            .border_color(style::line_soft())
-            .children(rows.into_iter().enumerate().map(|(index, cells)| {
-                div()
-                    .h(px(style::ROW))
-                    .px(px(8.))
-                    .flex()
-                    .items_center()
-                    .gap(px(12.))
-                    .font_family(style::MONO)
-                    .when(index > 0, |row| {
-                        row.border_t_1().border_color(style::line_soft())
-                    })
-                    .when(index == 0, |row| row.text_color(style::faint()))
-                    .children(cells.into_iter().enumerate().map(|(column, cell)| {
-                        div()
-                            .when(column == 0, |cell| {
-                                cell.w(px(180.)).text_color(style::text())
-                            })
-                            .when(column > 0, |cell| cell.flex_1())
-                            .min_w_0()
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .whitespace_nowrap()
-                            .child(cell)
-                    }))
-            }))
-    };
-    sections
-        .push(ui::section_label(format!("Columns {}", structure.columns.len())).into_any_element());
-    let mut rows = vec![vec![
-        "name".into(),
-        "type".into(),
-        "null".into(),
-        "default".into(),
-        "key".into(),
-    ]];
-    rows.extend(structure.columns.iter().map(|column| {
-        vec![
-            column.name.clone(),
-            column.data_type.clone(),
-            if column.nullable { "yes" } else { "no" }.into(),
-            column.default_value.clone().unwrap_or_default(),
-            [
-                column.primary_key.then_some("primary"),
-                column.generated.as_deref(),
-            ]
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>()
-            .join(" "),
-        ]
-    }));
-    sections.push(table(rows).into_any_element());
-    if !structure.indexes.is_empty() {
-        sections.push(
-            ui::section_label(format!("Indexes {}", structure.indexes.len())).into_any_element(),
-        );
-        let mut rows = vec![vec!["name".into(), "columns".into(), "kind".into()]];
-        rows.extend(structure.indexes.iter().map(|index| {
+const INDEXES: &[ColumnSpec] = &[
+    fill("Name", 160.),
+    mono(fill("Columns", 160.)),
+    fixed("Method", 80.),
+    fixed("Attributes", 180.),
+];
+const FOREIGN_KEYS: &[ColumnSpec] = &[
+    fill("Name", 160.),
+    mono(fill("Columns", 120.)),
+    mono(fill("References", 180.)),
+    fixed("On update", 100.),
+    fixed("On delete", 100.),
+];
+const CONSTRAINTS: &[ColumnSpec] = &[
+    fill("Name", 160.),
+    fixed("Kind", 100.),
+    mono(fill("Definition", 220.)),
+];
+
+/// The Structure page's section tables, in the PostgreSQL page's order.
+pub fn structure_tables(structure: &MySqlStructure) -> Vec<SectionTable> {
+    let composite = structure.primary_key.len() > 1;
+    let columns = structure
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| {
+            let key = structure
+                .primary_key
+                .iter()
+                .position(|name| *name == column.name)
+                .map(|position| key_tag(position + 1, composite))
+                .or_else(|| column.primary_key.then(|| key_tag(1, false)));
+            let foreign = structure
+                .foreign_keys
+                .iter()
+                .any(|key| key.columns.contains(&column.name));
+            let unique = structure.indexes.iter().any(|index| {
+                index.unique && !index.primary && index.columns == [column.name.as_str()]
+            });
             vec![
-                index.name.clone(),
-                index.columns.join(", "),
-                [
-                    if index.primary {
-                        "primary"
-                    } else if index.unique {
-                        "unique"
-                    } else {
-                        "index"
-                    },
-                    index.method.as_deref().unwrap_or_default(),
-                ]
-                .join(" "),
+                ordinal(index),
+                text(clip(&column.name)),
+                text(clip(&column.data_type)),
+                optional(&column.default_value),
+                nullable(column.nullable),
+                tags([
+                    key,
+                    foreign.then(|| tag("FK", Tone::Key)),
+                    unique.then(|| tag("unique", Tone::Key)),
+                    column.generated.as_ref().map(|kind| {
+                        tag(&format!("generated {}", kind.to_lowercase()), Tone::Plain)
+                    }),
+                ]),
             ]
-        }));
-        sections.push(table(rows).into_any_element());
-    }
-    if !structure.foreign_keys.is_empty() {
-        sections.push(
-            ui::section_label(format!("Foreign keys {}", structure.foreign_keys.len()))
-                .into_any_element(),
-        );
-        let mut rows = vec![vec!["name".into(), "columns".into(), "references".into()]];
-        rows.extend(structure.foreign_keys.iter().map(|key| {
+        })
+        .collect();
+    let indexes = structure
+        .indexes
+        .iter()
+        .map(|index| {
             vec![
-                key.name.clone(),
-                key.columns.join(", "),
-                format!(
-                    "{}.{} ({}){}{}",
+                text(clip(&index.name)),
+                text(clip(&index.columns.join(", "))),
+                index
+                    .method
+                    .as_deref()
+                    .map_or_else(|| faint("—"), |method| text(clip(method))),
+                tags([
+                    index.primary.then(|| tag("primary", Tone::Key)),
+                    (index.unique && !index.primary).then(|| tag("unique", Tone::Key)),
+                ]),
+            ]
+        })
+        .collect();
+    let foreign_keys = structure
+        .foreign_keys
+        .iter()
+        .map(|key| {
+            vec![
+                text(clip(&key.name)),
+                text(clip(&key.columns.join(", "))),
+                text(clip(&format!(
+                    "{}.{} ({})",
                     key.referenced_schema,
                     key.referenced_table,
-                    key.referenced_columns.join(", "),
-                    key.on_update
-                        .as_ref()
-                        .map(|rule| format!(" on update {rule}"))
-                        .unwrap_or_default(),
-                    key.on_delete
-                        .as_ref()
-                        .map(|rule| format!(" on delete {rule}"))
-                        .unwrap_or_default()
-                ),
+                    key.referenced_columns.join(", ")
+                ))),
+                rule(key.on_update.as_deref()),
+                rule(key.on_delete.as_deref()),
             ]
-        }));
-        sections.push(table(rows).into_any_element());
-    }
-    if !structure.constraints.is_empty() {
-        sections.push(
-            ui::section_label(format!("Checks {}", structure.constraints.len())).into_any_element(),
-        );
-        let mut rows = vec![vec!["name".into(), "definition".into()]];
-        rows.extend(
-            structure
-                .constraints
-                .iter()
-                .map(|check| vec![check.name.clone(), check.definition.clone()]),
-        );
-        sections.push(table(rows).into_any_element());
-    }
-    sections
+        })
+        .collect();
+    let constraints = structure
+        .constraints
+        .iter()
+        .map(|constraint| {
+            vec![
+                text(clip(&constraint.name)),
+                text(clip(&constraint.kind)),
+                text(clip(&constraint.definition)),
+            ]
+        })
+        .collect();
+    vec![
+        SectionTable::new("Columns", KEYED_COLUMNS, columns, "No columns"),
+        SectionTable::new("Indexes", INDEXES, indexes, "No indexes"),
+        SectionTable::new(
+            "Foreign keys",
+            FOREIGN_KEYS,
+            foreign_keys,
+            "No foreign keys",
+        ),
+        SectionTable::new(
+            "Constraints",
+            CONSTRAINTS,
+            constraints,
+            "No check constraints",
+        ),
+    ]
+}
+
+/// MySQL's default (`NO ACTION`, `RESTRICT` or unreported) is faint.
+fn rule(rule: Option<&str>) -> Shown {
+    let rule = rule.unwrap_or("NO ACTION");
+    referential(rule, matches!(rule, "NO ACTION" | "RESTRICT"))
 }
 
 /// The grid's event stream for one finished result.
@@ -1279,6 +1346,58 @@ mod tests {
         let mut empty = result(&["a"], 0);
         empty.has_more = true;
         assert_eq!(next_offset(0, &empty), None);
+    }
+
+    #[test]
+    fn structure_tables_tag_keys_and_keep_one_cell_per_column() {
+        use dbunk_lib::backend::mysql_sessions::{MySqlColumn, MySqlForeignKey, MySqlIndex};
+        let column = |name: &str, primary_key: bool| MySqlColumn {
+            name: name.into(),
+            data_type: "int".into(),
+            nullable: !primary_key,
+            default_value: None,
+            primary_key,
+            generated: None,
+        };
+        let mut generated = column("total", false);
+        generated.generated = Some("STORED".into());
+        generated.default_value = Some(String::new());
+        let structure = MySqlStructure {
+            columns: vec![column("org", true), column("id", true), generated],
+            primary_key: vec!["org".into(), "id".into()],
+            indexes: vec![MySqlIndex {
+                name: "total_key".into(),
+                columns: vec!["total".into()],
+                unique: true,
+                primary: false,
+                method: Some("BTREE".into()),
+            }],
+            foreign_keys: vec![MySqlForeignKey {
+                name: "org_fk".into(),
+                columns: vec!["org".into()],
+                referenced_schema: "app".into(),
+                referenced_table: "orgs".into(),
+                referenced_columns: vec!["id".into()],
+                on_update: Some("RESTRICT".into()),
+                on_delete: Some("CASCADE".into()),
+            }],
+            constraints: Vec::new(),
+        };
+        let tables = structure_tables(&structure);
+        let keys = |row: usize| match &tables[0].rows()[row][5] {
+            Shown::Tags(tags) => tags.iter().map(|t| t.text.clone()).collect::<Vec<_>>(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(keys(0), ["PK 1", "FK"]);
+        assert_eq!(keys(1), ["PK 2"]);
+        assert_eq!(keys(2), ["unique", "generated stored"]);
+        assert_eq!(tables[0].rows()[2][3], Shown::Faint("''".into()));
+        assert_eq!(tables[0].rows()[0][4], Shown::Text("NOT NULL".into()));
+        let fk = &tables[2].rows()[0];
+        assert_eq!(fk[2], Shown::Text("app.orgs (id)".into()));
+        assert_eq!(fk[3], Shown::Faint("RESTRICT".into()));
+        assert_eq!(fk[4], Shown::Text("CASCADE".into()));
+        assert!(tables[3].rows().is_empty());
     }
 
     #[test]

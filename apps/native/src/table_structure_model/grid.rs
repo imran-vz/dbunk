@@ -3,58 +3,10 @@
 //! complete rendering of the same row.
 use super::*;
 
-/// Display cells keep at most this many characters before an ellipsis.
-pub const CELL_CHARS: usize = 160;
-
-/// One column of a section table. `fill` columns share the spare width and
-/// never shrink below `width`; the others are exactly `width` pixels.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ColumnSpec {
-    pub title: &'static str,
-    pub width: f32,
-    pub fill: bool,
-    pub mono: bool,
-}
-const fn fixed(title: &'static str, width: f32) -> ColumnSpec {
-    ColumnSpec {
-        title,
-        width,
-        fill: false,
-        mono: false,
-    }
-}
-const fn fill(title: &'static str, width: f32) -> ColumnSpec {
-    ColumnSpec {
-        title,
-        width,
-        fill: true,
-        mono: false,
-    }
-}
-const fn mono(spec: ColumnSpec) -> ColumnSpec {
-    ColumnSpec { mono: true, ..spec }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Tone {
-    /// Keys and identity: primary key, unique, foreign key.
-    Key,
-    Plain,
-    /// States that need attention: invalid, disabled, not validated.
-    Warn,
-}
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Tag {
-    pub text: String,
-    pub tone: Tone,
-}
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Shown {
-    Text(String),
-    /// Absent, default or otherwise low-signal values.
-    Faint(String),
-    Tags(Vec<Tag>),
-}
+use crate::structure_table::{
+    CELL_CHARS, ColumnSpec, Shown, Tag, Tone, clip, clip_chars, faint, fill, fixed, mono, optional,
+    tag, text, yes_no,
+};
 
 impl Section {
     /// Column layout of this section's table.
@@ -438,32 +390,6 @@ fn column_tags(d: &TableStructureSnapshot, c: &StructureColumn) -> Vec<Tag> {
     tags
 }
 
-/// One line, at most `CELL_CHARS` characters. Line breaks and tabs collapse
-/// to single spaces; other control characters show as U+FFFD.
-pub fn clip(value: &str) -> String {
-    clip_chars(value.chars(), value.len())
-}
-/// `clip` over a lazy sequence, so a prefixed value is never copied whole.
-fn clip_chars(value: impl Iterator<Item = char>, len: usize) -> String {
-    let mut out = String::with_capacity(len.min(CELL_CHARS * 4));
-    let mut chars = 0;
-    for c in value {
-        if chars == CELL_CHARS {
-            out.push('…');
-            break;
-        }
-        if matches!(c, '\n' | '\r' | '\t') {
-            if !out.ends_with(' ') {
-                out.push(' ');
-                chars += 1;
-            }
-            continue;
-        }
-        out.push(if c.is_control() { '\u{FFFD}' } else { c });
-        chars += 1;
-    }
-    out
-}
 /// Comma-joined, copying at most `NAMES_BYTES`: enough for `clip` to fill
 /// and mark a full cell without copying a whole oversized expression. A cut
 /// list ends in `…` itself, since `clip` may collapse it below a full cell.
@@ -486,39 +412,11 @@ fn names<'a>(items: impl Iterator<Item = &'a str>) -> String {
 /// Past `CELL_CHARS` characters even when every character is 4 bytes, so a
 /// cut list still reaches `clip`'s ellipsis.
 const NAMES_BYTES: usize = (CELL_CHARS + 1) * 4;
-fn text(value: String) -> Shown {
-    Shown::Text(value)
-}
-fn faint(value: &str) -> Shown {
-    Shown::Faint(value.to_owned())
-}
-fn optional(value: &Option<String>) -> Shown {
-    match value {
-        Some(value) if value.is_empty() => faint("''"),
-        Some(value) => text(clip(value)),
-        None => faint("—"),
-    }
-}
-fn yes_no(value: bool) -> Shown {
-    if value {
-        text("yes".into())
-    } else {
-        faint("no")
-    }
-}
-fn tag(text: &str, tone: Tone) -> Tag {
-    Tag {
-        text: text.to_owned(),
-        tone,
-    }
-}
 fn referential(value: StructureReferentialAction) -> Shown {
-    let label = action(value).to_owned();
-    if value == StructureReferentialAction::NoAction {
-        Shown::Faint(label)
-    } else {
-        Shown::Text(label)
-    }
+    crate::structure_table::referential(
+        action(value),
+        value == StructureReferentialAction::NoAction,
+    )
 }
 fn rule_state(value: StructureTriggerEnabled) -> Shown {
     match value {
@@ -714,16 +612,10 @@ mod tests {
         assert!(cell.starts_with("BY RANGE (kkk"));
         assert_eq!(cell.chars().count(), CELL_CHARS + 1);
         assert!(cell.ends_with('…'));
-        assert!(cell.capacity() <= CELL_CHARS * 4);
-    }
-
-    #[test]
-    fn cells_stay_on_one_bounded_line() {
-        assert_eq!(clip("a\r\n\tb"), "a b");
-        assert_eq!(clip("x\u{7}y"), "x\u{FFFD}y");
-        let long = clip(&"é".repeat(CELL_CHARS * 3));
-        assert_eq!(long.chars().count(), CELL_CHARS + 1);
-        assert!(long.ends_with('…'));
-        assert_eq!(clip(&"z".repeat(CELL_CHARS)), "z".repeat(CELL_CHARS));
+        let key = "k".repeat(512 * 1024);
+        assert!(
+            clip_chars("BY ".chars().chain(key.chars()), 3 + key.len()).capacity()
+                <= CELL_CHARS * 4
+        );
     }
 }

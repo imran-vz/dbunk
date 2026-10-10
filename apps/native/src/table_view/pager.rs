@@ -4,7 +4,11 @@
 #[cfg(test)]
 use super::menus::LegacyAction;
 use super::{Action, TableView, menus::Popover};
-use crate::{accessible_editor::AccessibleEditor, browse_preferences::PAGE_SIZES};
+use crate::{
+    accessible_editor::AccessibleEditor,
+    browse_preferences::PAGE_SIZES,
+    ui::{grouped, offset_range_label},
+};
 use editor::Editor;
 use gpui::{AnyElement, Context, Focusable, Role, SharedString, Window, div, prelude::*, px};
 
@@ -38,26 +42,9 @@ impl PagerItem {
     }
 }
 
-/// Thousands separators: `18204` → `18,204`.
-pub(super) fn grouped(value: u64) -> String {
-    let digits = value.to_string();
-    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
-    for (index, digit) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(digit);
-    }
-    out
-}
-
 /// The clickable range: `1–100`, or `No rows`.
 pub(super) fn range_label(page: u32, page_size: u32, rows: usize) -> String {
-    if rows == 0 {
-        return "No rows".to_owned();
-    }
-    let start = u64::from(page.max(1) - 1) * u64::from(page_size) + 1;
-    format!("{}–{}", grouped(start), grouped(start + rows as u64 - 1))
+    offset_range_label(u64::from(page.max(1) - 1) * u64::from(page_size), rows)
 }
 
 /// The clickable total: `~18,204` when estimated, `18,204` when exact.
@@ -358,13 +345,6 @@ mod tests {
         assert_eq!(page_range_label(1, 100, 0, None), "No rows");
         assert_eq!(page_range_label(1, 100, 0, Some((0, false))), "No rows");
         assert_eq!(page_range_label(201, 1000, 1000, None), "200,001–201,000");
-    }
-
-    #[test]
-    fn grouped_inserts_thousands_separators() {
-        assert_eq!(grouped(1_000_000), "1,000,000");
-        assert_eq!(grouped(999), "999");
-        assert_eq!(grouped(0), "0");
     }
 
     #[test]
