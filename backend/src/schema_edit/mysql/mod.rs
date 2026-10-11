@@ -65,4 +65,6 @@ pub(crate) async fn execute(
 #[cfg(test)]
 mod capture_tests;
 #[cfg(test)]
+mod live_tests;
+#[cfg(test)]
 mod planner_tests;
