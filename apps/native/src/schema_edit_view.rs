@@ -182,7 +182,10 @@ impl SchemaEditView {
     /// A draft, an attempt or a request is outstanding.
     pub fn has_changes(&self) -> bool {
         self.recovery.record().is_some()
-            || self.model.as_ref().is_some_and(SchemaEditModel::has_changes)
+            || self
+                .model
+                .as_ref()
+                .is_some_and(SchemaEditModel::has_changes)
             || self.has_pending()
     }
 
@@ -259,7 +262,8 @@ impl SchemaEditView {
             }
         }
         if self.model.is_some() {
-            self.message = "Disconnected. The draft is kept; reconnect and reload to review.".into();
+            self.message =
+                "Disconnected. The draft is kept; reconnect and reload to review.".into();
         }
         self.publish(cx);
         if dispatched {
@@ -336,9 +340,7 @@ impl SchemaEditView {
                     .spawn(async move { runtime::call(&backend, source, call).await });
                 self.tasks.retain(|task| !task.is_ready());
                 self.tasks.push(cx.spawn(async move |this, cx| {
-                    let reply = task
-                        .await
-                        .unwrap_or_else(|_| SchemaEditCall::lost(writes));
+                    let reply = task.await.unwrap_or_else(|_| SchemaEditCall::lost(writes));
                     this.update(cx, |this, cx| this.receive(id, reply, cx)).ok();
                 }));
                 Ok(())
@@ -404,7 +406,9 @@ impl SchemaEditView {
             Some(model) => {
                 let had_changes = model.has_changes();
                 if !model.rebase(baseline) && had_changes {
-                    note = Some("The table changed on the server; the draft restarted from the new structure");
+                    note = Some(
+                        "The table changed on the server; the draft restarted from the new structure",
+                    );
                 }
             }
             None => {
@@ -415,7 +419,9 @@ impl SchemaEditView {
                     }
                     None => {
                         if self.recovery.record().is_some() && !self.recovery.unknown() {
-                            note = Some("The table changed since the draft was saved; the draft was not restored");
+                            note = Some(
+                                "The table changed since the draft was saved; the draft was not restored",
+                            );
                         }
                         SchemaEditModel::new(self.request.clone(), baseline)
                     }
@@ -424,7 +430,11 @@ impl SchemaEditView {
             }
         }
         self.target = editable.then_some(target);
-        if !self.model.as_ref().is_some_and(|m| m.in_draft(self.selected)) {
+        if !self
+            .model
+            .as_ref()
+            .is_some_and(|m| m.in_draft(self.selected))
+        {
             self.selected = Target::Table;
         }
         self.inputs_stale = true;
@@ -434,7 +444,8 @@ impl SchemaEditView {
         } else if !editable {
             "This table cannot be edited here".into()
         } else {
-            note.unwrap_or("Edit the draft, then review the exact SQL").into()
+            note.unwrap_or("Edit the draft, then review the exact SQL")
+                .into()
         };
     }
 
@@ -519,8 +530,14 @@ impl SchemaEditView {
             let text = model.input_value(target, input);
             let enabled = editable && model.input_enabled(target, input);
             let field = cx.new(|cx| {
-                let mut field =
-                    TextField::new(input.label(), INPUT_BYTES, input.multiline(), text, window, cx);
+                let mut field = TextField::new(
+                    input.label(),
+                    INPUT_BYTES,
+                    input.multiline(),
+                    text,
+                    window,
+                    cx,
+                );
                 field.set_readonly(!enabled, cx);
                 field
             });

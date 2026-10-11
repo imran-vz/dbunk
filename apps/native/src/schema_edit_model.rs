@@ -160,7 +160,9 @@ impl Capabilities {
     pub fn identities(&self) -> &'static [Identity] {
         match self.engine {
             SchemaEngine::Postgres => &[Identity::None, Identity::Always, Identity::ByDefault],
-            SchemaEngine::MySql | SchemaEngine::Sqlite => &[Identity::None, Identity::AutoIncrement],
+            SchemaEngine::MySql | SchemaEngine::Sqlite => {
+                &[Identity::None, Identity::AutoIncrement]
+            }
         }
     }
     pub fn default_type(&self) -> &'static str {
@@ -373,7 +375,11 @@ impl SchemaEditModel {
     }
 
     /// A journaled draft edited against this exact baseline.
-    pub fn restore(request: SchemaEditRequest, baseline: SchemaBaseline, draft: SchemaDraft) -> Self {
+    pub fn restore(
+        request: SchemaEditRequest,
+        baseline: SchemaBaseline,
+        draft: SchemaDraft,
+    ) -> Self {
         let caps = Capabilities::of(&baseline);
         let mut model = Self {
             request,
@@ -505,22 +511,39 @@ impl SchemaEditModel {
             ChangeGroup::Table => out.push(Target::Table),
             ChangeGroup::Columns => {
                 out.extend(new.columns.iter().map(|c| Target::Column(c.origin)));
-                out.extend(removed(&old.columns, &new.columns, |c| c.origin, Target::Column));
+                out.extend(removed(
+                    &old.columns,
+                    &new.columns,
+                    |c| c.origin,
+                    Target::Column,
+                ));
             }
             ChangeGroup::Keys => {
                 if let Some(key) = &new.primary_key {
                     out.push(Target::PrimaryKey(key.origin));
                 }
                 if let Some(key) = &old.primary_key
-                    && new.primary_key.as_ref().is_none_or(|k| k.origin != key.origin)
+                    && new
+                        .primary_key
+                        .as_ref()
+                        .is_none_or(|k| k.origin != key.origin)
                 {
                     out.push(Target::PrimaryKey(key.origin));
                 }
                 out.extend(new.uniques.iter().map(|k| Target::Unique(k.origin)));
-                out.extend(removed(&old.uniques, &new.uniques, |k| k.origin, Target::Unique));
+                out.extend(removed(
+                    &old.uniques,
+                    &new.uniques,
+                    |k| k.origin,
+                    Target::Unique,
+                ));
             }
             ChangeGroup::ForeignKeys => {
-                out.extend(new.foreign_keys.iter().map(|k| Target::ForeignKey(k.origin)));
+                out.extend(
+                    new.foreign_keys
+                        .iter()
+                        .map(|k| Target::ForeignKey(k.origin)),
+                );
                 out.extend(removed(
                     &old.foreign_keys,
                     &new.foreign_keys,
@@ -530,11 +553,21 @@ impl SchemaEditModel {
             }
             ChangeGroup::Checks => {
                 out.extend(new.checks.iter().map(|c| Target::Check(c.origin)));
-                out.extend(removed(&old.checks, &new.checks, |c| c.origin, Target::Check));
+                out.extend(removed(
+                    &old.checks,
+                    &new.checks,
+                    |c| c.origin,
+                    Target::Check,
+                ));
             }
             ChangeGroup::Indexes => {
                 out.extend(new.indexes.iter().map(|i| Target::Index(i.origin)));
-                out.extend(removed(&old.indexes, &new.indexes, |i| i.origin, Target::Index));
+                out.extend(removed(
+                    &old.indexes,
+                    &new.indexes,
+                    |i| i.origin,
+                    Target::Index,
+                ));
             }
         }
         out
@@ -743,11 +776,21 @@ impl SchemaEditModel {
                     inputs.push(Input::Comment);
                 }
                 if caps.mysql_options {
-                    inputs.extend([Input::Engine, Input::Charset, Input::Collation, Input::RowFormat]);
+                    inputs.extend([
+                        Input::Engine,
+                        Input::Charset,
+                        Input::Collation,
+                        Input::RowFormat,
+                    ]);
                 }
             }
             Target::Column(_) => {
-                inputs.extend([Input::DataType, Input::Default, Input::Generated, Input::Collation]);
+                inputs.extend([
+                    Input::DataType,
+                    Input::Default,
+                    Input::Generated,
+                    Input::Collation,
+                ]);
                 if caps.charset {
                     inputs.push(Input::Charset);
                 }
@@ -902,7 +945,11 @@ impl SchemaEditModel {
     /// was and returns the reason for the inline error.
     pub fn set_input(&mut self, target: Target, input: Input, text: &str) -> Result<bool, String> {
         if text.len() > INPUT_BYTES {
-            return Err(format!("{} is longer than {} KiB", input.label(), INPUT_BYTES / 1024));
+            return Err(format!(
+                "{} is longer than {} KiB",
+                input.label(),
+                INPUT_BYTES / 1024
+            ));
         }
         if !self.in_draft(target) {
             return Err("Restore this object before editing it".into());
@@ -995,7 +1042,9 @@ impl SchemaEditModel {
                     Input::ReferencedSchema => {
                         key.referenced_schema = optional(text).map(|s| unquote(&s).to_owned())
                     }
-                    Input::ReferencedTable => key.referenced_table = unquote(text.trim()).to_owned(),
+                    Input::ReferencedTable => {
+                        key.referenced_table = unquote(text.trim()).to_owned()
+                    }
                     Input::ReferencedColumns => {
                         key.referenced_columns = split_list(text)
                             .iter()
@@ -1315,12 +1364,19 @@ impl SchemaEditModel {
                 self.draft.move_column(o, position);
             }
             Target::PrimaryKey(_) => self.draft.table.primary_key = old.primary_key,
-            Target::Unique(o) => replace(&mut self.draft.table.uniques, &old.uniques, o, |k| k.origin),
-            Target::ForeignKey(o) => {
-                replace(&mut self.draft.table.foreign_keys, &old.foreign_keys, o, |k| k.origin)
+            Target::Unique(o) => {
+                replace(&mut self.draft.table.uniques, &old.uniques, o, |k| k.origin)
             }
+            Target::ForeignKey(o) => replace(
+                &mut self.draft.table.foreign_keys,
+                &old.foreign_keys,
+                o,
+                |k| k.origin,
+            ),
             Target::Check(o) => replace(&mut self.draft.table.checks, &old.checks, o, |c| c.origin),
-            Target::Index(o) => replace(&mut self.draft.table.indexes, &old.indexes, o, |i| i.origin),
+            Target::Index(o) => {
+                replace(&mut self.draft.table.indexes, &old.indexes, o, |i| i.origin)
+            }
         }
         let changed = self.draft.table != before;
         if changed {
@@ -1352,7 +1408,13 @@ impl SchemaEditModel {
     }
 
     pub fn add_column(&mut self) -> Target {
-        let taken: Vec<String> = self.draft.table.columns.iter().map(|c| c.name.clone()).collect();
+        let taken: Vec<String> = self
+            .draft
+            .table
+            .columns
+            .iter()
+            .map(|c| c.name.clone())
+            .collect();
         let name = self.unique_name("column_", &taken);
         let origin = self.draft.add_column(name, self.caps.default_type());
         self.recompute();
@@ -1376,7 +1438,10 @@ impl SchemaEditModel {
     }
 
     pub fn add_unique(&mut self) -> Target {
-        let name = self.unique_name(&format!("{}_key", self.draft.table.name), &self.constraint_names());
+        let name = self.unique_name(
+            &format!("{}_key", self.draft.table.name),
+            &self.constraint_names(),
+        );
         let origin = self.draft.new_origin();
         self.draft.table.uniques.push(KeyModel {
             origin,
@@ -1388,7 +1453,10 @@ impl SchemaEditModel {
     }
 
     pub fn add_foreign_key(&mut self) -> Target {
-        let name = self.unique_name(&format!("{}_fkey", self.draft.table.name), &self.constraint_names());
+        let name = self.unique_name(
+            &format!("{}_fkey", self.draft.table.name),
+            &self.constraint_names(),
+        );
         let origin = self.draft.new_origin();
         self.draft.table.foreign_keys.push(ForeignKeyModel {
             origin,
@@ -1406,7 +1474,10 @@ impl SchemaEditModel {
     }
 
     pub fn add_check(&mut self) -> Target {
-        let name = self.unique_name(&format!("{}_check", self.draft.table.name), &self.constraint_names());
+        let name = self.unique_name(
+            &format!("{}_check", self.draft.table.name),
+            &self.constraint_names(),
+        );
         let origin = self.draft.new_origin();
         self.draft.table.checks.push(CheckModel {
             origin,
@@ -1419,7 +1490,13 @@ impl SchemaEditModel {
     }
 
     pub fn add_index(&mut self) -> Target {
-        let taken: Vec<String> = self.draft.table.indexes.iter().map(|i| i.name.clone()).collect();
+        let taken: Vec<String> = self
+            .draft
+            .table
+            .indexes
+            .iter()
+            .map(|i| i.name.clone())
+            .collect();
         let name = self.unique_name(&format!("{}_idx", self.draft.table.name), &taken);
         let origin = self.draft.new_origin();
         self.draft.table.indexes.push(IndexModel {
@@ -1500,7 +1577,13 @@ impl SchemaEditModel {
         if !self.caps.reorder {
             return false;
         }
-        let Some(index) = self.draft.table.columns.iter().position(|c| c.origin == origin) else {
+        let Some(index) = self
+            .draft
+            .table
+            .columns
+            .iter()
+            .position(|c| c.origin == origin)
+        else {
             return false;
         };
         let to = if up {
@@ -1521,22 +1604,26 @@ impl SchemaEditModel {
     /// True when `attr` of `target` differs from the baseline (the field's
     /// Undo button is shown).
     pub fn changed(&self, target: Target, attr: Attr) -> bool {
-        self.changes_for(target).any(|change| match (&change.kind, attr) {
-            (ChangeKind::Renamed { .. }, Attr::Name) => true,
-            (ChangeKind::Changed { field, .. }, Attr::Field(wanted)) => *field == wanted,
-            _ => false,
-        })
+        self.changes_for(target)
+            .any(|change| match (&change.kind, attr) {
+                (ChangeKind::Renamed { .. }, Attr::Name) => true,
+                (ChangeKind::Changed { field, .. }, Attr::Field(wanted)) => *field == wanted,
+                _ => false,
+            })
     }
 
     /// The baseline text of a changed attribute, for "was …" hints.
     pub fn before(&self, target: Target, attr: Attr) -> Option<String> {
-        self.changes_for(target).find_map(|change| match (&change.kind, attr) {
-            (ChangeKind::Renamed { from, .. }, Attr::Name) => Some(from.clone()),
-            (ChangeKind::Changed { field, before, .. }, Attr::Field(wanted)) if *field == wanted => {
-                Some(before.clone())
-            }
-            _ => None,
-        })
+        self.changes_for(target)
+            .find_map(|change| match (&change.kind, attr) {
+                (ChangeKind::Renamed { from, .. }, Attr::Name) => Some(from.clone()),
+                (ChangeKind::Changed { field, before, .. }, Attr::Field(wanted))
+                    if *field == wanted =>
+                {
+                    Some(before.clone())
+                }
+                _ => None,
+            })
     }
 }
 

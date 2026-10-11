@@ -19,11 +19,11 @@ use crate::{
 };
 use dbunk_lib::backend::QueryEvent;
 use dbunk_lib::backend::StatementClassSummary;
-use dbunk_lib::backend::schema_edit::{SchemaEditRequest, SchemaEditSource};
 use dbunk_lib::backend::mysql_sessions::{
     MYSQL_MAX_PAGE_ROWS, MySqlCancel, MySqlRequestId, MySqlResult, MySqlSession, MySqlSessionError,
     MySqlStructure,
 };
+use dbunk_lib::backend::schema_edit::{SchemaEditRequest, SchemaEditSource};
 use editor::Editor;
 use gpui::{
     ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable, Role, SharedString,

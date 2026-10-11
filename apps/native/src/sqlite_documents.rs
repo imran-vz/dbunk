@@ -844,9 +844,8 @@ impl SqliteStructureView {
                     cx,
                 )
             });
-            self._schema_edit_events = Some(cx.subscribe(
-                &view,
-                |this, _, event: &SchemaEditEvent, cx| {
+            self._schema_edit_events =
+                Some(cx.subscribe(&view, |this, _, event: &SchemaEditEvent, cx| {
                     match event {
                         SchemaEditEvent::Close => this.editing = false,
                         SchemaEditEvent::StructureChanged => {
@@ -856,8 +855,7 @@ impl SqliteStructureView {
                         _ => {}
                     }
                     cx.notify();
-                },
-            ));
+                }));
             self.schema_edit = Some(view);
         }
         self.editing = true;
