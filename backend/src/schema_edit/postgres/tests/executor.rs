@@ -344,7 +344,7 @@ async fn concurrent_builds_run_after_commit_and_report_the_committed_prefix() {
         SchemaEditOutcome::Stopped {
             committed: 1,
             failed_statement: 1,
-            reason: failure,
+            reason: failure.clone(),
         }
     );
 
