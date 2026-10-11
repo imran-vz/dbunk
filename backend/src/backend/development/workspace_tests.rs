@@ -95,7 +95,7 @@ async fn schema_map_tab_round_trips_only_identity_and_old_workspaces_remain_read
     save(&pool, None, input.clone()).await.unwrap();
     let encoded = raw(&pool).await;
     let mut value: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(value["version"], 16);
+    assert_eq!(value["version"], 17);
     assert_eq!(load(&pool).await.unwrap().snapshot, Some(input));
     assert_eq!(raw(&pool).await, encoded);
     for version in 1..=11 {
@@ -127,7 +127,7 @@ async fn shell_state_round_trips_and_pre_v16_records_load_with_defaults() {
     save(&pool, None, input.clone()).await.unwrap();
     let encoded = raw(&pool).await;
     let value: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(value["version"], 16);
+    assert_eq!(value["version"], 17);
     assert_eq!(value["snapshot"]["shell"]["environment"], "staging");
     assert_eq!(
         load(&pool).await.unwrap().snapshot,
@@ -518,7 +518,7 @@ async fn v3_table_and_sql_drafts_round_trip_exactly_with_uncertain_outcome_and_c
     input.documents[0].table = Some(table_state());
     let revision = save(&pool, None, input.clone()).await.unwrap();
     let encoded: serde_json::Value = serde_json::from_str(&raw(&pool).await).unwrap();
-    assert_eq!(encoded["version"], 16);
+    assert_eq!(encoded["version"], 17);
     let table = &encoded["snapshot"]["documents"][0]["table"];
     assert_eq!(table["draft"]["applyState"], "outcomeUnknown");
     assert_eq!(
@@ -547,7 +547,7 @@ async fn v3_table_and_sql_drafts_round_trip_exactly_with_uncertain_outcome_and_c
 }
 
 #[tokio::test]
-async fn sql_only_v1_load_is_read_only_and_next_explicit_save_upgrades_to_v16() {
+async fn sql_only_v1_load_is_read_only_and_next_explicit_save_upgrades_to_v17() {
     let pool = pool().await;
     let mut value: serde_json::Value = serde_json::from_str(&encode(snapshot()).unwrap()).unwrap();
     value["version"] = 1.into();
@@ -567,7 +567,7 @@ async fn sql_only_v1_load_is_read_only_and_next_explicit_save_upgrades_to_v16() 
         .unwrap();
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&raw(&pool).await).unwrap()["version"],
-        16
+        17
     );
 }
 
@@ -719,7 +719,7 @@ async fn schema_journal_round_trips_exact_attempt_comment_and_unknown_state_with
         revision = Some(save(&pool, revision, input.clone()).await.unwrap());
         let encoded = raw(&pool).await;
         let json: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-        assert_eq!(json["version"], 16);
+        assert_eq!(json["version"], 17);
         assert_eq!(
             json["snapshot"]["documents"][0]["schemaChanges"]["attemptId"],
             attempt
@@ -858,7 +858,7 @@ async fn backup_restore_tab_persists_only_identity_and_refuses_old_or_extended_r
     let encoded = encode(input.clone()).unwrap();
     assert_eq!(decode(&encoded).unwrap(), input);
     let base: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(base["version"], 16);
+    assert_eq!(base["version"], 17);
     for defect in 0..3 {
         let mut value = base.clone();
         match defect {
@@ -894,7 +894,7 @@ async fn csv_transfer_tab_refuses_persisted_source_samples_or_execution() {
     let encoded = encode(input.clone()).unwrap();
     assert_eq!(decode(&encoded).unwrap(), input);
     let base: serde_json::Value = serde_json::from_str(&encoded).unwrap();
-    assert_eq!(base["version"], 16);
+    assert_eq!(base["version"], 17);
     for defect in 0..4 {
         let mut value = base.clone();
         match defect {
