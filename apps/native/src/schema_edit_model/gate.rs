@@ -192,15 +192,16 @@ pub fn plan_toggles(engine: SchemaEngine, changes: &SchemaChangeSet) -> Vec<Plan
     }
 }
 
-/// Indexes the planner creates: new ones and re-created ones.
+/// New indexes only. The planner refuses `CONCURRENTLY` for an existing
+/// index it re-creates (the drop and create cannot both be concurrent and
+/// atomic), so those are never offered.
 pub fn concurrent_candidates(changes: &SchemaChangeSet) -> Vec<Origin> {
     let mut origins = Vec::new();
     for change in &changes.changes {
-        let creates =
-            change.kind == ChangeKind::Added || change.destructive == Some(Destructive::Recreate);
         if change.object == SchemaObject::Index
-            && creates
+            && change.kind == ChangeKind::Added
             && let Some(origin) = change.origin
+            && origin.is_new()
             && !origins.contains(&origin)
         {
             origins.push(origin);

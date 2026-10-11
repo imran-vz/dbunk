@@ -8,6 +8,7 @@ use dbunk_lib::backend::WorkspaceApplyState;
 use dbunk_lib::backend::schema_edit::{
     SchemaBaseline, SchemaDraft, SchemaEditError, SchemaEditOutcome, SchemaEditReceipt,
     SchemaEditRequest, SchemaEditReview, SchemaEngine, WorkspaceSchemaEdit,
+    WorkspaceSchemaEditAttempt,
 };
 
 /// What a settled receipt means for the editor.
@@ -35,14 +36,24 @@ pub enum DraftSave {
     Blocked,
 }
 
+/// Why Apply refused before dispatch: the PostgreSQL journal must hold the
+/// exact attempt before it is sent, and this one does not fit.
+pub const JOURNAL_REFUSAL: &str = "This change cannot be applied: the workspace recovery journal cannot hold it, and it must be saved before dispatch. Nothing was sent; apply it in smaller steps.";
+
 #[derive(Default)]
 pub struct Recovery {
     record: Option<WorkspaceSchemaEdit>,
+    /// PostgreSQL journals the record with the workspace document; MySQL
+    /// and SQLite keep it in memory only, so no size limit applies.
+    persisted: bool,
 }
 
 impl Recovery {
-    pub fn new(restored: Option<WorkspaceSchemaEdit>) -> Self {
-        Self { record: restored }
+    pub fn new(restored: Option<WorkspaceSchemaEdit>, persisted: bool) -> Self {
+        Self {
+            record: restored,
+            persisted,
+        }
     }
 
     pub fn record(&self) -> Option<&WorkspaceSchemaEdit> {
@@ -109,11 +120,47 @@ impl Recovery {
         if self.unknown() {
             return Err("Reconcile the previous unknown outcome first");
         }
-        let mut record = WorkspaceSchemaEdit::from_review(review)
-            .map_err(|_| "The reviewed change cannot be saved for recovery; nothing was sent")?;
+        self.stage_record(WorkspaceSchemaEdit {
+            engine: review.baseline().engine,
+            request: review.target().request().clone(),
+            baseline: review.baseline().clone(),
+            draft: review.draft().clone(),
+            attempt: Some(WorkspaceSchemaEditAttempt {
+                attempt_id: review.attempt_id().clone(),
+                preview: review.preview().clone(),
+                apply_state: WorkspaceApplyState::Staged,
+            }),
+        })
+    }
+
+    /// Marks a staged attempt record `OutcomeUnknown` and keeps it. Only a
+    /// persisted journal enforces the workspace record limit: an in-memory
+    /// record is never written, so a wide table still applies there.
+    pub(super) fn stage_record(
+        &mut self,
+        mut record: WorkspaceSchemaEdit,
+    ) -> Result<(), &'static str> {
+        if self.unknown() {
+            return Err("Reconcile the previous unknown outcome first");
+        }
+        if self.persisted && record.validate().is_err() {
+            return Err(JOURNAL_REFUSAL);
+        }
         record.mark_unknown();
         self.record = Some(record);
         Ok(())
+    }
+
+    /// MySQL and SQLite: nothing is journaled, so a draft record would only
+    /// cost a copy per edit. Drops a plain draft record; an attempt stays.
+    pub fn forget_draft(&mut self) {
+        if self
+            .record
+            .as_ref()
+            .is_some_and(|record| record.attempt.is_none())
+        {
+            self.record = None;
+        }
     }
 
     pub fn matches_review(&self, review: &SchemaEditReview) -> bool {

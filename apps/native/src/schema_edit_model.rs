@@ -8,9 +8,10 @@ use dbunk_lib::backend::schema_edit::{
     ChangeGroup, ChangeKind, CheckModel, ColumnModel, DefaultValue, Deferrable, Destructive,
     DraftIssue, Editability, Field, ForeignKeyModel, Generated, Identity, IndexModel, KeyModel,
     Origin, RebaseConflict, ReferentialAction, SchemaBaseline, SchemaChange, SchemaChangeSet,
-    SchemaDraft, SchemaEditRequest, SchemaEngine, SchemaObject, SqlFragment, diff,
+    SchemaDraft, SchemaEditRequest, SchemaEngine, SchemaObject, SqlFragment, TableModel, diff,
     rebase as rebase_draft, same_name, validate,
 };
+use std::collections::{HashMap, HashSet};
 
 mod gate;
 mod journal;
@@ -81,6 +82,18 @@ pub enum RowState {
     Removed,
 }
 
+impl RowState {
+    /// The state as the row's accessible text says it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Unchanged => "unchanged",
+            Self::Added => "added",
+            Self::Changed => "changed",
+            Self::Removed => "removed",
+        }
+    }
+}
+
 /// One changed attribute of a row, as display text (never SQL).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Delta {
@@ -101,11 +114,136 @@ pub struct Row {
     /// The first destructive reason among this row's changes.
     pub destructive: Option<Destructive>,
     pub issues: usize,
+    /// The row's accessible text: label, state and every old → new.
+    pub description: String,
 }
 
 impl Row {
     pub fn delta(&self, attr: Attr) -> Option<&Delta> {
         self.deltas.iter().find(|delta| delta.attr == attr)
+    }
+}
+
+/// One line of the draft table in display order: a section title, its
+/// column heads (only when the section has rows), or one of its rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Line {
+    Title(ChangeGroup),
+    Head(ChangeGroup),
+    Row(ChangeGroup, usize),
+}
+
+/// Per-row view data, rebuilt once per edit in `recompute` so rendering a
+/// table of thousands of columns never searches the draft or change set.
+#[derive(Default)]
+struct View {
+    sections: Vec<(ChangeGroup, Vec<Row>)>,
+    /// Section index, row index and line of each row's target.
+    at: HashMap<Target, (usize, usize, usize)>,
+    /// 1-based draft position of each column.
+    positions: HashMap<Origin, usize>,
+    lines: Vec<Line>,
+    review_count: usize,
+}
+
+/// The row a change or issue belongs to.
+fn target_of(object: SchemaObject, origin: Option<Origin>) -> Option<Target> {
+    Some(match (object, origin) {
+        (SchemaObject::Table, None) => Target::Table,
+        (SchemaObject::Table, Some(_)) | (_, None) => return None,
+        (SchemaObject::Column, Some(o)) => Target::Column(o),
+        (SchemaObject::PrimaryKey, Some(o)) => Target::PrimaryKey(o),
+        (SchemaObject::Unique, Some(o)) => Target::Unique(o),
+        (SchemaObject::ForeignKey, Some(o)) => Target::ForeignKey(o),
+        (SchemaObject::Check, Some(o)) => Target::Check(o),
+        (SchemaObject::Index, Some(o)) => Target::Index(o),
+    })
+}
+
+fn key_label(table: &TableModel, key: &KeyModel) -> String {
+    key.name
+        .clone()
+        .unwrap_or_else(|| format!("({})", table.column_names(&key.columns).join(", ")))
+}
+
+fn foreign_key_label(table: &TableModel, key: &ForeignKeyModel) -> String {
+    key.name.clone().unwrap_or_else(|| {
+        format!(
+            "({}) → {}",
+            table.column_names(&key.columns).join(", "),
+            key.referenced_table
+        )
+    })
+}
+
+fn check_label(check: &CheckModel) -> String {
+    check
+        .name
+        .clone()
+        .unwrap_or_else(|| format!("CHECK ({})", check.expression))
+}
+
+/// Baseline objects the draft no longer has, in baseline order.
+fn removed<'a, T>(old: &'a [T], new: &[T], origin: impl Fn(&T) -> Origin) -> Vec<&'a T> {
+    let kept: HashSet<Origin> = new.iter().map(&origin).collect();
+    old.iter()
+        .filter(|item| !kept.contains(&origin(*item)))
+        .collect()
+}
+
+fn make_row<'a>(
+    target: Target,
+    label: String,
+    changes: impl Iterator<Item = &'a SchemaChange>,
+    issues: usize,
+) -> Row {
+    let mut state = RowState::Unchanged;
+    let mut deltas = Vec::new();
+    let mut destructive = None;
+    for change in changes {
+        destructive = destructive.or(change.destructive);
+        match &change.kind {
+            ChangeKind::Added => state = RowState::Added,
+            ChangeKind::Removed => state = RowState::Removed,
+            ChangeKind::Renamed { from, to } => deltas.push(Delta {
+                attr: Attr::Name,
+                before: from.clone(),
+                after: to.clone(),
+                destructive: change.destructive,
+            }),
+            ChangeKind::Changed {
+                field,
+                before,
+                after,
+            } => deltas.push(Delta {
+                attr: Attr::Field(*field),
+                before: before.clone(),
+                after: after.clone(),
+                destructive: change.destructive,
+            }),
+        }
+    }
+    if state == RowState::Unchanged && !deltas.is_empty() {
+        state = RowState::Changed;
+    }
+    let description = if deltas.is_empty() {
+        format!("{label}, {}", state.label())
+    } else {
+        let text = deltas
+            .iter()
+            .map(|delta| format!("{} to {}", delta.before, delta.after))
+            .collect::<Vec<_>>()
+            .join("; ");
+        format!("{label}, {}: {text}", state.label())
+    };
+    Row {
+        target,
+        label,
+        state,
+        deltas,
+        destructive,
+        issues,
+        description,
     }
 }
 
@@ -370,6 +508,7 @@ pub struct SchemaEditModel {
     /// Fields and objects the last re-base found changed on both sides; the
     /// draft's value was kept. Informational: they never block review.
     conflicts: Vec<RebaseConflict>,
+    view: View,
 }
 
 impl SchemaEditModel {
@@ -393,6 +532,7 @@ impl SchemaEditModel {
             changes: SchemaChangeSet::default(),
             issues: Vec::new(),
             conflicts: Vec::new(),
+            view: View::default(),
         };
         model.recompute();
         model
@@ -415,6 +555,136 @@ impl SchemaEditModel {
     fn recompute(&mut self) {
         self.changes = diff(&self.baseline, &self.draft);
         self.issues = validate(&self.baseline, &self.draft);
+        self.view = self.build_view();
+    }
+
+    fn build_view(&self) -> View {
+        let mut changes: HashMap<Target, Vec<&SchemaChange>> = HashMap::new();
+        let mut objects = HashSet::new();
+        for change in &self.changes.changes {
+            objects.insert((change.object, change.origin));
+            if let Some(target) = target_of(change.object, change.origin) {
+                changes.entry(target).or_default().push(change);
+            }
+        }
+        let mut issues: HashMap<Target, usize> = HashMap::new();
+        for issue in &self.issues {
+            if let Some(target) = target_of(issue.object, issue.origin) {
+                *issues.entry(target).or_default() += 1;
+            }
+        }
+        let mut view = View {
+            positions: self
+                .draft
+                .table
+                .columns
+                .iter()
+                .enumerate()
+                .map(|(index, column)| (column.origin, index + 1))
+                .collect(),
+            review_count: objects.len(),
+            ..View::default()
+        };
+        for group in ChangeGroup::ALL {
+            let section = view.sections.len();
+            let rows: Vec<Row> = self
+                .labeled(group)
+                .into_iter()
+                .map(|(target, label)| {
+                    make_row(
+                        target,
+                        label,
+                        changes.get(&target).into_iter().flatten().copied(),
+                        issues.get(&target).copied().unwrap_or(0),
+                    )
+                })
+                .collect();
+            view.lines.push(Line::Title(group));
+            if !rows.is_empty() {
+                view.lines.push(Line::Head(group));
+            }
+            for (index, row) in rows.iter().enumerate() {
+                view.at
+                    .insert(row.target, (section, index, view.lines.len()));
+                view.lines.push(Line::Row(group, index));
+            }
+            view.sections.push((group, rows));
+        }
+        view
+    }
+
+    /// The targets of one section with their labels, in display order:
+    /// draft objects first, then the baseline objects the draft removed.
+    fn labeled(&self, group: ChangeGroup) -> Vec<(Target, String)> {
+        let old = &self.baseline.table;
+        let new = &self.draft.table;
+        let mut out = Vec::new();
+        match group {
+            ChangeGroup::Table => out.push((Target::Table, new.name.clone())),
+            ChangeGroup::Columns => {
+                let label = |c: &ColumnModel| (Target::Column(c.origin), c.name.clone());
+                out.extend(new.columns.iter().map(label));
+                out.extend(
+                    removed(&old.columns, &new.columns, |c| c.origin)
+                        .into_iter()
+                        .map(label),
+                );
+            }
+            ChangeGroup::Keys => {
+                if let Some(key) = &new.primary_key {
+                    out.push((Target::PrimaryKey(key.origin), key_label(new, key)));
+                }
+                if let Some(key) = &old.primary_key
+                    && new
+                        .primary_key
+                        .as_ref()
+                        .is_none_or(|k| k.origin != key.origin)
+                {
+                    out.push((Target::PrimaryKey(key.origin), key_label(old, key)));
+                }
+                out.extend(
+                    new.uniques
+                        .iter()
+                        .map(|k| (Target::Unique(k.origin), key_label(new, k))),
+                );
+                out.extend(
+                    removed(&old.uniques, &new.uniques, |k| k.origin)
+                        .into_iter()
+                        .map(|k| (Target::Unique(k.origin), key_label(old, k))),
+                );
+            }
+            ChangeGroup::ForeignKeys => {
+                out.extend(
+                    new.foreign_keys
+                        .iter()
+                        .map(|k| (Target::ForeignKey(k.origin), foreign_key_label(new, k))),
+                );
+                out.extend(
+                    removed(&old.foreign_keys, &new.foreign_keys, |k| k.origin)
+                        .into_iter()
+                        .map(|k| (Target::ForeignKey(k.origin), foreign_key_label(old, k))),
+                );
+            }
+            ChangeGroup::Checks => {
+                let label = |c: &CheckModel| (Target::Check(c.origin), check_label(c));
+                out.extend(new.checks.iter().map(label));
+                out.extend(
+                    removed(&old.checks, &new.checks, |c| c.origin)
+                        .into_iter()
+                        .map(label),
+                );
+            }
+            ChangeGroup::Indexes => {
+                let label = |i: &IndexModel| (Target::Index(i.origin), i.name.clone());
+                out.extend(new.indexes.iter().map(label));
+                out.extend(
+                    removed(&old.indexes, &new.indexes, |i| i.origin)
+                        .into_iter()
+                        .map(label),
+                );
+            }
+        }
+        out
     }
 
     pub fn request(&self) -> &SchemaEditRequest {
@@ -452,7 +722,7 @@ impl SchemaEditModel {
     }
     /// The "Review N" count: distinct objects changed.
     pub fn review_count(&self) -> usize {
-        self.changes.object_count()
+        self.view.review_count
     }
     /// Why Review is unavailable, or `None` when the draft can be reviewed.
     pub fn review_block(&self) -> Option<String> {
@@ -514,94 +784,29 @@ impl SchemaEditModel {
     // -- Rows --------------------------------------------------------------
 
     /// Rows of one section in display order: draft objects first, then the
-    /// baseline objects the draft removed.
-    pub fn rows(&self, group: ChangeGroup) -> Vec<Row> {
-        self.targets(group)
-            .into_iter()
-            .map(|target| self.row(target))
-            .collect()
+    /// baseline objects the draft removed. Precomputed per edit.
+    pub fn rows(&self, group: ChangeGroup) -> &[Row] {
+        self.view
+            .sections
+            .iter()
+            .find(|(section, _)| *section == group)
+            .map(|(_, rows)| rows.as_slice())
+            .unwrap_or_default()
     }
 
-    pub fn targets(&self, group: ChangeGroup) -> Vec<Target> {
-        let old = &self.baseline.table;
-        let new = &self.draft.table;
-        fn removed<T>(
-            old: &[T],
-            new: &[T],
-            origin: impl Fn(&T) -> Origin,
-            wrap: impl Fn(Origin) -> Target,
-        ) -> Vec<Target> {
-            old.iter()
-                .map(&origin)
-                .filter(|o| !new.iter().any(|item| origin(item) == *o))
-                .map(wrap)
-                .collect()
-        }
-        let mut out = Vec::new();
-        match group {
-            ChangeGroup::Table => out.push(Target::Table),
-            ChangeGroup::Columns => {
-                out.extend(new.columns.iter().map(|c| Target::Column(c.origin)));
-                out.extend(removed(
-                    &old.columns,
-                    &new.columns,
-                    |c| c.origin,
-                    Target::Column,
-                ));
-            }
-            ChangeGroup::Keys => {
-                if let Some(key) = &new.primary_key {
-                    out.push(Target::PrimaryKey(key.origin));
-                }
-                if let Some(key) = &old.primary_key
-                    && new
-                        .primary_key
-                        .as_ref()
-                        .is_none_or(|k| k.origin != key.origin)
-                {
-                    out.push(Target::PrimaryKey(key.origin));
-                }
-                out.extend(new.uniques.iter().map(|k| Target::Unique(k.origin)));
-                out.extend(removed(
-                    &old.uniques,
-                    &new.uniques,
-                    |k| k.origin,
-                    Target::Unique,
-                ));
-            }
-            ChangeGroup::ForeignKeys => {
-                out.extend(
-                    new.foreign_keys
-                        .iter()
-                        .map(|k| Target::ForeignKey(k.origin)),
-                );
-                out.extend(removed(
-                    &old.foreign_keys,
-                    &new.foreign_keys,
-                    |k| k.origin,
-                    Target::ForeignKey,
-                ));
-            }
-            ChangeGroup::Checks => {
-                out.extend(new.checks.iter().map(|c| Target::Check(c.origin)));
-                out.extend(removed(
-                    &old.checks,
-                    &new.checks,
-                    |c| c.origin,
-                    Target::Check,
-                ));
-            }
-            ChangeGroup::Indexes => {
-                out.extend(new.indexes.iter().map(|i| Target::Index(i.origin)));
-                out.extend(removed(
-                    &old.indexes,
-                    &new.indexes,
-                    |i| i.origin,
-                    Target::Index,
-                ));
-            }
-        }
-        out
+    /// Every line of the draft table, for the virtualized list.
+    pub fn lines(&self) -> &[Line] {
+        &self.view.lines
+    }
+
+    /// The line showing `target`'s row.
+    pub fn line_of(&self, target: Target) -> Option<usize> {
+        self.view.at.get(&target).map(|(_, _, line)| *line)
+    }
+
+    fn cached_row(&self, target: Target) -> Option<&Row> {
+        let (section, index, _) = *self.view.at.get(&target)?;
+        self.view.sections.get(section)?.1.get(index)
     }
 
     fn changes_for(&self, target: Target) -> impl Iterator<Item = &SchemaChange> {
@@ -614,42 +819,14 @@ impl SchemaEditModel {
     }
 
     pub fn row(&self, target: Target) -> Row {
-        let mut state = RowState::Unchanged;
-        let mut deltas = Vec::new();
-        let mut destructive = None;
-        for change in self.changes_for(target) {
-            destructive = destructive.or(change.destructive);
-            match &change.kind {
-                ChangeKind::Added => state = RowState::Added,
-                ChangeKind::Removed => state = RowState::Removed,
-                ChangeKind::Renamed { from, to } => deltas.push(Delta {
-                    attr: Attr::Name,
-                    before: from.clone(),
-                    after: to.clone(),
-                    destructive: change.destructive,
-                }),
-                ChangeKind::Changed {
-                    field,
-                    before,
-                    after,
-                } => deltas.push(Delta {
-                    attr: Attr::Field(*field),
-                    before: before.clone(),
-                    after: after.clone(),
-                    destructive: change.destructive,
-                }),
-            }
-        }
-        if state == RowState::Unchanged && !deltas.is_empty() {
-            state = RowState::Changed;
-        }
-        Row {
-            target,
-            label: self.label(target),
-            state,
-            deltas,
-            destructive,
-            issues: self.issues_for(target).count(),
+        match self.cached_row(target) {
+            Some(row) => row.clone(),
+            None => make_row(
+                target,
+                self.label(target),
+                self.changes_for(target),
+                self.issues_for(target).count(),
+            ),
         }
     }
 
@@ -681,15 +858,13 @@ impl SchemaEditModel {
     }
 
     pub fn label(&self, target: Target) -> String {
+        if let Some(row) = self.cached_row(target) {
+            return row.label.clone();
+        }
         let table = if self.in_draft(target) {
             &self.draft.table
         } else {
             &self.baseline.table
-        };
-        let key_label = |key: &KeyModel| {
-            key.name
-                .clone()
-                .unwrap_or_else(|| format!("({})", table.column_names(&key.columns).join(", ")))
         };
         match target {
             Target::Table => table.name.clone(),
@@ -698,33 +873,16 @@ impl SchemaEditModel {
                 .primary_key
                 .as_ref()
                 .filter(|k| k.origin == o)
-                .map_or_else(|| "?".into(), key_label),
+                .map_or_else(|| "?".into(), |key| key_label(table, key)),
             Target::Unique(o) => table
                 .uniques
                 .iter()
                 .find(|k| k.origin == o)
-                .map_or_else(|| "?".into(), key_label),
-            Target::ForeignKey(o) => table.foreign_key(o).map_or_else(
-                || "?".into(),
-                |key| {
-                    key.name.clone().unwrap_or_else(|| {
-                        format!(
-                            "({}) → {}",
-                            table.column_names(&key.columns).join(", "),
-                            key.referenced_table
-                        )
-                    })
-                },
-            ),
-            Target::Check(o) => table.check(o).map_or_else(
-                || "?".into(),
-                |check| {
-                    check
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| format!("CHECK ({})", check.expression))
-                },
-            ),
+                .map_or_else(|| "?".into(), |key| key_label(table, key)),
+            Target::ForeignKey(o) => table
+                .foreign_key(o)
+                .map_or_else(|| "?".into(), |key| foreign_key_label(table, key)),
+            Target::Check(o) => table.check(o).map_or_else(|| "?".into(), check_label),
             Target::Index(o) => table
                 .index(o)
                 .map_or_else(|| "?".into(), |index| index.name.clone()),
@@ -783,12 +941,7 @@ impl SchemaEditModel {
     }
     /// Position of a column in the draft (1-based), for the `#` cell.
     pub fn position(&self, origin: Origin) -> Option<usize> {
-        self.draft
-            .table
-            .columns
-            .iter()
-            .position(|c| c.origin == origin)
-            .map(|index| index + 1)
+        self.view.positions.get(&origin).copied()
     }
 
     // -- Inputs --------------------------------------------------------------
@@ -1635,6 +1788,9 @@ impl SchemaEditModel {
     /// True when `attr` of `target` differs from the baseline (the field's
     /// Undo button is shown).
     pub fn changed(&self, target: Target, attr: Attr) -> bool {
+        if let Some(row) = self.cached_row(target) {
+            return row.delta(attr).is_some();
+        }
         self.changes_for(target)
             .any(|change| match (&change.kind, attr) {
                 (ChangeKind::Renamed { .. }, Attr::Name) => true,
@@ -1645,6 +1801,9 @@ impl SchemaEditModel {
 
     /// The baseline text of a changed attribute, for "was …" hints.
     pub fn before(&self, target: Target, attr: Attr) -> Option<String> {
+        if let Some(row) = self.cached_row(target) {
+            return row.delta(attr).map(|delta| delta.before.clone());
+        }
         self.changes_for(target)
             .find_map(|change| match (&change.kind, attr) {
                 (ChangeKind::Renamed { from, .. }, Attr::Name) => Some(from.clone()),

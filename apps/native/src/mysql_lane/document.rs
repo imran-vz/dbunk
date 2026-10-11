@@ -37,6 +37,11 @@ use std::{cell::Cell, rc::Rc, sync::Arc};
 const PAGE_ROWS: u32 = 200;
 const _: () = assert!(PAGE_ROWS <= MYSQL_MAX_PAGE_ROWS);
 
+/// The structure draft editor alters base tables only.
+fn structure_editable(object: &ObjectRef) -> bool {
+    object.kind == dbunk_lib::backend::mysql_sessions::MySqlObjectKind::Table
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DocKind {
     Query,
@@ -551,11 +556,15 @@ impl MySqlDocument {
     }
 
     /// Opens the structure draft editor (Plan 033) in place of the
-    /// read-only structure. The draft is kept in memory only.
+    /// read-only structure. The draft is kept in memory only. Base tables
+    /// only: a view's structure is its query.
     fn edit_structure(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let DocKind::Structure(object) = &self.kind else {
             return;
         };
+        if !structure_editable(object) {
+            return;
+        }
         let request = SchemaEditRequest::new(object.database.clone(), object.name.clone());
         if let Some(view) = &self.schema_edit {
             view.update(cx, |view, cx| view.resume(cx));
@@ -753,23 +762,26 @@ impl MySqlDocument {
                     ));
             }
             DocKind::Structure(object) => {
+                let editable = structure_editable(&object);
                 bar = ui::toolbar_strip()
                     .child(self.switch(object, cx))
                     .child(ui::separator())
                     .children(self.crumbs())
                     .child(ui::grow())
-                    .child(Self::bind(
-                        ui::tool_button(
-                            "mysql-edit-structure",
-                            "Edit structure",
-                            Some("icons/pencil.svg"),
+                    .when(editable, |bar| {
+                        bar.child(Self::bind(
+                            ui::tool_button(
+                                "mysql-edit-structure",
+                                "Edit structure",
+                                Some("icons/pencil.svg"),
+                                connected && !self.editing,
+                                false,
+                            ),
                             connected && !self.editing,
-                            false,
-                        ),
-                        connected && !self.editing,
-                        cx,
-                        |this, window, cx| this.edit_structure(window, cx),
-                    ))
+                            cx,
+                            |this, window, cx| this.edit_structure(window, cx),
+                        ))
+                    })
                     .child(Self::bind(
                         ui::icon_button(
                             "mysql-refresh",
