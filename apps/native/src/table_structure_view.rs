@@ -21,6 +21,11 @@ gpui::actions!(table_structure, [NextControl, PreviousControl]);
 
 pub enum StructureEvent {
     Edit(crate::table_ddl_model::Selection),
+    /// Plan 033: open the structure draft editor for this table.
+    EditStructure {
+        schema: String,
+        table: String,
+    },
     Back,
     Refresh(TableStructureRequest),
     Cancel,
@@ -33,6 +38,7 @@ pub enum StructureEvent {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Action {
     Edit,
+    EditStructure,
     Back,
     Refresh,
     Cancel,
@@ -43,8 +49,9 @@ enum Action {
 }
 /// Toolbar actions first, then the details-pane actions in the order the pane
 /// draws them; Tab follows this order around the section outline and the list.
-const ACTIONS: [(Action, &str); 7] = [
+const ACTIONS: [(Action, &str); 8] = [
     (Action::Cancel, "Cancel read"),
+    (Action::EditStructure, "Edit structure"),
     (Action::Refresh, "Refresh"),
     (Action::Details, "Details"),
     (Action::Back, "Catalog"),
@@ -52,7 +59,7 @@ const ACTIONS: [(Action, &str); 7] = [
     (Action::Edit, "Comment / rename"),
     (Action::Copy, "Copy"),
 ];
-const TOOLBAR_ACTIONS: usize = 4;
+const TOOLBAR_ACTIONS: usize = 5;
 
 /// One 28 px line of the structure page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -278,6 +285,7 @@ impl StructureView {
         match action {
             Action::Back | Action::Section(_) => true,
             Action::Refresh => self.ready && !self.busy,
+            Action::EditStructure => self.ready && !self.busy && self.capture_current,
             Action::Cancel | Action::Details => unreachable!(),
             Action::Copy => self.editor.is_some(),
             Action::Edit => {
@@ -313,6 +321,10 @@ impl StructureView {
                     cx.emit(StructureEvent::Edit(selection));
                 }
             }
+            Action::EditStructure => cx.emit(StructureEvent::EditStructure {
+                schema: self.capture.schema().to_owned(),
+                table: self.capture.table().to_owned(),
+            }),
             Action::Section(index) => self.select_section(index, window, cx),
             Action::Back => cx.emit(StructureEvent::Back),
             Action::Refresh => {
@@ -343,8 +355,10 @@ impl StructureView {
                 }
             }
         }
-        if !matches!(action, Action::Back | Action::Section(_))
-            && let Some(index) = ACTIONS.iter().position(|(item, _)| *item == action)
+        if !matches!(
+            action,
+            Action::Back | Action::Section(_) | Action::EditStructure
+        ) && let Some(index) = ACTIONS.iter().position(|(item, _)| *item == action)
         {
             window.focus(&self.buttons[index], cx);
         }

@@ -1325,6 +1325,7 @@ impl TableView {
             | TableMessage::MaintenanceReviewed(..)
             | TableMessage::MaintenanceApplied(..)
             | TableMessage::Sequence(..)
+            | TableMessage::SchemaEdit(..)
             | TableMessage::AdminApplied(..)
             | TableMessage::Admin(..)
             | TableMessage::SchemaReviewed(..)

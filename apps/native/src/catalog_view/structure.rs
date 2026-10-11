@@ -153,6 +153,15 @@ impl CatalogView {
                                 this.open_table_ddl(Some(selection.clone()), window, cx);
                             }
                         }
+                        StructureEvent::EditStructure { schema, table } => {
+                            if this.structure_current
+                                && this.ready
+                                && this.editable
+                                && !this.has_pending()
+                            {
+                                this.open_schema_edit(schema.clone(), table.clone(), window, cx);
+                            }
+                        }
                         StructureEvent::Back => {
                             this.show_structure = false;
                             this.previous_focus = None;
@@ -187,6 +196,8 @@ impl CatalogView {
             if focused {
                 window.focus(&view.read(cx).focus(cx), cx);
             }
+            let request = view.read(cx).request();
+            self.schema_edit_follow(&request.schema, &request.table, cx);
             self.structure = Some(view);
             self.show_structure = true;
             self.show_details = false;

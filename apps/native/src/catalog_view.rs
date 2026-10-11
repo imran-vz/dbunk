@@ -19,6 +19,7 @@ mod maintenance;
 mod navigator;
 mod object_ddl;
 mod schema;
+mod schema_edit;
 mod sequence;
 mod structure;
 mod table_ddl;
@@ -73,6 +74,7 @@ pub struct CatalogView {
     schema_alter_events: Option<gpui::Subscription>,
     schema_alter_busy: bool,
     show_schema_alter: bool,
+    schema_edit: schema_edit::SchemaEditLane,
     ddl_export: ddl_export::DdlExport,
     structure: Option<Entity<crate::table_structure_view::StructureView>>,
     incoming_structure: Option<crate::table_structure_model::Capture>,
@@ -164,6 +166,7 @@ impl CatalogView {
             schema_alter_events: None,
             schema_alter_busy: false,
             show_schema_alter: false,
+            schema_edit: schema_edit::SchemaEditLane::new(document.schema_edit.take()),
             ddl_export: ddl_export::DdlExport::default(),
             structure: None,
             incoming_structure: None,
@@ -251,6 +254,7 @@ impl CatalogView {
             || self.sequence_busy
             || self.schema_alter_busy
             || self.object_ddl_busy
+            || self.schema_edit.busy
     }
     pub fn set_editable(&mut self, editable: bool, cx: &mut Context<Self>) {
         self.editable = editable;
@@ -343,7 +347,8 @@ impl CatalogView {
                 || self.has_table_ddl_changes(cx)
                 || self.has_sequence_changes(cx)
                 || self.has_schema_alter_changes(cx)
-                || self.has_object_ddl_changes(cx))
+                || self.has_object_ddl_changes(cx)
+                || self.has_schema_edit_changes(cx))
         {
             self.status =
                 "Finish or reconcile the retained Objects review before changing its connection"
@@ -426,6 +431,7 @@ impl CatalogView {
             view.update(cx, |view, cx| view.disconnected(cx));
         }
         self.schema_alter_busy = false;
+        self.schema_edit_disconnected(cx);
         self.ddl_export.incoming = None;
         self.ddl_export.current = false;
         self.incoming_structure = None;
@@ -533,6 +539,10 @@ impl CatalogView {
             return false;
         };
         let message = message.into_message();
+        if matches!(&message, TableMessage::SchemaEdit(..)) {
+            self.route_schema_edit(message, cx);
+            return true;
+        }
         // Table and existing-schema DDL share reply variants; route by family.
         if matches!(
             &message,
@@ -998,6 +1008,10 @@ impl Render for CatalogView {
             return view.clone().into_any_element();
         }
         self.render_structure(window, cx);
+        self.sync_schema_edit(cx);
+        if let Some(view) = self.schema_edit_shown() {
+            return view.into_any_element();
+        }
         if self.show_structure
             && let Some(view) = &self.structure
         {
@@ -1268,6 +1282,7 @@ impl Render for CatalogView {
                     .aria_label(self.status.clone())
                     .child(self.status.clone()),
             )
+            .children(self.schema_edit_banner(cx))
             .when(!truncated.is_empty(), |root| {
                 root.child(
                     div()

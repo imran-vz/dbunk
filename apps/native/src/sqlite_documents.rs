@@ -4,11 +4,13 @@
 //! retention here is charged to the workspace allowance like query tabs.
 use crate::accessible_editor::AccessibleEditor;
 use crate::grid::ResultGrid;
+use crate::schema_edit_view::{Channel, SchemaEditEvent, SchemaEditView};
 use crate::sqlite_model::{self, Paging};
 use crate::sqlite_workspace::SqliteContext;
 use crate::workbench::{RunScript, RunStatement, StopQuery};
 use crate::{sql, structure_table, style, ui};
 use dbunk_lib::backend::QueryEvent;
+use dbunk_lib::backend::schema_edit::{SchemaEditRequest, SchemaEditSource};
 use dbunk_lib::backend::sqlite_session::{
     SqliteExecution, SqlitePage, SqliteSessionError, SqliteStructure,
 };
@@ -19,6 +21,7 @@ use gpui::{
 };
 use language::Buffer;
 use multi_buffer::MultiBufferOffset;
+use std::{cell::Cell, rc::Rc};
 
 /// The workspace-wide retained-results ceiling shared with query tabs.
 const RETAINED_CEILING: usize = 128 * 1024 * 1024;
@@ -781,6 +784,10 @@ pub struct SqliteStructureView {
     error: Option<String>,
     attempt: u64,
     focus: FocusHandle,
+    /// Plan 033 structure draft; in memory only.
+    schema_edit: Option<Entity<SchemaEditView>>,
+    _schema_edit_events: Option<Subscription>,
+    editing: bool,
 }
 
 impl EventEmitter<SqliteDocEvent> for SqliteStructureView {}
@@ -801,9 +808,60 @@ impl SqliteStructureView {
             error: None,
             attempt: 0,
             focus: cx.focus_handle(),
+            schema_edit: None,
+            _schema_edit_events: None,
+            editing: false,
         };
         view.reload(cx);
         view
+    }
+
+    /// Opens the structure draft editor (Plan 033) in place of the
+    /// read-only structure. The draft is kept in memory only.
+    fn edit_structure(&mut self, cx: &mut Context<Self>) {
+        if let Some(view) = &self.schema_edit {
+            view.update(cx, |view, cx| view.resume(cx));
+        } else {
+            let Some(session) = self.context.session() else {
+                self.error = Some("Not connected".into());
+                cx.notify();
+                return;
+            };
+            let request = SchemaEditRequest::new(self.schema.clone(), self.name.clone());
+            let connection = session.info().connection_id.clone();
+            let read_only = session.info().read_only;
+            let host = self.context.host.clone();
+            let view = cx.new(|cx| {
+                SchemaEditView::new(
+                    host,
+                    Channel::Direct(Some(SchemaEditSource::Sqlite(session))),
+                    connection,
+                    request,
+                    false,
+                    Rc::new(Cell::new(0)),
+                    None,
+                    read_only,
+                    cx,
+                )
+            });
+            self._schema_edit_events = Some(cx.subscribe(
+                &view,
+                |this, _, event: &SchemaEditEvent, cx| {
+                    match event {
+                        SchemaEditEvent::Close => this.editing = false,
+                        SchemaEditEvent::StructureChanged => {
+                            this.reload(cx);
+                            cx.emit(SqliteDocEvent::ObjectsChanged);
+                        }
+                        _ => {}
+                    }
+                    cx.notify();
+                },
+            ));
+            self.schema_edit = Some(view);
+        }
+        self.editing = true;
+        cx.notify();
     }
 
     pub fn focus(&self) -> FocusHandle {
@@ -831,6 +889,10 @@ impl SqliteStructureView {
         };
         if let Some((ticket, _)) = self.loading.take() {
             session.cancel(ticket);
+        }
+        if let Some(view) = &self.schema_edit {
+            let source = Some(SchemaEditSource::Sqlite(session.clone()));
+            view.update(cx, |view, cx| view.set_source(source, cx));
         }
         let ticket = session.ticket();
         let (schema, name) = (self.schema.clone(), self.name.clone());
@@ -870,6 +932,9 @@ impl SqliteStructureView {
 
     pub fn detached(&mut self, cx: &mut Context<Self>) {
         self.loading = None;
+        if let Some(view) = &self.schema_edit {
+            view.update(cx, |view, cx| view.set_source(None, cx));
+        }
         cx.notify();
     }
 
@@ -886,6 +951,7 @@ impl Render for SqliteStructureView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let connected = self.context.session().is_some();
         let idle = connected && self.loading.is_none();
+        let editor = self.schema_edit.clone().filter(|_| self.editing);
         let body = self.structure.as_ref().map(|structure| {
             div()
                 .flex()
@@ -920,6 +986,19 @@ impl Render for SqliteStructureView {
                     })
                     .child(ui::grow())
                     .child(
+                        ui::tool_button(
+                            "sqlite-edit-structure",
+                            "Edit structure",
+                            Some("icons/pencil.svg"),
+                            connected && !self.editing,
+                            false,
+                        )
+                        .tab_index(0)
+                        .when(connected && !self.editing, |button| {
+                            button.on_click(cx.listener(|this, _, _, cx| this.edit_structure(cx)))
+                        }),
+                    )
+                    .child(
                         ui::icon_button(
                             "sqlite-structure-refresh",
                             "Refresh",
@@ -932,7 +1011,10 @@ impl Render for SqliteStructureView {
                         }),
                     ),
             )
-            .when(self.loading.is_some(), |root| {
+            .when_some(editor.clone(), |root, view| {
+                root.child(div().flex_1().min_h_0().child(view))
+            })
+            .when(self.loading.is_some() && editor.is_none(), |root| {
                 root.child(
                     div()
                         .p(px(10.))
@@ -946,13 +1028,15 @@ impl Render for SqliteStructureView {
                     ui::error_banner("sqlite-structure-error-banner", error),
                 )))
             })
-            .child(
-                div()
-                    .id("sqlite-structure-body")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .children(body),
-            )
+            .when(editor.is_none(), |root| {
+                root.child(
+                    div()
+                        .id("sqlite-structure-body")
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scroll()
+                        .children(body),
+                )
+            })
     }
 }

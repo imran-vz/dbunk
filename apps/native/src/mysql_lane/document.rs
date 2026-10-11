@@ -9,6 +9,7 @@ use crate::{
     accessible_editor::AccessibleEditor,
     controller::Host,
     grid::ResultGrid,
+    schema_edit_view::{Channel, SchemaEditEvent, SchemaEditView},
     structure_table::{
         self, ColumnSpec, KEYED_COLUMNS, SectionTable, Shown, Tone, clip, faint, fill, fixed,
         key_tag, mono, nullable, optional, ordinal, referential, tag, tags, text,
@@ -18,18 +19,19 @@ use crate::{
 };
 use dbunk_lib::backend::QueryEvent;
 use dbunk_lib::backend::StatementClassSummary;
+use dbunk_lib::backend::schema_edit::{SchemaEditRequest, SchemaEditSource};
 use dbunk_lib::backend::mysql_sessions::{
     MYSQL_MAX_PAGE_ROWS, MySqlCancel, MySqlRequestId, MySqlResult, MySqlSession, MySqlSessionError,
     MySqlStructure,
 };
 use editor::Editor;
 use gpui::{
-    ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable, Role, SharedString, Task,
-    Window, div, prelude::*, px,
+    ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable, Role, SharedString,
+    Subscription, Task, Window, div, prelude::*, px,
 };
 use language::Buffer;
 use multi_buffer::MultiBufferOffset;
-use std::sync::Arc;
+use std::{cell::Cell, rc::Rc, sync::Arc};
 
 /// Rows per data page.
 const PAGE_ROWS: u32 = 200;
@@ -104,6 +106,10 @@ pub struct MySqlDocument {
     request: Option<MySqlRequestId>,
     cancel: Option<Task<()>>,
     loads: Vec<Task<()>>,
+    /// Plan 033 structure draft (Structure documents); in memory only.
+    schema_edit: Option<Entity<SchemaEditView>>,
+    _schema_edit_events: Option<Subscription>,
+    editing: bool,
 }
 
 impl EventEmitter<DocEvent> for MySqlDocument {}
@@ -160,6 +166,9 @@ impl MySqlDocument {
             request: None,
             cancel: None,
             loads: Vec::new(),
+            schema_edit: None,
+            _schema_edit_events: None,
+            editing: false,
         };
         document.set_session(session, true, cx);
         document
@@ -175,6 +184,10 @@ impl MySqlDocument {
         cx: &mut Context<Self>,
     ) {
         let connected = session.is_some();
+        if let Some(view) = &self.schema_edit {
+            let source = session.clone().map(SchemaEditSource::MySql);
+            view.update(cx, |view, cx| view.set_source(source, cx));
+        }
         self.session = session;
         if !connected {
             // Replies from the old session are dropped with their tasks.
@@ -537,6 +550,56 @@ impl MySqlDocument {
         cx.notify();
     }
 
+    /// Opens the structure draft editor (Plan 033) in place of the
+    /// read-only structure. The draft is kept in memory only.
+    fn edit_structure(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let DocKind::Structure(object) = &self.kind else {
+            return;
+        };
+        let request = SchemaEditRequest::new(object.database.clone(), object.name.clone());
+        if let Some(view) = &self.schema_edit {
+            view.update(cx, |view, cx| view.resume(cx));
+        } else {
+            let Some(session) = self.session() else {
+                cx.notify();
+                return;
+            };
+            let connection = session.connection_id().to_owned();
+            let host = self.host.clone();
+            let view = cx.new(|cx| {
+                SchemaEditView::new(
+                    host,
+                    Channel::Direct(Some(SchemaEditSource::MySql(session))),
+                    connection,
+                    request,
+                    false,
+                    Rc::new(Cell::new(0)),
+                    None,
+                    false,
+                    cx,
+                )
+            });
+            self._schema_edit_events = Some(cx.subscribe_in(
+                &view,
+                window,
+                |this, _, event: &SchemaEditEvent, window, cx| {
+                    match event {
+                        SchemaEditEvent::Close => {
+                            this.editing = false;
+                            window.focus(&this.focus, cx);
+                        }
+                        SchemaEditEvent::StructureChanged => this.load_details(true, cx),
+                        _ => {}
+                    }
+                    cx.notify();
+                },
+            ));
+            self.schema_edit = Some(view);
+        }
+        self.editing = true;
+        cx.notify();
+    }
+
     fn button(
         &self,
         id: &'static str,
@@ -695,6 +758,18 @@ impl MySqlDocument {
                     .child(ui::separator())
                     .children(self.crumbs())
                     .child(ui::grow())
+                    .child(Self::bind(
+                        ui::tool_button(
+                            "mysql-edit-structure",
+                            "Edit structure",
+                            Some("icons/pencil.svg"),
+                            connected && !self.editing,
+                            false,
+                        ),
+                        connected && !self.editing,
+                        cx,
+                        |this, window, cx| this.edit_structure(window, cx),
+                    ))
                     .child(Self::bind(
                         ui::icon_button(
                             "mysql-refresh",
@@ -1196,6 +1271,11 @@ impl Render for MySqlDocument {
                     .into_any_element()
             }
             DocKind::Data(_) => self.result_area().into_any_element(),
+            DocKind::Structure(_) if self.editing && self.schema_edit.is_some() => self
+                .schema_edit
+                .clone()
+                .map(|view| div().flex_1().min_h_0().child(view).into_any_element())
+                .unwrap_or_else(|| div().into_any_element()),
             DocKind::Structure(_) | DocKind::Definition(_) => self.details().into_any_element(),
         };
         div()

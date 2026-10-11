@@ -365,6 +365,7 @@ pub fn needs_workspace_export(snapshot: &WorkspaceSnapshot) -> bool {
                 || document.object_ddl.is_some()
                 || document.admin_control.is_some()
                 || document.maintenance.is_some()
+                || document.schema_edit.is_some()
         })
 }
 

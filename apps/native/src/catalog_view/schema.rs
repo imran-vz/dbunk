@@ -35,6 +35,7 @@ impl CatalogView {
                 .is_some_and(|view| view.read(cx).has_changes())
     }
     pub fn apply_saved(&mut self, id: u64, result: Result<(), String>, cx: &mut Context<Self>) {
+        self.schema_edit_saved(id, result.clone(), cx);
         if let Some(view) = &self.object_ddl {
             view.update(cx, |view, cx| view.apply_saved(id, result.clone(), cx));
         }
