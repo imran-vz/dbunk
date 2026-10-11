@@ -126,6 +126,8 @@ fn destructive_classification_matches_data_risk() {
                     nullable: false,
                     default: None,
                     identity: None,
+                    generated: None,
+                    collation: None,
                 },
             }),
             true,
@@ -289,6 +291,8 @@ fn operations_keep_the_internally_tagged_wire_format() {
                 sql: "now()".into(),
             }),
             identity: Some(PgIdentity::ByDefault),
+            generated: None,
+            collation: None,
         },
     });
     let json = serde_json::to_value(&op).expect("serialize");

@@ -1,6 +1,7 @@
 //! Unit tests for the DDL generator. Live tests live in
 //! `commands::pg_objects_live_tests`.
 
+mod alter;
 mod column;
 mod enum_type;
 mod fragment;
@@ -26,6 +27,8 @@ pub(super) fn add_column(data_type: &str, default: Option<PgDefaultValue>) -> Pg
             nullable: true,
             default,
             identity: None,
+            generated: None,
+            collation: None,
         },
     })
 }
@@ -85,6 +88,8 @@ pub(super) fn column(name: &str, data_type: &str) -> NewColumnSpec {
         nullable: true,
         default: None,
         identity: None,
+        generated: None,
+        collation: None,
     }
 }
 
