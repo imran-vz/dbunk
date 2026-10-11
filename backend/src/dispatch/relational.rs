@@ -1011,13 +1011,15 @@ pub async fn insert_row(
     }
 }
 
-pub async fn seed_table<F>(
+#[allow(clippy::too_many_arguments)]
+pub async fn seed_table_with<F>(
     connection: &StoredConnection,
     schema: &str,
     table: &str,
     row_count: u32,
     seed: u64,
     specs: &[crate::SeedColumnSpec],
+    options: &crate::SeedOptions,
     report_progress: F,
 ) -> Result<crate::SeedTableResult, String>
 where
@@ -1025,37 +1027,40 @@ where
 {
     match connection.engine() {
         DatabaseEngine::PostgreSQL => {
-            postgres::seed_table(
+            postgres::seed_table_with(
                 connection,
                 schema,
                 table,
                 row_count,
                 seed,
                 specs,
+                options,
                 report_progress,
             )
             .await
         }
         DatabaseEngine::MySQL | DatabaseEngine::SQLite => {
-            seed::seed_table(
+            seed::seed_table_with(
                 connection,
                 schema,
                 table,
                 row_count,
                 seed,
                 specs,
+                options,
                 report_progress,
             )
             .await
         }
         DatabaseEngine::ClickHouse => {
-            clickhouse::seed_table(
+            clickhouse::seed_table_with(
                 connection,
                 schema,
                 table,
                 row_count,
                 seed,
                 specs,
+                options,
                 report_progress,
             )
             .await

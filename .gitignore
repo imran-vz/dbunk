@@ -29,3 +29,6 @@ designs/images
 
 # Generated TLS fixture material (infrastructure/test-db/postgres-tls/gen-certs.sh)
 infrastructure/test-db/postgres-tls/certs/
+
+# Python bytecode from tools/ scripts
+__pycache__/

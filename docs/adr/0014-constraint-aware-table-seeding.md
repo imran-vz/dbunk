@@ -26,16 +26,34 @@ generators are rebuilt around these decisions:
   error. Length limits apply only to character types; numeric precision and
   scale bound numeric values.
 - **Phone numbers follow libphonenumber metadata.** The `phonenumber` crate
-  supplies each region's number patterns and lengths. Values are sampled from
-  those patterns with the run's own RNG, so a seed reproduces its rows, and
-  must pass `phonenumber::is_valid`.
-- **Fictional-safe by default.** Phones come from ranges regulators reserve
-  for fiction and emails use reserved domains (`example.*`, `.test`).
-  Realistic, possibly assigned values are an explicit opt-in.
+  (pinned) supplies each region's number patterns and lengths. At first use,
+  each locale gets a fixed pool of 256 number blocks: a prefix sampled from
+  those patterns plus four free digits, validated with `phonenumber::is_valid`
+  and pre-rendered in every output format. Rows only fill digits into a
+  block's template. Per-row validation cost about 300 µs a row, which a
+  million-row seed cannot afford.
+- **Fictional-safe by default.** Emails use reserved domains (`example.*`,
+  `.test`). Phones in the US, UK, Germany and France come only from ranges
+  their regulators reserve for fiction: NANPA 555-0100 to 0199, Ofcom's drama
+  numbers, Bundesnetzagentur Mitteilung 148/2021 and ARCEP Décision
+  2018-0881. These ranges are used as published even where libphonenumber
+  rejects them (France's, and some Ofcom blocks). Spain, Brazil, India and
+  Japan publish no such ranges; by Imran's decision (2026-10-12) they get
+  valid local numbers in either mode, which may belong to real people.
+  Realistic values everywhere are an explicit opt-in. A unique phone column
+  draws from the row's own country, so in fictional-safe mode it holds only
+  as many rows as the smallest chosen country's ranges (3,200 for the US).
+- **Addresses are coherent per row.** A row's street, locality, region,
+  postcode, country and phone describe one place: a real postcode with its
+  own locality and region, and a made-up street in the locale's style.
+  Columns named `state` are not inferred, since they are as often a status.
 - **Built-in data is generated in-repo and compiled in.** Names come from
-  CC0 and public-domain sources (Wikidata, US Census); cities from
-  GeoNames (CC BY 4.0, credited in the legal notices); postcode patterns and
-  address formats from Google libaddressinput (Apache-2.0). Japanese names
+  CC0 and public-domain sources (Wikidata, US Census); postcodes,
+  localities and regions from GeoNames postal data (CC BY 4.0, credited in
+  `apps/native/THIRD-PARTY-NOTICES.txt`), with Japanese municipality names in
+  kanji joined from Wikidata; postcode patterns and address formats from
+  Google libaddressinput (Apache-2.0). Only postcodes matching the country's
+  pattern are kept. Japanese names
   carry a romaji form for emails and usernames. A generator version, covering
   the data and the generation algorithms, is recorded with each seed, because
   a seed reproduces its rows only under the same version.
@@ -47,6 +65,9 @@ generators are rebuilt around these decisions:
   lists and no length control.
 - **Example numbers only.** Rejected: libphonenumber has one example per
   region and type, so values would barely vary.
+- **Japan Post postcode data for Japanese addresses.** Rejected: its
+  download is not reachable from a script; GeoNames joined with Wikidata
+  gives the same kanji municipalities.
 - **`rand_regex` for pattern sampling.** Rejected: it brings a second `rand`
   major version, and any change to its sampling would change the rows a seed
   produces.

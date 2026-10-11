@@ -118,7 +118,7 @@ Have: CSV / XLSX import wizard with column mapping.
 - 🟡 Schema compare: bounded read-only PostgreSQL 16 ordinary-table comparison backend completed in [Plan 021](https://github.com/imran-vz/dbunk/blob/9312b41ab2d2c92f48b54d2b3229332bf74641a2/plans/021-bounded-postgres-schema-comparison.md) at `9312b41`. [Plan 022](https://github.com/imran-vz/dbunk/blob/db2dae24c504248d62f15f772bf82e4c8d1f5ff2/plans/022-postgres-schema-comparison-activation.md), completed at `db2dae2`, adds the Object inspector (mock A) workbench surface: a PostgreSQL-only Schema compare rail item with explicit source/target endpoints, paged object and field inspection, lazy value chunks, coverage metadata and session job controls. Frontend checks pass and the native fixture and WebView memory gate ran on 2026-10-01 (macOS, debug native build). Wider object coverage and migration SQL follow separately.
 - ❌ Data compare: the former sampled prototype was removed; bounded comparison remains PAR-008 follow-up.
 - ✅ Mock data generator (column-aware INSERTs from real `tableStructure`)
-- 🟡 Varied seed data (ADR-0014, "Seed data variety"): length ranges per column, libphonenumber-valid phones, multi-locale names and addresses, long text; fictional-safe by default. Phases: (1) ✅ fix length/precision/enum bugs, (2) ✅ length-targeted name, email, username, word and prose generators with per-row personas, eight locales and the in-repo data pipeline (`tools/seed-data/build.py`), (3) phones and addresses, (4) native per-column settings (length, locales, realism) with a live preview.
+- 🟡 Varied seed data (ADR-0014, "Seed data variety"): length ranges per column, libphonenumber-valid phones, multi-locale names and addresses, long text; fictional-safe by default. Phases: (1) ✅ fix length/precision/enum bugs, (2) ✅ length-targeted name, email, username, word and prose generators with per-row personas, eight locales and the in-repo data pipeline (`tools/seed-data/build.py`), (3) ✅ libphonenumber-backed phones (fiction-only ranges for US/UK/DE/FR), coherent per-row addresses from GeoNames and libaddressinput, length-aware companies and URLs, (4) native per-column settings (length, locales, realism) with a live preview.
 
 ---
 
@@ -162,6 +162,21 @@ and the ADRs cited). Treat each bullet as the seed for its own design pass.
   scripting, MONITOR capture; parameter substitution for saved commands;
   non-string multi-key compare.
 - **Geo static-map rendering.**
+
+### Integrations
+
+- **Built-in MCP server** — let MCP clients (Claude Code, Claude Desktop,
+  editors) use dbunk's saved connections, so credentials, SSH tunnels and TLS
+  settings stay in dbunk and never reach the client. Start read-only: list
+  connections, browse schemas and objects, describe tables, run bounded
+  queries with row and time limits. Every tool call goes through the backend
+  safety policy (ADR-0004): write tools are off by default, enabled per
+  connection, never on Production or read-only connections, and audited.
+  Open questions for the design pass: transport (stdio launched by the app vs.
+  local HTTP with a per-client token), whether the server needs the app
+  running and the credential store unlocked, a per-connection opt-in, and
+  showing active MCP sessions in the UI so the user can revoke them. Needs its
+  own ADR.
 
 ### Cross-cutting UX
 

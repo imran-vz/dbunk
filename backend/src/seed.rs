@@ -9,6 +9,8 @@
 use crate::{ColumnInfo, SeedColumnSpec, TableStructure};
 
 pub(crate) mod data;
+pub(crate) mod phone;
+pub(crate) mod place;
 pub(crate) mod text;
 
 pub use data::Locale;
@@ -18,9 +20,11 @@ pub use text::Realism;
 /// only under the same version. Bump it whenever the data files
 /// ([`data::DATA_VERSION`]), a generator's algorithm or the order of RNG
 /// draws changes.
-pub(crate) const SEED_GENERATOR_VERSION: u32 = 1;
+pub(crate) const SEED_GENERATOR_VERSION: u32 = 2;
+use place::Place;
+pub use text::GenOptions;
 use text::Persona;
-pub(crate) use text::{GenOptions, LengthPlan, MAX_GENERATED_CHARS};
+pub(crate) use text::{LengthPlan, MAX_GENERATED_CHARS};
 
 // ---------------------------------------------------------------------------
 // Deterministic RNG — splitmix64
@@ -118,6 +122,60 @@ pub(crate) enum GenKind {
     Company,
     MiddleName,
     Paragraph,
+    AddressLine2,
+    Region,
+    PostalCode,
+    CountryCode,
+    FullAddress,
+}
+
+/// What one generated row has to draw before its cells.
+#[derive(Debug, Default, Clone, Copy)]
+struct Needs {
+    persona: bool,
+    place: bool,
+    locale: bool,
+}
+
+impl Needs {
+    fn of(plan: &SeedPlan) -> Self {
+        let mut needs = Needs::default();
+        for column in &plan.columns {
+            if let ColumnSource::Generated { kind, .. } = column.source {
+                needs.persona |= kind.uses_persona();
+                needs.place |= kind.uses_place();
+                needs.locale |= kind.uses_locale();
+            }
+        }
+        needs
+    }
+}
+
+/// The made-up person and place one row's columns share, so a row's name,
+/// email, address and phone agree with each other.
+struct Row {
+    persona: Option<Persona>,
+    place: Option<Place>,
+    locale: Option<Locale>,
+}
+
+impl Row {
+    fn draw(rng: &mut SeedRng, options: &GenOptions, needs: Needs) -> Self {
+        let persona = needs.persona.then(|| Persona::draw(rng, options));
+        let locale = persona
+            .as_ref()
+            .map(|p| p.locale)
+            .or_else(|| (needs.place || needs.locale).then(|| *rng.pick(&options.locales)));
+        let place = match (needs.place, locale) {
+            (true, Some(locale)) => Some(Place::draw(rng, locale)),
+            _ => None,
+        };
+        Self {
+            persona,
+            place,
+            locale,
+        }
+    }
 }
 
 impl GenKind {
@@ -131,8 +189,60 @@ impl GenKind {
             GenKind::Email => (text::MIN_EMAIL_CHARS, text::MAX_EMAIL_CHARS),
             GenKind::UserName => (3, 255),
             GenKind::Word | GenKind::Sentence | GenKind::Paragraph => (1, MAX_GENERATED_CHARS),
+            GenKind::Phone => (phone::MIN_PHONE_CHARS, phone::MAX_PHONE_CHARS),
+            GenKind::StreetAddress => (place::MIN_STREET_CHARS, 255),
+            GenKind::AddressLine2 | GenKind::City | GenKind::Region => (1, 255),
+            GenKind::PostalCode => (place::MIN_POSTCODE_CHARS, place::MAX_POSTCODE_CHARS),
+            GenKind::Country => (2, 60),
+            GenKind::CountryCode => (2, 3),
+            GenKind::FullAddress => (place::MIN_FULL_ADDRESS_CHARS, 1000),
+            GenKind::Company => (3, 255),
+            GenKind::Url => (place::MIN_URL_CHARS, 2048),
             _ => return None,
         })
+    }
+
+    /// Values of these kinds are ASCII; others may need four UTF-8 bytes
+    /// per character.
+    fn ascii(self) -> bool {
+        matches!(
+            self,
+            GenKind::Word
+                | GenKind::Sentence
+                | GenKind::Paragraph
+                | GenKind::Email
+                | GenKind::UserName
+                | GenKind::Phone
+                | GenKind::PostalCode
+                | GenKind::CountryCode
+                | GenKind::Url
+        )
+    }
+
+    /// Values of these kinds come from the row's place.
+    fn uses_place(self) -> bool {
+        matches!(
+            self,
+            GenKind::StreetAddress
+                | GenKind::AddressLine2
+                | GenKind::City
+                | GenKind::Region
+                | GenKind::PostalCode
+                | GenKind::FullAddress
+        )
+    }
+
+    /// Values of these kinds follow the row's locale without a person or
+    /// place of their own.
+    fn uses_locale(self) -> bool {
+        matches!(
+            self,
+            GenKind::Phone
+                | GenKind::Company
+                | GenKind::Url
+                | GenKind::Country
+                | GenKind::CountryCode
+        )
     }
 
     /// Longest value this kind can produce under `length`, in characters,
@@ -143,6 +253,12 @@ impl GenKind {
             GenKind::Word => 64,
             GenKind::Sentence => 256,
             GenKind::Paragraph => 6 * 241,
+            GenKind::Phone => phone::MAX_PHONE_CHARS,
+            GenKind::PostalCode => place::MAX_POSTCODE_CHARS,
+            GenKind::CountryCode => 3,
+            GenKind::Country => 60,
+            GenKind::Url => 160,
+            GenKind::FullAddress => 400,
             _ => 255,
         };
         let produced = if length.uniform {
@@ -170,7 +286,31 @@ impl GenKind {
     fn unique_tag_overhead(self) -> usize {
         match self {
             GenKind::Sentence | GenKind::Paragraph => 3,
+            GenKind::StreetAddress
+            | GenKind::AddressLine2
+            | GenKind::FullAddress
+            | GenKind::Company => 2,
+            GenKind::Url => 4,
             _ => 1,
+        }
+    }
+
+    /// The tag a unique column appends: a separator the row number never
+    /// contains, so values with distinct row numbers never collide.
+    fn unique_tag(self, sequence: u64) -> String {
+        match self {
+            GenKind::Email => format!(".{sequence}"),
+            GenKind::UserName => format!("_{sequence}"),
+            GenKind::Sentence | GenKind::Paragraph => format!(" ({sequence})"),
+            GenKind::FullName => format!(" {sequence}"),
+            GenKind::StreetAddress
+            | GenKind::AddressLine2
+            | GenKind::FullAddress
+            | GenKind::Company => {
+                format!(" #{sequence}")
+            }
+            GenKind::Url => format!("?id={sequence}"),
+            _ => format!("-{sequence}"),
         }
     }
 }
@@ -181,52 +321,6 @@ const WORDS: &[&str] = &[
     "orchard", "pebble", "quartz", "ripple", "sable", "tundra", "umber", "velvet", "wander",
     "yonder", "zephyr", "atlas", "breeze", "cinder", "dapple", "eddy", "fjord", "glade",
 ];
-
-const CITIES: &[&str] = &[
-    "Portland",
-    "Austin",
-    "Denver",
-    "Seattle",
-    "Chicago",
-    "Boston",
-    "Atlanta",
-    "Lisbon",
-    "Berlin",
-    "Amsterdam",
-    "Oslo",
-    "Toronto",
-    "Melbourne",
-    "Osaka",
-    "Bengaluru",
-    "Nairobi",
-    "Bogota",
-    "Krakow",
-    "Tallinn",
-    "Auckland",
-];
-
-const COUNTRIES: &[&str] = &[
-    "United States",
-    "Canada",
-    "Germany",
-    "France",
-    "Japan",
-    "Brazil",
-    "India",
-    "Australia",
-    "Netherlands",
-    "Norway",
-    "Portugal",
-    "Kenya",
-    "Poland",
-    "Estonia",
-    "New Zealand",
-    "Mexico",
-];
-
-const STREET_KINDS: &[&str] = &["St", "Ave", "Blvd", "Lane", "Way", "Drive", "Court"];
-
-const COMPANY_SUFFIXES: &[&str] = &["Labs", "Co", "Systems", "Works", "Group", "Industries"];
 
 /// Map a frontend generator id to its `GenKind`.
 pub(crate) fn parse_generator_id(id: &str) -> Result<GenKind, String> {
@@ -259,6 +353,11 @@ pub(crate) fn parse_generator_id(id: &str) -> Result<GenKind, String> {
         "company" => GenKind::Company,
         "middleName" => GenKind::MiddleName,
         "paragraph" => GenKind::Paragraph,
+        "addressLine2" => GenKind::AddressLine2,
+        "region" => GenKind::Region,
+        "postalCode" => GenKind::PostalCode,
+        "countryCode" => GenKind::CountryCode,
+        "fullAddress" => GenKind::FullAddress,
         other => return Err(format!("unknown generator id: {other}")),
     })
 }
@@ -487,23 +586,23 @@ fn infer_from_name(name: &str, data_type: &str) -> Option<GenKind> {
         if n.contains("username") || n == "user_name" || n == "handle" || n == "login" {
             return Some(GenKind::UserName);
         }
-        if n.ends_with("name") && !names_a_thing(&n) {
-            return Some(GenKind::FullName);
-        }
+        // Before addresses: `website_address` is a URL.
         if n.contains("url") || n.contains("website") || n.contains("homepage") {
             return Some(GenKind::Url);
         }
-        if n.contains("phone") || n.contains("mobile") || n == "tel" || n.contains("msisdn") {
+        if let Some(kind) = infer_address(&n) {
+            return Some(kind);
+        }
+        if n.ends_with("name") && !names_a_thing(&n) {
+            return Some(GenKind::FullName);
+        }
+        if n.contains("phone")
+            || n.contains("mobile")
+            || n.contains("msisdn")
+            || ends_with_word(&n, "tel")
+            || ends_with_word(&n, "fax")
+        {
             return Some(GenKind::Phone);
-        }
-        if n == "city" || n.ends_with("_city") {
-            return Some(GenKind::City);
-        }
-        if n == "country" || n.ends_with("_country") {
-            return Some(GenKind::Country);
-        }
-        if n.contains("address") || n.contains("street") {
-            return Some(GenKind::StreetAddress);
         }
         // Whole name parts only: `message_id`, `content_type` and
         // `content_hash` are identifiers, not prose.
@@ -546,6 +645,105 @@ fn infer_from_name(name: &str, data_type: &str) -> Option<GenKind> {
             || n.contains("salary"))
     {
         return Some(GenKind::Price);
+    }
+    None
+}
+
+/// Address-part columns. `state` is left alone: it is as often a status
+/// (`order.state`) as a region, so it needs an explicit generator.
+fn infer_address(n: &str) -> Option<GenKind> {
+    let any = |words: &[&str]| words.iter().any(|w| ends_with_word(n, w));
+    let exactly = |words: &[&str]| words.contains(&n);
+    if any(&[
+        "country_code",
+        "country_iso",
+        "iso_country",
+        "country_iso2",
+        "country_alpha2",
+    ]) {
+        return Some(GenKind::CountryCode);
+    }
+    if any(&["country", "country_name"]) {
+        return Some(GenKind::Country);
+    }
+    if any(&[
+        "zip",
+        "zipcode",
+        "zip_code",
+        "postcode",
+        "post_code",
+        "postal_code",
+        "postalcode",
+        "pincode",
+        "pin_code",
+        "cep",
+        "plz",
+    ]) {
+        return Some(GenKind::PostalCode);
+    }
+    // Plain `region` (`aws_region`) and `state` (`order.state`) are as often
+    // something else, so they need an explicit generator.
+    if any(&[
+        "province",
+        "county",
+        "prefecture",
+        "state_province",
+        "state_name",
+    ]) {
+        return Some(GenKind::Region);
+    }
+    if any(&["city", "town", "locality", "city_name"]) {
+        return Some(GenKind::City);
+    }
+    // Only the address forms: `test_suite` is not an apartment.
+    if any(&["address2", "address_2", "address_line2", "address_line_2"])
+        || exactly(&[
+            "line2",
+            "line_2",
+            "apartment",
+            "apt",
+            "apt_number",
+            "suite",
+            "suite_number",
+        ])
+    {
+        return Some(GenKind::AddressLine2);
+    }
+    // `ip_address`, `mac_address`, `wallet_address` are not postal; their
+    // `_country` and `_city` siblings were handled above.
+    let network = [
+        "ip", "mac", "wallet", "contract", "memory", "host", "remote", "server", "bitcoin",
+    ]
+    .iter()
+    .any(|w| n.starts_with(&format!("{w}_")) || n.starts_with(&format!("{w}address")));
+    if network {
+        return None;
+    }
+    if any(&[
+        "full_address",
+        "mailing_address",
+        "postal_address",
+        "billing_address",
+        "shipping_address",
+        "home_address",
+        "work_address",
+        "delivery_address",
+    ]) {
+        return Some(GenKind::FullAddress);
+    }
+    if any(&[
+        "address",
+        "address1",
+        "address_1",
+        "address_line1",
+        "address_line_1",
+        "line1",
+        "line_1",
+        "street",
+        "street_address",
+        "street_name",
+    ]) {
+        return Some(GenKind::StreetAddress);
     }
     None
 }
@@ -949,21 +1147,26 @@ fn plan_length(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CapacityError {
     /// Unique `numeric(p, s)` values would outgrow the integer digits.
-    NumericRange,
+    Numeric,
     /// Unique text values would outgrow the length window once tagged.
-    LengthRange,
+    Length,
+    /// A unique phone column needs more numbers than its ranges hold.
+    Phone,
 }
 
 impl From<CapacityError> for String {
     fn from(error: CapacityError) -> Self {
         match error {
-            CapacityError::NumericRange => {
+            CapacityError::Numeric => {
                 "a unique numeric column cannot hold this many distinct values".to_string()
             }
-            CapacityError::LengthRange => {
+            CapacityError::Length => {
                 "a unique text column's length range is too short to hold this many distinct values"
                     .to_string()
             }
+            CapacityError::Phone => "a unique phone column needs more numbers than the \
+                 fictional-safe ranges hold; allow realistic values or seed fewer rows"
+                .to_string(),
         }
     }
 }
@@ -985,14 +1188,7 @@ pub(crate) fn worst_case_value_bytes(plan: &SeedPlan, column: &ColumnPlan) -> us
         ColumnSource::Generated { kind, length, .. } => match (kind.text_limits(), length) {
             (Some((min, max)), length) => {
                 let length = length.unwrap_or(LengthPlan::natural(min, max));
-                let bytes_per_char = match kind {
-                    GenKind::Word
-                    | GenKind::Sentence
-                    | GenKind::Paragraph
-                    | GenKind::Email
-                    | GenKind::UserName => 1,
-                    _ => 4,
-                };
+                let bytes_per_char = if kind.ascii() { 1 } else { 4 };
                 kind.worst_case_chars(length).saturating_mul(bytes_per_char)
             }
             (None, _) => 128,
@@ -1015,7 +1211,11 @@ pub(crate) fn rows_within(plan: &SeedPlan, budget: usize) -> usize {
 pub(crate) const BATCH_VALUE_BYTES: usize = 8 * 1024 * 1024;
 
 /// Verify unique columns can hold `row_count` distinct values.
-pub(crate) fn check_capacity(draft: &PlanDraft, row_count: u32) -> Result<(), CapacityError> {
+pub(crate) fn check_capacity(
+    draft: &PlanDraft,
+    row_count: u32,
+    options: &GenOptions,
+) -> Result<(), CapacityError> {
     let digits = row_count.max(1).to_string().len();
     for column in &draft.columns {
         let ColumnSource::Generated {
@@ -1033,12 +1233,23 @@ pub(crate) fn check_capacity(draft: &PlanDraft, row_count: u32) -> Result<(), Ca
             if numeric_integer_limit(precision, scale)
                 .is_some_and(|limit| i64::from(row_count) >= limit)
             {
-                return Err(CapacityError::NumericRange);
+                return Err(CapacityError::Numeric);
             }
+        }
+        if kind == GenKind::Phone {
+            let length = length.unwrap_or(LengthPlan::natural(
+                phone::MIN_PHONE_CHARS,
+                phone::MAX_PHONE_CHARS,
+            ));
+            let phones = phone::UniquePhones::new(&options.locales, options.realism, length);
+            if u64::from(row_count) > phones.capacity() {
+                return Err(CapacityError::Phone);
+            }
+            continue;
         }
         if let (Some((min, _)), Some(length)) = (kind.text_limits(), length) {
             if length.hi < min + digits + kind.unique_tag_overhead() {
-                return Err(CapacityError::LengthRange);
+                return Err(CapacityError::Length);
             }
         }
     }
@@ -1376,10 +1587,29 @@ pub(crate) fn generate_rows_from(
     rng: &mut SeedRng,
 ) -> Vec<Vec<Option<String>>> {
     let mut rows = Vec::with_capacity(row_count as usize);
-    let needs_persona = plan
+    let needs = Needs::of(plan);
+    // Unique phone columns get their number blocks once per chunk, not
+    // once per row.
+    let unique_phones: Vec<Option<phone::UniquePhones>> = plan
         .columns
         .iter()
-        .any(|c| matches!(c.source, ColumnSource::Generated { kind, .. } if kind.uses_persona()));
+        .map(|c| match c.source {
+            ColumnSource::Generated {
+                kind: GenKind::Phone,
+                unique: true,
+                length,
+                ..
+            } => Some(phone::UniquePhones::new(
+                &plan.options.locales,
+                plan.options.realism,
+                length.unwrap_or(LengthPlan::natural(
+                    phone::MIN_PHONE_CHARS,
+                    phone::MAX_PHONE_CHARS,
+                )),
+            )),
+            _ => None,
+        })
+        .collect();
     for row_offset in 0..row_count {
         let row_index = start_row + row_offset;
         // One pool row per FK per generated row keeps composite FK
@@ -1395,10 +1625,10 @@ pub(crate) fn generate_rows_from(
                 }
             })
             .collect();
-        let persona = needs_persona.then(|| Persona::draw(rng, &plan.options));
+        let context = Row::draw(rng, &plan.options, needs);
 
         let mut row = Vec::new();
-        for column in &plan.columns {
+        for (column, phones) in plan.columns.iter().zip(&unique_phones) {
             if matches!(column.source, ColumnSource::Skip) {
                 continue;
             }
@@ -1411,7 +1641,8 @@ pub(crate) fn generate_rows_from(
                 column,
                 row_index,
                 &pool_picks,
-                persona.as_ref(),
+                &context,
+                phones.as_ref(),
                 rng,
             ));
         }
@@ -1425,7 +1656,8 @@ fn generate_cell(
     column: &ColumnPlan,
     row_index: u32,
     pool_picks: &[usize],
-    persona: Option<&Persona>,
+    context: &Row,
+    unique_phones: Option<&phone::UniquePhones>,
     rng: &mut SeedRng,
 ) -> Option<String> {
     match &column.source {
@@ -1468,8 +1700,9 @@ fn generate_cell(
                     row_index,
                     *unique,
                     length,
-                    persona,
+                    context,
                     &plan.options,
+                    unique_phones,
                 ));
             }
             let fixed_point = numeric_bound(*bound);
@@ -1505,67 +1738,116 @@ fn generate_cell(
 }
 
 /// A text value inside `length`. Unique columns get the row number as a
-/// tag the base value can never end with, so tagged values cannot collide.
-/// `persona` is the row's; only name-like kinds consult it, and only they
-/// spend RNG draws on one.
+/// tag ([`GenKind::unique_tag`]); unique phones walk distinct number blocks
+/// instead. `row` is the row's shared person, place and locale; a kind
+/// only draws what it uses.
+#[allow(clippy::too_many_arguments)]
 fn generate_text(
     kind: GenKind,
     rng: &mut SeedRng,
     row_index: u32,
     unique: bool,
     length: LengthPlan,
-    persona: Option<&Persona>,
+    row: &Row,
     options: &GenOptions,
+    unique_phones: Option<&phone::UniquePhones>,
 ) -> String {
     let sequence = u64::from(row_index) + 1;
-    let tag = |format: fn(u64) -> String| {
-        if unique {
-            format(sequence)
-        } else {
-            String::new()
+    let tag = if unique && kind != GenKind::Phone {
+        kind.unique_tag(sequence)
+    } else {
+        String::new()
+    };
+    let locale = |rng: &mut SeedRng| row.locale.unwrap_or_else(|| *rng.pick(&options.locales));
+
+    // Email and usernames place the tag themselves; phones are unique by
+    // construction.
+    match kind {
+        GenKind::Email => {
+            return with_persona(rng, row, options, |rng, persona| {
+                text::email(rng, persona, options.realism, length, &tag)
+            })
         }
-    };
-    let tag = match kind {
-        GenKind::Email => tag(|n| format!(".{n}")),
-        GenKind::UserName => tag(|n| format!("_{n}")),
-        GenKind::Sentence | GenKind::Paragraph => tag(|n| format!(" ({n})")),
-        GenKind::FullName => tag(|n| format!(" {n}")),
-        _ => tag(|n| format!("-{n}")),
-    };
-    if !kind.uses_persona() {
-        let length = length.reserve(tag.chars().count(), 1);
-        let mut value = match kind {
+        GenKind::UserName => {
+            return with_persona(rng, row, options, |rng, persona| {
+                text::user_name(rng, persona, length, &tag)
+            })
+        }
+        GenKind::Phone => {
+            let locale = locale(rng);
+            let unique = unique_phones.map(|phones| (phones, u64::from(row_index)));
+            return phone::phone(rng, locale, options.realism, length, unique);
+        }
+        _ => {}
+    }
+
+    let floor = kind.text_limits().map_or(1, |(min, _)| min);
+    let length = length.reserve(tag.chars().count(), floor);
+    let mut value = if kind.uses_persona() {
+        with_persona(rng, row, options, |rng, persona| match kind {
+            GenKind::FirstName => text::first_name(rng, persona, length),
+            GenKind::MiddleName => text::middle_name(rng, persona, length),
+            GenKind::LastName => text::last_name(rng, persona, length),
+            _ => text::full_name(rng, persona, length),
+        })
+    } else if kind.uses_place() {
+        let drawn;
+        let place = match &row.place {
+            Some(place) => place,
+            None => {
+                let locale = locale(rng);
+                drawn = Place::draw(rng, locale);
+                &drawn
+            }
+        };
+        match kind {
+            GenKind::StreetAddress => place::street(rng, place, length),
+            GenKind::AddressLine2 => place::line2(rng, place, length),
+            GenKind::City => place::locality(rng, place, length),
+            GenKind::Region => place::region(rng, place, length),
+            GenKind::PostalCode => place::postcode(rng, place, length),
+            _ => place::full_address(rng, place, length),
+        }
+    } else {
+        match kind {
+            GenKind::Company => {
+                let locale = locale(rng);
+                place::company(rng, locale, length)
+            }
+            GenKind::Url => {
+                let locale = locale(rng);
+                place::url(rng, locale, options.realism, length)
+            }
+            GenKind::Country => {
+                let locale = locale(rng);
+                place::country(rng, locale, length)
+            }
+            GenKind::CountryCode => {
+                let locale = locale(rng);
+                place::country_code(rng, locale, length)
+            }
             GenKind::Paragraph => text::prose(rng, length, (2, 6)),
             GenKind::Sentence => text::prose(rng, length, (1, 1)),
             _ => text::word(rng, length),
-        };
-        value.push_str(&tag);
-        return value;
-    }
-    // Rows with a name-like column always carry a persona; drawing one
-    // here only covers callers that generate a single cell.
-    let drawn;
-    let persona = match persona {
-        Some(persona) => persona,
-        None => {
-            drawn = Persona::draw(rng, options);
-            &drawn
         }
     };
-    match kind {
-        // Email and usernames place the tag themselves.
-        GenKind::Email => text::email(rng, persona, options.realism, length, &tag),
-        GenKind::UserName => text::user_name(rng, persona, length, &tag),
-        _ => {
-            let length = length.reserve(tag.chars().count(), 1);
-            let mut value = match kind {
-                GenKind::FirstName => text::first_name(rng, persona, length),
-                GenKind::MiddleName => text::middle_name(rng, persona, length),
-                GenKind::LastName => text::last_name(rng, persona, length),
-                _ => text::full_name(rng, persona, length),
-            };
-            value.push_str(&tag);
-            value
+    value.push_str(&tag);
+    value
+}
+
+/// Run `build` with the row's persona, drawing one for callers that
+/// generate a single cell without a row.
+fn with_persona<T>(
+    rng: &mut SeedRng,
+    row: &Row,
+    options: &GenOptions,
+    build: impl FnOnce(&mut SeedRng, &Persona) -> T,
+) -> T {
+    match &row.persona {
+        Some(persona) => build(rng, persona),
+        None => {
+            let persona = Persona::draw(rng, options);
+            build(rng, &persona)
         }
     }
 }
@@ -1811,60 +2093,18 @@ fn generate_value(
         | GenKind::MiddleName
         | GenKind::LastName
         | GenKind::FullName
-        | GenKind::UserName => unreachable!("text kinds are built by generate_text"),
-        GenKind::Url => {
-            let word = rng.pick(WORDS);
-            if unique {
-                format!("https://{word}-{sequence}.example.com")
-            } else {
-                format!("https://{word}.example.com")
-            }
-        }
-        GenKind::Phone => {
-            if unique {
-                format!("+1555{:07}", sequence)
-            } else {
-                format!(
-                    "+1{}{:07}",
-                    rng.range_i64(200, 989),
-                    rng.range_i64(0, 9_999_999)
-                )
-            }
-        }
-        GenKind::City => {
-            let city = rng.pick(CITIES);
-            if unique {
-                format!("{city}-{sequence}")
-            } else {
-                (*city).to_string()
-            }
-        }
-        GenKind::Country => (*rng.pick(COUNTRIES)).to_string(),
-        GenKind::StreetAddress => {
-            format!(
-                "{} {} {}",
-                rng.range_i64(1, 9999),
-                capitalize(rng.pick::<&str>(WORDS)),
-                rng.pick(STREET_KINDS)
-            )
-        }
-        GenKind::Company => {
-            let word = capitalize(rng.pick::<&str>(WORDS));
-            let suffix = rng.pick(COMPANY_SUFFIXES);
-            if unique {
-                format!("{word} {suffix} {sequence}")
-            } else {
-                format!("{word} {suffix}")
-            }
-        }
-    }
-}
-
-fn capitalize(word: &str) -> String {
-    let mut chars = word.chars();
-    match chars.next() {
-        Some(first) => format!("{}{}", first.to_ascii_uppercase(), chars.as_str()),
-        None => String::new(),
+        | GenKind::UserName
+        | GenKind::Url
+        | GenKind::Phone
+        | GenKind::City
+        | GenKind::Country
+        | GenKind::StreetAddress
+        | GenKind::Company
+        | GenKind::AddressLine2
+        | GenKind::Region
+        | GenKind::PostalCode
+        | GenKind::CountryCode
+        | GenKind::FullAddress => unreachable!("text kinds are built by generate_text"),
     }
 }
 
@@ -2784,7 +3024,7 @@ mod plan_tests {
             table.primary_key = Some(vec!["value".to_string()]);
             let specs = [spec("value", Some(generator), (Some(20), Some(40)))];
             let draft = analyze_plan(SeedDialect::Postgres, &table, &specs).expect("plan");
-            check_capacity(&draft, 3_000).expect("capacity");
+            check_capacity(&draft, 3_000, &GenOptions::default()).expect("capacity");
             let plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
             let rows = generate_rows(&plan, 3_000, &mut SeedRng::new(9));
             let mut seen = std::collections::HashSet::new();
@@ -2847,8 +3087,11 @@ mod plan_tests {
         let mut table = structure(vec![column("email", "character varying(10)")]);
         table.primary_key = Some(vec!["email".to_string()]);
         let draft = run(SeedDialect::Postgres, &table);
-        assert_eq!(check_capacity(&draft, 9), Ok(()));
-        assert_eq!(check_capacity(&draft, 10), Err(CapacityError::LengthRange));
+        assert_eq!(check_capacity(&draft, 9, &GenOptions::default()), Ok(()));
+        assert_eq!(
+            check_capacity(&draft, 10, &GenOptions::default()),
+            Err(CapacityError::Length)
+        );
     }
 
     #[test]
@@ -2884,6 +3127,160 @@ mod plan_tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn address_columns_are_recognised_by_name() {
+        for (name, kind) in [
+            ("address", GenKind::StreetAddress),
+            ("address_line1", GenKind::StreetAddress),
+            ("street", GenKind::StreetAddress),
+            ("address_line2", GenKind::AddressLine2),
+            ("apt", GenKind::AddressLine2),
+            ("billing_address", GenKind::FullAddress),
+            ("city", GenKind::City),
+            ("town", GenKind::City),
+            ("province", GenKind::Region),
+            ("county", GenKind::Region),
+            ("zip", GenKind::PostalCode),
+            ("postal_code", GenKind::PostalCode),
+            ("pincode", GenKind::PostalCode),
+            ("country", GenKind::Country),
+            ("country_code", GenKind::CountryCode),
+            ("fax", GenKind::Phone),
+            ("home_tel", GenKind::Phone),
+            ("email_address", GenKind::Email),
+        ] {
+            assert_eq!(classify_column(name, "text"), Some(kind), "{name}");
+        }
+        for (name, kind) in [
+            ("ip_country", GenKind::Country),
+            ("ip_city", GenKind::City),
+            ("contract_city", GenKind::City),
+            ("website_address", GenKind::Url),
+            ("homepage_address", GenKind::Url),
+            ("suite", GenKind::AddressLine2),
+        ] {
+            assert_eq!(classify_column(name, "text"), Some(kind), "{name}");
+        }
+        // Not postal: a status, network addresses, a cloud region, a test suite.
+        for name in [
+            "state",
+            "ip_address",
+            "mac_address",
+            "host_address",
+            "region",
+            "aws_region",
+            "test_suite",
+        ] {
+            let kind = classify_column(name, "character varying(64)");
+            assert_eq!(kind, Some(GenKind::Word), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_rows_address_parts_and_phone_describe_one_place() {
+        let table = structure(vec![
+            column("street", "text"),
+            column("city", "text"),
+            column("province", "text"),
+            column("zip", "text"),
+            column("country_code", "text"),
+            column("phone", "text"),
+            column("full_address", "text"),
+        ]);
+        let draft = run(SeedDialect::Postgres, &table);
+        let mut plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+        plan.options.locales = Locale::ALL.to_vec();
+        for row in generate_rows(&plan, 400, &mut SeedRng::new(8)) {
+            let cell = |i: usize| row[i].clone().unwrap();
+            let (street, city, zip, code, phone, full) =
+                (cell(0), cell(1), cell(3), cell(4), cell(5), cell(6));
+            let locale = Locale::ALL
+                .into_iter()
+                .find(|l| l.country() == code)
+                .expect("a seed country");
+            let entry = data::places(locale)
+                .entries
+                .iter()
+                .find(|e| e.postal == zip && e.locality == city)
+                .unwrap_or_else(|| panic!("{zip} {city} is not one {locale:?} place"));
+            assert_eq!(cell(2), entry.region);
+            assert!(full.contains(&street) && full.contains(&zip), "{full}");
+            // Fiction numbers such as Ofcom's 01632 have no region, so the
+            // calling code is what ties the phone to the country.
+            let number = phonenumber::parse(None, &phone).expect("phone parses");
+            let calling_code = phonenumber::metadata::DATABASE
+                .by_id(code.as_str())
+                .expect("seed country")
+                .country_code();
+            assert_eq!(number.code().value(), calling_code, "{phone} for {code}");
+        }
+    }
+
+    #[test]
+    fn unique_phones_are_bounded_by_the_fiction_ranges() {
+        let mut table = structure(vec![column("phone", "text")]);
+        table.primary_key = Some(vec!["phone".to_string()]);
+        let draft = run(SeedDialect::Postgres, &table);
+        let us = GenOptions {
+            locales: vec![Locale::EnUs],
+            realism: Realism::FictionalSafe,
+        };
+        assert_eq!(check_capacity(&draft, 3_200, &us), Ok(()));
+        assert_eq!(
+            check_capacity(&draft, 3_201, &us),
+            Err(CapacityError::Phone)
+        );
+        let realistic = GenOptions {
+            realism: Realism::Realistic,
+            ..us.clone()
+        };
+        assert_eq!(check_capacity(&draft, 1_000_000, &realistic), Ok(()));
+
+        let mut plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+        plan.options = us;
+        let values: std::collections::HashSet<_> =
+            generate_rows(&plan, 3_200, &mut SeedRng::new(2))
+                .into_iter()
+                .map(|row| row[0].clone().unwrap())
+                .collect();
+        assert_eq!(values.len(), 3_200);
+    }
+
+    #[test]
+    fn unique_phones_keep_the_rows_country() {
+        let mut table = structure(vec![
+            column("country_code", "text"),
+            column("phone", "text"),
+        ]);
+        table.primary_key = Some(vec!["phone".to_string()]);
+        let draft = run(SeedDialect::Postgres, &table);
+        let mut plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+        plan.options.locales = vec![Locale::EnUs, Locale::Fr];
+        let mut seen = std::collections::HashSet::new();
+        for row in generate_rows(&plan, 3_000, &mut SeedRng::new(4)) {
+            let (code, phone) = (row[0].clone().unwrap(), row[1].clone().unwrap());
+            let expected = if code == "US" { "+1" } else { "+33" };
+            assert!(phone.starts_with(expected), "{code}: {phone}");
+            assert!(seen.insert(phone));
+        }
+    }
+
+    #[test]
+    fn country_columns_draw_no_place() {
+        let table = structure(vec![column("country_code", "text")]);
+        let draft = run(SeedDialect::Postgres, &table);
+        let plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+        let mut rng = SeedRng::new(6);
+        assert_eq!(
+            generate_rows(&plan, 1, &mut rng)[0][0].as_deref(),
+            Some("US")
+        );
+        // One draw picks the row's locale; nothing else is spent.
+        let mut expected = SeedRng::new(6);
+        expected.next_u64();
+        assert_eq!(rng.next_u64(), expected.next_u64());
     }
 
     #[test]

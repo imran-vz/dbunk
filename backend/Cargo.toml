@@ -78,6 +78,12 @@ zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 quick-xml = { version = "=0.31.0", default-features = false, features = ["encoding"] }
 rust_xlsxwriter = "0.84"
 flate2 = "1.1"
+# Table Seeding phone numbers (ADR-0014): libphonenumber metadata, validation
+# and formatting. Pinned because its metadata decides which numbers a seed
+# produces; bump SEED_GENERATOR_VERSION together with it.
+phonenumber = "=0.3.10"
+# Samples phonenumber's national-number patterns with the seed's own RNG.
+regex-syntax = "0.8"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -89,3 +95,5 @@ windows-sys = { version = "0.61", features = ["Win32_System_IO"] }
 serialize-to-javascript = "=0.1.2"
 tokio = { version = "1", features = ["macros", "rt"] }
 serial_test = "3"
+# Checks generated postcodes against libaddressinput patterns.
+regex = "1"

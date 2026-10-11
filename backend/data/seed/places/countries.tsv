@@ -1,0 +1,8 @@
+en-US	US	United States	%N%n%O%n%A%n%C %S %Z	\d{5}([ \-]\d{4})?
+en-GB	GB	United Kingdom	%N%n%O%n%A%n%C%n%S%n%Z	GIR[ ]?0AA|((AB|AL|B|BA|BB|BD|BH|BL|BN|BR|BS|BT|BX|CA|CB|CF|CH|CM|CO|CR|CT|CV|CW|DA|DD|DE|DG|DH|DL|DN|DT|DY|E|EC|EH|EN|EX|FK|FY|G|GL|GY|GU|HA|HD|HG|HP|HR|HS|HU|HX|IG|IM|IP|IV|JE|KA|KT|KW|KY|L|LA|LD|LE|LL|LN|LS|LU|M|ME|MK|ML|N|NE|NG|NN|NP|NR|NW|OL|OX|PA|PE|PH|PL|PO|PR|RG|RH|RM|S|SA|SE|SG|SK|SL|SM|SN|SO|SP|SR|SS|ST|SW|SY|TA|TD|TF|TN|TQ|TR|TS|TW|UB|W|WA|WC|WD|WF|WN|WR|WS|WV|YO|ZE)(\d[\dA-Z]?[ ]?\d[ABD-HJLN-UW-Z]{2}))|BFPO[ ]?\d{1,4}
+en-IN	IN	India	%N%n%O%n%A%n%C %Z%n%S	\d{6}
+de	DE	Germany	%N%n%O%n%A%n%Z %C	\d{5}
+fr	FR	France	%O%n%N%n%A%n%Z %C %X	\d{2}[ ]?\d{3}
+es	ES	Spain	%N%n%O%n%A%n%Z %C %S	\d{5}
+pt-BR	BR	Brazil	%O%n%N%n%A%n%C-%S%n%Z	\d{5}[\-]?\d{3}
+ja	JP	Japan	〒%Z%n%S%C%n%A%n%O%n%N	\d{3}-?\d{4}

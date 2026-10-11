@@ -11,6 +11,26 @@ Redis is a registered trademark of Redis Ltd. Any rights therein are reserved
 to Redis Ltd. dbunk is an independent project and is not affiliated with,
 endorsed, supported or certified by any of them.
 
+Native additions: Table Seeding data
+
+Table Seeding generates test data from data compiled into the app. Sources
+and generation are described in backend/data/seed/MANIFEST.md.
+
+- Postcodes, localities and regions: GeoNames (https://www.geonames.org/),
+  licensed under the Creative Commons Attribution 4.0 License
+  (https://creativecommons.org/licenses/by/4.0/). The data was filtered and
+  sampled.
+- Address formats, postcode patterns and subdivision codes: Google
+  libaddressinput, Copyright (C) 2013 Google Inc., licensed under the Apache
+  License, Version 2.0 (https://www.apache.org/licenses/LICENSE-2.0).
+- Phone number metadata: Google libphonenumber, Copyright (C) 2009 The
+  Libphonenumber Authors, licensed under the Apache License, Version 2.0, as
+  bundled by the phonenumber crate.
+- Names and Japanese municipality names: Wikidata, CC0 1.0. US family names:
+  US Census Bureau, public domain. Prose: public-domain novels.
+- Fiction-only phone ranges as published by NANPA, Ofcom, the
+  Bundesnetzagentur (Mitteilung 148/2021) and ARCEP (Décision 2018-0881).
+
 Native additions: SQL keyword vocabulary
 
 The keyword vocabulary in src/sql_format/keyword_vocabulary.rs is derived from

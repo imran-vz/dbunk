@@ -25,6 +25,7 @@ const MAX_PARAMS_PER_STATEMENT: usize = 60_000;
 /// How many distinct parent rows to sample per foreign key.
 const FK_POOL_LIMIT: usize = 1_000;
 
+#[cfg(test)]
 pub async fn seed_table<F>(
     connection: &StoredConnection,
     schema: &str,
@@ -32,6 +33,33 @@ pub async fn seed_table<F>(
     row_count: u32,
     seed: u64,
     specs: &[SeedColumnSpec],
+    report_progress: F,
+) -> Result<SeedTableResult, String>
+where
+    F: Fn(u64) + Send + Sync,
+{
+    seed_table_with(
+        connection,
+        schema,
+        table,
+        row_count,
+        seed,
+        specs,
+        &crate::SeedOptions::default(),
+        report_progress,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn seed_table_with<F>(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    row_count: u32,
+    seed: u64,
+    specs: &[SeedColumnSpec],
+    options: &crate::SeedOptions,
     report_progress: F,
 ) -> Result<SeedTableResult, String>
 where
@@ -45,7 +73,7 @@ where
     let start = Instant::now();
 
     let draft = analyze_plan(SeedDialect::Postgres, &structure, specs)?;
-    check_capacity(&draft, row_count)?;
+    check_capacity(&draft, row_count, options)?;
 
     // Only the foreign keys the plan actually draws from get sampled.
     let mut fk_pools: Vec<Option<Vec<Vec<String>>>> = vec![None; structure.foreign_keys.len()];
@@ -61,13 +89,14 @@ where
         ));
     }
 
-    let plan = finalize_plan(
+    let mut plan = finalize_plan(
         &structure,
         draft,
         fk_pools,
         &maxes,
         chrono::Utc::now().timestamp(),
     )?;
+    plan.options = options.clone();
 
     let columns = insert_columns(&plan);
     if columns.is_empty() {

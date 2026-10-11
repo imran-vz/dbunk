@@ -296,10 +296,10 @@ fn unique_fixed_point_runs_must_fit_the_integer_digits() {
     let draft = planning::draft(&p.catalog, &p.intent).unwrap();
     // numeric(3,2) holds integer parts 0..=9, and row 10 needs 10.
     assert_eq!(
-        planning::capacity(&draft, 10),
+        planning::capacity(&draft, 10, &p.intent),
         Err(TableSeedError::IntegerRange)
     );
-    assert_eq!(planning::capacity(&draft, 9), Ok(()));
+    assert_eq!(planning::capacity(&draft, 9, &p.intent), Ok(()));
 }
 
 fn auto(column: &str, length: Option<TableSeedLength>) -> TableSeedColumnSpec {

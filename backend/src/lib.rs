@@ -24,6 +24,8 @@ mod redis;
 mod result_mutation;
 mod safety;
 mod seed;
+/// Locales and realism for a seed run (ADR-0014).
+pub use seed::{GenOptions as SeedOptions, Locale as SeedLocale, Realism as SeedRealism};
 mod settings;
 mod socket_lifecycle;
 mod storage;

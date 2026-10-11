@@ -99,7 +99,7 @@ pub(crate) async fn inspect(
         // Capacity needs the row count, so it is checked here as well as
         // at execution: a recipe that cannot fit fails at review.
         let draft = planning::draft(&catalog, &intent).and_then(|draft| {
-            planning::capacity(&draft, intent.row_count)?;
+            planning::capacity(&draft, intent.row_count, &intent)?;
             Ok(draft)
         });
         let columns = planning::columns(&catalog, draft.as_ref().ok());

@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 /// Version of the files under `backend/data/seed/`. Must match
 /// `DATA_VERSION` in `tools/seed-data/build.py`; bumping it also requires
 /// bumping [`super::SEED_GENERATOR_VERSION`].
-pub(crate) const DATA_VERSION: u32 = 1;
+pub(crate) const DATA_VERSION: u32 = 2;
 
 macro_rules! names {
     ($locale:literal) => {
@@ -108,6 +108,61 @@ impl Locale {
             Locale::De | Locale::Fr | Locale::PtBr | Locale::Es => 0.1,
             Locale::EnIn => 0.05,
             Locale::Ja => 0.0,
+        }
+    }
+
+    /// ISO 3166-1 alpha-2 country the locale's places and phones belong to.
+    pub(crate) fn country(self) -> &'static str {
+        match self {
+            Locale::EnUs => "US",
+            Locale::EnGb => "GB",
+            Locale::EnIn => "IN",
+            Locale::De => "DE",
+            Locale::Fr => "FR",
+            Locale::Es => "ES",
+            Locale::PtBr => "BR",
+            Locale::Ja => "JP",
+        }
+    }
+
+    /// The country's official English name.
+    pub(crate) fn official_name(self) -> &'static str {
+        match self {
+            Locale::EnUs => "United States of America",
+            Locale::EnGb => "United Kingdom of Great Britain and Northern Ireland",
+            Locale::EnIn => "Republic of India",
+            Locale::De => "Federal Republic of Germany",
+            Locale::Fr => "French Republic",
+            Locale::Es => "Kingdom of Spain",
+            Locale::PtBr => "Federative Republic of Brazil",
+            Locale::Ja => "Japan",
+        }
+    }
+
+    /// ISO 3166-1 alpha-3 code of [`Locale::country`].
+    pub(crate) fn country_alpha3(self) -> &'static str {
+        match self {
+            Locale::EnUs => "USA",
+            Locale::EnGb => "GBR",
+            Locale::EnIn => "IND",
+            Locale::De => "DEU",
+            Locale::Fr => "FRA",
+            Locale::Es => "ESP",
+            Locale::PtBr => "BRA",
+            Locale::Ja => "JPN",
+        }
+    }
+
+    fn places_file(self) -> &'static str {
+        match self {
+            Locale::EnUs => include_str!("../../data/seed/places/en-US.tsv"),
+            Locale::EnGb => include_str!("../../data/seed/places/en-GB.tsv"),
+            Locale::EnIn => include_str!("../../data/seed/places/en-IN.tsv"),
+            Locale::De => include_str!("../../data/seed/places/de.tsv"),
+            Locale::Fr => include_str!("../../data/seed/places/fr.tsv"),
+            Locale::Es => include_str!("../../data/seed/places/es.tsv"),
+            Locale::PtBr => include_str!("../../data/seed/places/pt-BR.tsv"),
+            Locale::Ja => include_str!("../../data/seed/places/ja.tsv"),
         }
     }
 
@@ -345,6 +400,96 @@ pub(crate) fn names(locale: Locale) -> &'static LocaleNames {
         .1
 }
 
+/// One postcode with the locality and region it belongs to.
+#[derive(Debug)]
+pub(crate) struct PlaceEntry {
+    pub postal: &'static str,
+    pub locality: &'static str,
+    pub region: &'static str,
+    /// State or UF abbreviation where addresses use one (US, BR).
+    pub region_code: &'static str,
+}
+
+/// A locale's places plus length-indexed views for windowed draws.
+pub(crate) struct Places {
+    pub entries: Vec<PlaceEntry>,
+    pub localities: WeightedList,
+    pub regions: WeightedList,
+    pub postcodes: WeightedList,
+    /// English country name.
+    pub country_name: &'static str,
+    /// libaddressinput format: `%A` street, `%C` locality, `%S` region,
+    /// `%Z` postcode, `%n` line break.
+    pub address_format: &'static str,
+    /// libaddressinput postcode pattern.
+    pub postcode_pattern: &'static str,
+}
+
+const COUNTRIES: &str = include_str!("../../data/seed/places/countries.tsv");
+
+fn parse_places(locale: Locale) -> Result<Places, String> {
+    let country = COUNTRIES
+        .lines()
+        .map(|line| line.split('\t').collect::<Vec<_>>())
+        .find(|fields| fields.first() == Some(&locale.id()))
+        .ok_or_else(|| format!("no country record for {}", locale.id()))?;
+    let [_, iso, name, format, pattern] = country[..] else {
+        return Err(format!("country line needs 5 fields: {country:?}"));
+    };
+    if iso != locale.country() {
+        return Err(format!(
+            "{} is {iso}, expected {}",
+            locale.id(),
+            locale.country()
+        ));
+    }
+    let mut places = Places {
+        entries: Vec::new(),
+        localities: WeightedList::default(),
+        regions: WeightedList::default(),
+        postcodes: WeightedList::default(),
+        country_name: name,
+        address_format: format,
+        postcode_pattern: pattern,
+    };
+    for line in locale.places_file().lines() {
+        let fields: Vec<&str> = line.split('\t').collect();
+        let [postal, locality, region, region_code] = fields[..] else {
+            return Err(format!("place line needs 4 fields: {line:?}"));
+        };
+        if postal.is_empty() || locality.is_empty() || region.is_empty() {
+            return Err(format!("place line has an empty field: {line:?}"));
+        }
+        places.localities.push(locality, locality, 1);
+        places.regions.push(region, region, 1);
+        places.postcodes.push(postal, postal, 1);
+        places.entries.push(PlaceEntry {
+            postal,
+            locality,
+            region,
+            region_code,
+        });
+    }
+    if places.entries.is_empty() {
+        return Err(format!("no places for {}", locale.id()));
+    }
+    Ok(places)
+}
+
+pub(crate) fn places(locale: Locale) -> &'static Places {
+    static PLACES: OnceLock<Vec<(Locale, Places)>> = OnceLock::new();
+    let all = PLACES.get_or_init(|| {
+        Locale::ALL
+            .iter()
+            .map(|&l| (l, parse_places(l).expect(VALIDATED)))
+            .collect()
+    });
+    &all.iter()
+        .find(|(l, _)| *l == locale)
+        .expect("every locale is loaded")
+        .1
+}
+
 pub(crate) fn text() -> &'static Text {
     static TEXT: OnceLock<Text> = OnceLock::new();
     TEXT.get_or_init(|| Text {
@@ -364,6 +509,10 @@ mod tests {
             parse_names(given, family).unwrap_or_else(|e| panic!("{locale:?}: {e}"));
         }
         parse_words(WORDS).expect("words");
+        for locale in Locale::ALL {
+            let places = parse_places(locale).unwrap_or_else(|e| panic!("{locale:?}: {e}"));
+            assert!(places.entries.len() > 1000, "{locale:?}");
+        }
         assert!(parse_names("Ann\tAnn\t3\tu\n", "").is_err());
         assert!(parse_names("Ann\tAnn\tmany\tf\n", "").is_err());
         assert!(parse_names("", "Smith\tSmith\n").is_err());

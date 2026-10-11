@@ -346,7 +346,7 @@ pub(super) async fn finalize(
         }
         maxes.push((name.clone(), value));
     }
-    capacity(&draft, plan.intent.row_count)?;
+    capacity(&draft, plan.intent.row_count, &plan.intent)?;
     let mut seed_plan = seed::finalize_plan(&structure, draft, pools, &maxes, plan.clock)
         .map_err(|_| TableSeedError::InvalidRecipe)?;
     seed_plan.options = options(&plan.intent);
@@ -354,10 +354,15 @@ pub(super) async fn finalize(
 }
 /// Unique columns must have room for `row_count` distinct values: integer
 /// digits for fixed-point numbers, characters for tagged text.
-pub(super) fn capacity(draft: &seed::PlanDraft, row_count: u32) -> Result<(), TableSeedError> {
-    seed::check_capacity(draft, row_count).map_err(|e| match e {
-        seed::CapacityError::NumericRange => TableSeedError::IntegerRange,
-        seed::CapacityError::LengthRange => TableSeedError::LengthRange,
+pub(super) fn capacity(
+    draft: &seed::PlanDraft,
+    row_count: u32,
+    intent: &TableSeedIntent,
+) -> Result<(), TableSeedError> {
+    seed::check_capacity(draft, row_count, &options(intent)).map_err(|e| match e {
+        seed::CapacityError::Numeric => TableSeedError::IntegerRange,
+        seed::CapacityError::Length => TableSeedError::LengthRange,
+        seed::CapacityError::Phone => TableSeedError::PhoneRange,
     })
 }
 /// Worst-case admission before generator clones any literal, list member or FK

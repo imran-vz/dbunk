@@ -151,6 +151,11 @@ pub enum TableSeedGenerator {
     Json,
     MiddleName,
     Paragraph,
+    AddressLine2,
+    Region,
+    PostalCode,
+    CountryCode,
+    FullAddress,
 }
 impl TableSeedGenerator {
     pub fn id(self) -> &'static str {
@@ -183,6 +188,11 @@ impl TableSeedGenerator {
             Self::Json => "json",
             Self::MiddleName => "middleName",
             Self::Paragraph => "paragraph",
+            Self::AddressLine2 => "addressLine2",
+            Self::Region => "region",
+            Self::PostalCode => "postalCode",
+            Self::CountryCode => "countryCode",
+            Self::FullAddress => "fullAddress",
         }
     }
 }
@@ -505,6 +515,7 @@ pub enum TableSeedError {
     EmptyParent,
     IntegerRange,
     LengthRange,
+    PhoneRange,
     PolicyBlocked,
     Credentials,
     Database,
@@ -534,6 +545,9 @@ impl fmt::Display for TableSeedError {
             Self::IntegerRange => "Unique value generation would exceed the column range",
             Self::LengthRange => {
                 "A column's length range does not fit the column, its generator or the row count"
+            }
+            Self::PhoneRange => {
+                "A unique phone column needs more numbers than the fictional-safe ranges hold"
             }
             Self::PolicyBlocked => "Stored connection policy blocks seeding",
             Self::Credentials => "Connection credentials are unavailable",

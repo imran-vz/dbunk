@@ -33,11 +33,11 @@ impl LengthPlan {
         }
     }
 
-    fn contains(&self, chars: usize) -> bool {
+    pub(crate) fn contains(&self, chars: usize) -> bool {
         (self.lo..=self.hi).contains(&chars)
     }
 
-    fn target(&self, rng: &mut SeedRng) -> Option<usize> {
+    pub(crate) fn target(&self, rng: &mut SeedRng) -> Option<usize> {
         self.uniform
             .then(|| rng.range_i64(self.lo as i64, self.hi as i64) as usize)
     }
@@ -63,8 +63,9 @@ pub enum Realism {
     Realistic,
 }
 
+/// Locales and realism for one seed run.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct GenOptions {
+pub struct GenOptions {
     /// Never empty. Each row draws one of these.
     pub locales: Vec<Locale>,
     pub realism: Realism,
@@ -163,7 +164,7 @@ fn token(ascii: &str) -> String {
         .collect()
 }
 
-fn chars(value: &str) -> usize {
+pub(crate) fn chars(value: &str) -> usize {
     value.chars().count()
 }
 
@@ -205,12 +206,22 @@ pub(crate) fn compose(
                 len += gap + entry.chars;
             }
             None => {
-                // No exact fit: shorten a longer entry to the remainder.
-                let entry = list
-                    .pick_within(rng, remaining, usize::MAX)
-                    .unwrap_or_else(|| list.pick(rng));
+                // No exact fit: shorten a longer entry to the remainder, at a
+                // point that does not leave a space or hyphen at the end.
+                let ends_cleanly =
+                    |piece: &str| piece.chars().last().is_some_and(char::is_alphanumeric);
+                let piece = (0..16)
+                    .filter_map(|_| list.pick_within(rng, remaining, usize::MAX))
+                    .map(|entry| cut(entry.text, remaining))
+                    .find(|piece| ends_cleanly(piece))
+                    .unwrap_or_else(|| {
+                        // Plain words are letters only, so any cut ends cleanly.
+                        let words = &data::text().words;
+                        let word = words.pick_within(rng, remaining, usize::MAX);
+                        word.map_or_else(|| "x".repeat(remaining), |w| cut(w.text, remaining))
+                    });
                 out.push_str(if gap > 0 { joiner } else { "" });
-                out.push_str(&cut(entry.text, remaining));
+                out.push_str(&piece);
                 return cut(&out, target);
             }
         }
@@ -219,7 +230,7 @@ pub(crate) fn compose(
 
 /// A single name or word inside the plan's window, preferring `preferred`
 /// (the row persona's value) when it fits.
-fn fit_part(
+pub(crate) fn fit_part(
     list: &WeightedList,
     rng: &mut SeedRng,
     plan: LengthPlan,
@@ -352,7 +363,7 @@ pub(crate) const MAX_EMAIL_CHARS: usize = 254;
 const MAX_LOCAL_CHARS: usize = 64;
 const MAX_LABEL_CHARS: usize = 63;
 
-fn natural_domain(rng: &mut SeedRng, realism: Realism, locale: Locale) -> String {
+pub(crate) fn natural_domain(rng: &mut SeedRng, realism: Realism, locale: Locale) -> String {
     let words = &data::text().words;
     match realism {
         Realism::FictionalSafe => {
@@ -375,7 +386,7 @@ fn natural_domain(rng: &mut SeedRng, realism: Realism, locale: Locale) -> String
 }
 
 /// A domain of exactly `target` characters (at least 6).
-fn domain_of_length(rng: &mut SeedRng, realism: Realism, target: usize) -> String {
+pub(crate) fn domain_of_length(rng: &mut SeedRng, realism: Realism, target: usize) -> String {
     let words = &data::text().words;
     let tld = match realism {
         Realism::FictionalSafe => ".test",

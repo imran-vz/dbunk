@@ -57,6 +57,7 @@ fn max_params(engine: &DatabaseEngine) -> usize {
     }
 }
 
+#[cfg(test)]
 pub(super) async fn seed_table<F>(
     connection: &StoredConnection,
     schema: &str,
@@ -64,6 +65,33 @@ pub(super) async fn seed_table<F>(
     row_count: u32,
     seed: u64,
     specs: &[SeedColumnSpec],
+    report_progress: F,
+) -> Result<SeedTableResult, String>
+where
+    F: Fn(u64) + Send + Sync,
+{
+    seed_table_with(
+        connection,
+        schema,
+        table,
+        row_count,
+        seed,
+        specs,
+        &crate::SeedOptions::default(),
+        report_progress,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn seed_table_with<F>(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    row_count: u32,
+    seed: u64,
+    specs: &[SeedColumnSpec],
+    options: &crate::SeedOptions,
     report_progress: F,
 ) -> Result<SeedTableResult, String>
 where
@@ -88,7 +116,7 @@ where
     let start = Instant::now();
 
     let draft = analyze_plan(dialect, &structure, specs)?;
-    check_capacity(&draft, row_count)?;
+    check_capacity(&draft, row_count, options)?;
 
     let mut conn = sqlx_connect(connection).await?;
     let mut fk_pools: Vec<Option<Vec<Vec<String>>>> = vec![None; structure.foreign_keys.len()];
@@ -110,13 +138,14 @@ where
         ));
     }
 
-    let plan = finalize_plan(
+    let mut plan = finalize_plan(
         &structure,
         draft,
         fk_pools,
         &maxes,
         chrono::Utc::now().timestamp(),
     )?;
+    plan.options = options.clone();
 
     let columns = insert_columns(&plan);
     if columns.is_empty() {
@@ -499,6 +528,39 @@ mod sqlite_live_tests {
         for email in column_values(&connection, "SELECT email FROM handles").await {
             assert!(email.len() <= 10, "{email}");
         }
+    }
+
+    #[tokio::test]
+    async fn realistic_options_lift_the_fiction_phone_limit() {
+        let (_file, connection) = fixture().await;
+        exec(
+            &connection,
+            "CREATE TABLE contacts (phone TEXT NOT NULL UNIQUE)",
+        )
+        .await;
+        let error = seed_table(&connection, "main", "contacts", 5_000, 1, &[], |_| {})
+            .await
+            .expect_err("3,200 fictional US numbers cannot fill 5,000 unique rows");
+        assert!(error.contains("realistic"), "{error}");
+        let realistic = crate::SeedOptions {
+            realism: crate::SeedRealism::Realistic,
+            ..Default::default()
+        };
+        seed_table_with(
+            &connection,
+            "main",
+            "contacts",
+            5_000,
+            1,
+            &[],
+            &realistic,
+            |_| {},
+        )
+        .await
+        .expect("realistic numbers are plentiful");
+        let phones = column_values(&connection, "SELECT phone FROM contacts").await;
+        assert_eq!(phones.len(), 5_000);
+        assert!(phones.iter().all(|p| p.starts_with("+1")));
     }
 
     #[tokio::test]

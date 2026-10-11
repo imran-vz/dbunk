@@ -26,11 +26,26 @@ import urllib.parse
 import urllib.request
 import zipfile
 
-DATA_VERSION = 1
+DATA_VERSION = 2
 
 QLEVER = "https://qlever.dev/api/wikidata"
 CENSUS_SURNAMES = "https://www2.census.gov/topics/genealogy/2010surnames/names.zip"
 GUTENBERG = "https://www.gutenberg.org/cache/epub/{id}/pg{id}.txt"
+GEONAMES_POSTAL = "https://download.geonames.org/export/zip/{file}"
+LIBADDRESSINPUT = "https://raw.githubusercontent.com/google/libaddressinput/master/testdata/countryinfo.txt"
+
+# locale id -> (ISO country, GeoNames postal archive, English country name)
+PLACES = {
+    "en-US": ("US", "US.zip", "United States"),
+    "en-GB": ("GB", "GB_full.csv.zip", "United Kingdom"),
+    "en-IN": ("IN", "IN.zip", "India"),
+    "de": ("DE", "DE.zip", "Germany"),
+    "fr": ("FR", "FR.zip", "France"),
+    "es": ("ES", "ES.zip", "Spain"),
+    "pt-BR": ("BR", "BR.zip", "Brazil"),
+    "ja": ("JP", "JP.zip", "Japan"),
+}
+PLACES_PER_LOCALE = 3000
 USER_AGENT = "dbunk-seed-data-build/1 (https://github.com/imran-vz/dbunk)"
 
 MALE = "Q6581097"
@@ -229,6 +244,132 @@ def english_text(cache):
     return chosen, words
 
 
+def address_formats(cache):
+    """libaddressinput country records keyed by ISO code."""
+    records = {}
+    for line in fetch(LIBADDRESSINPUT, cache).decode("utf-8").splitlines():
+        match = re.match(r"data/([A-Z]{2})=(\{.*\})$", line.strip())
+        if match:
+            records[match.group(1)] = json.loads(match.group(2))
+    return records
+
+
+def sub_lookup(record, names_key):
+    keys = record.get("sub_keys", "").split("~")
+    names = record.get(names_key, "").split("~")
+    return {fold_ascii(n).lower(): k for k, n in zip(keys, names) if n}
+
+
+def geonames_postal(archive, country, cache):
+    raw = fetch(GEONAMES_POSTAL.format(file=archive), cache)
+    zipped = zipfile.ZipFile(io.BytesIO(raw))
+    name = next(n for n in zipped.namelist() if n.endswith(".txt") and n.startswith(country))
+    for line in zipped.read(name).decode("utf-8").splitlines():
+        fields = [f.strip() for f in line.split("\t")]
+        if len(fields) >= 9 and fields[0] == country:
+            yield fields
+
+
+def japanese_municipalities(cache):
+    """Kanji names of Japanese municipalities keyed by 5-digit JIS code and
+    by (prefecture code, romaji name)."""
+    query = PREFIXES + """
+SELECT ?code ?ja ?en WHERE {
+  ?m wdt:P429 ?code ; rdfs:label ?ja . FILTER(LANG(?ja) = "ja")
+  OPTIONAL { ?m rdfs:label ?en . FILTER(LANG(?en) = "en") }
+  FILTER NOT EXISTS { ?m wdt:P576 ?end }
+}"""
+    by_code, by_name = {}, {}
+    for row in sparql(query, cache):
+        code = re.sub(r"\D", "", row["code"])[:5]
+        if len(code) != 5 or not JAPANESE_PLACE.match(row["ja"]):
+            continue
+        by_code.setdefault(code, row["ja"])
+        if row.get("en"):
+            key = (code[:2], fold_ascii(row["en"]).lower().split(",")[0].strip())
+            by_name.setdefault(key, row["ja"])
+    return by_code, by_name
+
+
+JAPANESE_PLACE = re.compile(r"^[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fffヶヵ々]{2,12}$")
+JP_SUFFIXES = ("Shi", "Ku", "Cho", "Machi", "Mura", "Son", "Gun", "Ken", "To", "Fu")
+# Postcodes assigned to a single organisation, not a place.
+ORGANISATION = re.compile(
+    r"GmbH|\b(AG|KG|SE|eG|e\.\s?V|Ltd|Inc|SAS?|Postfach)\b|\b[A-ZÄÖÜ]{2,}\b|"
+    r"bank|kasse|amt\b|Universit|Klinik|Krankenhaus|Verlag|Zentrale|Verwaltung|Behörde|"
+    r"Stadtwerke|Versicherung|Hauptniederlassung")
+
+
+def is_place_name(locality):
+    return len(locality.split()) <= 5 and not ORGANISATION.search(locality)
+
+
+def romaji_stem(name):
+    words = name.split()
+    if len(words) > 1 and words[-1] in JP_SUFFIXES:
+        words = words[:-1]
+    return fold_ascii(" ".join(words)).lower()
+
+
+def place_rows(locale, country, archive, formats, cache):
+    """(postcode, locality, region, region code) tuples for one locale."""
+    record = formats.get(country, {})
+    rows = []
+    if country == "JP":
+        prefectures = record["sub_keys"].split("~")
+        prefecture_codes = {
+            lname.lower(): f"{i + 1:02d}" for i, lname in enumerate(record["sub_lnames"].split("~"))
+        }
+        prefecture_codes["gumma"] = prefecture_codes["gunma"]  # GeoNames' older spelling
+        by_code, by_name = japanese_municipalities(cache)
+        for f in geonames_postal(archive, country, cache):
+            pref_code = prefecture_codes.get(romaji_stem(f[3]))
+            if not pref_code:
+                continue
+            code = f[8] if len(f) > 8 and re.fullmatch(r"\d{5}", f[8] or "") else ""
+            municipality = by_code.get(code) if code and not f[5].endswith("Shi") else None
+            municipality = municipality or by_name.get((pref_code, romaji_stem(f[5])))
+            if municipality:
+                rows.append((f[1], municipality, prefectures[int(pref_code) - 1], ""))
+        return rows
+    uf = sub_lookup(record, "sub_names")
+    for f in geonames_postal(archive, country, cache):
+        postal, locality, admin1, admin1_code, admin2 = f[1], f[2], f[3], f[4], f[5]
+        # German large-customer postcodes (agencies, firms) carry no accuracy.
+        if country == "DE" and (len(f) < 12 or not f[11]):
+            continue
+        if (not postal or not locality or re.search(r"\d|cedex|[()]", locality, re.I)
+                or not is_place_name(locality)):
+            continue
+        if country == "US":
+            # Military mail (APO/FPO) codes are not places.
+            if admin1_code in ("AA", "AE", "AP"):
+                continue
+            region, code = admin1, admin1_code
+        elif country in ("GB", "ES"):
+            region, code = admin2 or admin1, ""
+        elif country == "BR":
+            region, code = admin1, uf.get(fold_ascii(admin1).lower(), "")
+        else:
+            region, code = admin1, ""
+        if region:
+            rows.append((postal, locality, region, code))
+    return rows
+
+
+def valid_postcodes(rows, record):
+    """Keep rows whose postcode matches the country's libaddressinput
+    pattern (drops CEDEX and other special postcodes)."""
+    pattern = re.compile(f"(?:{record.get('zip', '.*')})")
+    return [row for row in rows if pattern.fullmatch(row[0])]
+
+
+def sample(rows, limit):
+    """A stable, source-order-independent sample of distinct rows."""
+    unique = sorted(set(rows), key=lambda r: hashlib.sha256("\t".join(r).encode()).hexdigest())
+    return unique[:limit]
+
+
 def write_tsv(path, rows):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="\n") as out:
@@ -266,6 +407,19 @@ def main():
         summary.append(f"| {locale} | {len(given)} | {len(family)} |")
         print(f"{locale}: {len(given)} given, {len(family)} family", file=sys.stderr)
 
+    formats = address_formats(cache)
+    place_summary = []
+    country_rows = []
+    for locale, (country, archive, english) in PLACES.items():
+        rows = valid_postcodes(place_rows(locale, country, archive, formats, cache), formats[country])
+        rows = sample(rows, PLACES_PER_LOCALE)
+        write_tsv(out / "places" / f"{locale}.tsv", rows)
+        record = formats[country]
+        country_rows.append((locale, country, english, record["fmt"], record.get("zip", "")))
+        place_summary.append(f"| {locale} | {len(rows)} |")
+        print(f"{locale}: {len(rows)} places", file=sys.stderr)
+    write_tsv(out / "places" / "countries.tsv", country_rows)
+
     sentences, words = english_text(cache)
     (out / "text").mkdir(parents=True, exist_ok=True)
     (out / "text" / "en.sentences.txt").write_text("\n".join(sentences) + "\n", encoding="utf-8")
@@ -284,12 +438,20 @@ changing it requires bumping `SEED_GENERATOR_VERSION` in `backend/src/seed.rs`.
 
 English text: {len(sentences)} sentences and {len(words)} words.
 
+| Locale | Places |
+|---|---|
+{chr(10).join(place_summary)}
+
 ## Formats
 
 - `names/<locale>.given.tsv`: name, ASCII form, weight, gender (`m`/`f`).
 - `names/<locale>.family.tsv`: name, ASCII form, weight.
 - `text/en.sentences.txt`: one sentence per line.
 - `text/en.words.tsv`: word, weight.
+- `places/<locale>.tsv`: postcode, locality, region, region code (US state
+  and Brazilian UF abbreviations; empty elsewhere).
+- `places/countries.tsv`: locale, ISO country, English name, libaddressinput
+  address format, postcode pattern.
 
 Weights are occurrence counts in the source. For `ja`, names are kanji and
 the ASCII form is the romaji reading.
@@ -299,6 +461,11 @@ the ASCII form is the romaji reading.
 - Given names, and family names for every locale except en-US: Wikidata,
   people by citizenship, ranked by how many carry the name. CC0 1.0.
 - en-US family names: US Census Bureau, 2010 surnames. Public domain.
+- Postcodes, localities and regions: GeoNames postal code data,
+  https://www.geonames.org/, licensed under CC BY 4.0. Japanese municipality
+  names in kanji are joined from Wikidata (CC0 1.0).
+- Address formats, postcode patterns and subdivision codes: Google
+  libaddressinput, Apache License 2.0.
 - English text: sentences sampled from public-domain novels (Austen, Doyle,
   Shelley, Dickens, Melville, Stoker, Wilde, C. Brontë), taken from Project
   Gutenberg editions with the Project Gutenberg header and license removed.

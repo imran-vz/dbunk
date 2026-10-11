@@ -2,7 +2,7 @@
 //! authority; the backend resolves and binds it to an observed target.
 use dbunk_lib::backend::table_seed::{TableSeedColumnSpec, TableSeedGenerator, TableSeedSource};
 
-pub const GENERATORS: [(TableSeedGenerator, &str); 28] = [
+pub const GENERATORS: [(TableSeedGenerator, &str); 33] = [
     (TableSeedGenerator::Email, "Email"),
     (TableSeedGenerator::FirstName, "First name"),
     (TableSeedGenerator::MiddleName, "Middle name"),
@@ -15,6 +15,11 @@ pub const GENERATORS: [(TableSeedGenerator, &str); 28] = [
     (TableSeedGenerator::City, "City"),
     (TableSeedGenerator::Country, "Country"),
     (TableSeedGenerator::StreetAddress, "Street address"),
+    (TableSeedGenerator::AddressLine2, "Address line 2"),
+    (TableSeedGenerator::Region, "State or region"),
+    (TableSeedGenerator::PostalCode, "Postal code"),
+    (TableSeedGenerator::FullAddress, "Full address"),
+    (TableSeedGenerator::CountryCode, "Country code"),
     (TableSeedGenerator::Word, "Word"),
     (TableSeedGenerator::Sentence, "Sentence"),
     (TableSeedGenerator::Paragraph, "Paragraph"),

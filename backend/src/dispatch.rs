@@ -260,6 +260,7 @@ pub async fn insert_row(
     }
 }
 
+/// Seed with en-US names and fictional-safe contact details.
 pub async fn seed_table<F>(
     connection: &StoredConnection,
     schema: &str,
@@ -272,15 +273,47 @@ pub async fn seed_table<F>(
 where
     F: Fn(u64) + Send + Sync,
 {
+    seed_table_with(
+        connection,
+        schema,
+        table,
+        row_count,
+        seed,
+        specs,
+        &crate::SeedOptions::default(),
+        report_progress,
+    )
+    .await
+}
+
+/// Seed with explicit locales and realism.
+#[allow(clippy::too_many_arguments)]
+pub async fn seed_table_with<F>(
+    connection: &StoredConnection,
+    schema: &str,
+    table: &str,
+    row_count: u32,
+    seed: u64,
+    specs: &[SeedColumnSpec],
+    options: &crate::SeedOptions,
+    report_progress: F,
+) -> Result<SeedTableResult, String>
+where
+    F: Fn(u64) + Send + Sync,
+{
+    if options.locales.is_empty() {
+        return Err("choose at least one locale".to_string());
+    }
     match connection.engine().storage_class() {
         StorageClass::Relational => {
-            relational::seed_table(
+            relational::seed_table_with(
                 connection,
                 schema,
                 table,
                 row_count,
                 seed,
                 specs,
+                options,
                 report_progress,
             )
             .await

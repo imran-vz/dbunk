@@ -84,7 +84,7 @@ pub use mutations::{commit_cell_edits, copy_import_rows, delete_rows, import_row
 pub use pool::drop_pool;
 pub use query::run_query;
 pub use schema::{fetch_schema_relationships, fetch_table_structure};
-pub use seed::seed_table;
+pub use seed::seed_table_with;
 pub use table_relationships::fetch_table_schema_relationships;
 
 // ---------------------------------------------------------------------------
