@@ -43,6 +43,15 @@ impl TableSeedInspection {
     pub fn belongs_to(&self, backend: &Backend) -> bool {
         self.owner.ptr_eq(&Arc::downgrade(&backend.0))
     }
+    /// Sample values an edited recipe would produce for this inspected
+    /// table. Pure and bounded: no database work, nothing is retained, and
+    /// errors are the ones Prepare would report.
+    pub fn preview(&self, intent: &TableSeedIntent) -> Result<TableSeedPreview, TableSeedError> {
+        intent
+            .checked_heap_bytes()
+            .ok_or(TableSeedError::InvalidRequest)?;
+        self.plan.preview(intent)
+    }
 }
 #[derive(Clone)]
 pub struct TableSeedReview {

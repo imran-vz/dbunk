@@ -417,3 +417,134 @@ fn generation_options_and_lengths_reach_the_plan_and_summary() {
         "{summary}"
     );
 }
+
+#[test]
+fn previews_use_the_inspected_catalog_and_reviews_checks() {
+    let p = plan(
+        TableSeedIntent::new(endpoint(), 10, Some(1), vec![]).unwrap(),
+        target(),
+    );
+    let ranged = |min, max| {
+        TableSeedIntent::new(
+            endpoint(),
+            10,
+            Some(7),
+            vec![auto("value", Some(TableSeedLength { min, max }))],
+        )
+        .unwrap()
+        .with_generation(vec![TableSeedLocale::Ja], TableSeedRealism::Realistic)
+        .unwrap()
+    };
+    let preview = p.preview(&ranged(Some(40), Some(60))).expect("preview");
+    assert_eq!(preview.seed, 7);
+    assert_eq!(preview.columns.len(), 1);
+    assert_eq!(preview.columns[0].name, "value");
+    assert_eq!(preview.columns[0].cells.len(), 8);
+    for cell in &preview.columns[0].cells {
+        let TableSeedPreviewCell::Value { chars, .. } = cell else {
+            panic!("expected a value, got {cell:?}");
+        };
+        assert!((40..=60).contains(chars), "{chars}");
+    }
+    let mut narrow = p;
+    narrow.catalog.relation.columns[0].public.data_type = "character varying(20)".into();
+    assert_eq!(
+        narrow.preview(&ranged(Some(40), Some(60))),
+        Err(TableSeedError::LengthRange)
+    );
+    let elsewhere = TableSeedIntent::new(
+        TableSeedEndpoint {
+            table: "other".into(),
+            ..endpoint()
+        },
+        10,
+        None,
+        vec![],
+    )
+    .unwrap();
+    assert_eq!(narrow.preview(&elsewhere), Err(TableSeedError::StaleReview));
+}
+
+#[test]
+fn previewed_values_are_cut_for_display_but_keep_their_length() {
+    let p = plan(
+        TableSeedIntent::new(endpoint(), 10, Some(1), vec![]).unwrap(),
+        target(),
+    );
+    let intent = TableSeedIntent::new(
+        endpoint(),
+        10,
+        Some(1),
+        vec![auto(
+            "value",
+            Some(TableSeedLength {
+                min: Some(4000),
+                max: Some(5000),
+            }),
+        )],
+    )
+    .unwrap();
+    for cell in &p.preview(&intent).unwrap().columns[0].cells {
+        let TableSeedPreviewCell::Value { text, chars } = cell else {
+            panic!("expected a value");
+        };
+        assert_eq!(text.chars().count(), TABLE_SEED_PREVIEW_CHARS);
+        assert!((4000..=5000).contains(chars));
+    }
+}
+
+#[test]
+fn columns_report_whether_auto_takes_a_length() {
+    let mut p = plan(
+        TableSeedIntent::new(endpoint(), 10, Some(1), vec![]).unwrap(),
+        target(),
+    );
+    let auto_length = |p: &Plan| planning::columns(&p.catalog, None)[0].auto_length;
+    assert!(auto_length(&p), "text takes a length");
+    p.catalog.relation.columns[0].public.data_type = "integer".into();
+    assert!(!auto_length(&p), "integers do not");
+    p.catalog.relation.columns[0].public.data_type = "mood".into();
+    p.catalog.enum_labels = vec![("value".into(), vec!["ok".into()])];
+    assert!(!auto_length(&p), "enums draw their labels");
+}
+
+#[test]
+fn generators_report_whether_they_take_a_length() {
+    use TableSeedGenerator as G;
+    for generator in [
+        G::Email,
+        G::Phone,
+        G::FullAddress,
+        G::Paragraph,
+        G::CountryCode,
+    ] {
+        assert!(generator.accepts_length(), "{generator:?}");
+    }
+    for generator in [G::Integer, G::Uuid, G::Timestamp, G::Json, G::Boolean] {
+        assert!(!generator.accepts_length(), "{generator:?}");
+    }
+}
+
+#[test]
+fn previews_refuse_a_recipe_that_inserts_nothing_like_prepare() {
+    let p = plan(
+        TableSeedIntent::new(endpoint(), 10, Some(1), vec![]).unwrap(),
+        target(),
+    );
+    let all_default = TableSeedIntent::new(
+        endpoint(),
+        10,
+        Some(1),
+        vec![TableSeedColumnSpec {
+            column: "value".into(),
+            source: TableSeedSource::Default,
+            null_rate: None,
+            length: None,
+        }],
+    )
+    .unwrap();
+    assert_eq!(p.preview(&all_default), Err(TableSeedError::InvalidRecipe));
+    let unseeded = TableSeedIntent::new(endpoint(), 10, None, vec![]).unwrap();
+    let preview = p.preview(&unseeded).unwrap();
+    assert!(!preview.seed_chosen);
+}

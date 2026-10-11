@@ -8,6 +8,10 @@ impl TableSeedView {
         let text = match action {
             Action::Connection => format!("Destination: {}", self.connection_label()),
             Action::Mode => format!("Source: {}", recipe::mode_label(self.mode)),
+            Action::Realism => match self.realism {
+                TableSeedRealism::FictionalSafe => "Contact details: fictional-safe".into(),
+                TableSeedRealism::Realistic => "Contact details: realistic".into(),
+            },
             Action::Apply
                 if self
                     .selected
@@ -45,7 +49,10 @@ impl Render for TableSeedView {
         if let Some(message) = self.store.read(cx).message() {
             content = content.child(label("seed-store-message", message.to_owned()));
         }
-        for (index, field) in self.fields.iter().take(4).enumerate() {
+        for (index, field) in RUN_FIELDS
+            .iter()
+            .filter_map(|index| self.fields.get(*index).map(|field| (*index, field)))
+        {
             content = content.child(
                 div()
                     .flex()
@@ -83,9 +90,9 @@ impl Render for TableSeedView {
                     "seed-recipe-target",
                     format!(
                         "Editable recipe: {} / {}.{} · {} columns{}",
-                        recipe.endpoint.connection_id,
-                        recipe.endpoint.schema,
-                        recipe.endpoint.table,
+                        recipe.setup.endpoint.connection_id,
+                        recipe.setup.endpoint.schema,
+                        recipe.setup.endpoint.table,
                         recipe.columns.len(),
                         if recipe.changed {
                             " · local edits require Prepare"
@@ -127,12 +134,10 @@ impl Render for TableSeedView {
                             .child(self.button(4, cx))
                             .child(self.button(5, cx)),
                     );
-                for (index, field) in self
-                    .fields
-                    .iter()
-                    .enumerate()
-                    .skip(4)
-                    .filter(|(_, field)| self.field_visible(field, cx))
+                for (index, field) in
+                    self.fields.iter().enumerate().filter(|(index, field)| {
+                        column_field(*index) && self.field_visible(field, cx)
+                    })
                 {
                     content = content.child(
                         div()
@@ -156,6 +161,9 @@ impl Render for TableSeedView {
                 }
             }
         }
+        if let Some(preview) = &self.preview {
+            content = content.child(label("seed-preview", preview.clone()));
+        }
         let review = self
             .store
             .read(cx)
@@ -167,7 +175,7 @@ impl Render for TableSeedView {
             } else if self
                 .recipe
                 .as_ref()
-                .is_some_and(|recipe| recipe.attempt == review.attempt_id())
+                .is_some_and(|recipe| recipe.setup.attempt == review.attempt_id())
                 || self
                     .setup_anchor
                     .as_ref()

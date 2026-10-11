@@ -1,6 +1,9 @@
 //! Pure seed-form parsing. Recipe text is never generated data or execution
 //! authority; the backend resolves and binds it to an observed target.
-use dbunk_lib::backend::table_seed::{TableSeedColumnSpec, TableSeedGenerator, TableSeedSource};
+use dbunk_lib::backend::table_seed::{
+    MAX_TABLE_SEED_TEXT_CHARS, TableSeedColumnSpec, TableSeedGenerator, TableSeedLength,
+    TableSeedLocale, TableSeedSource,
+};
 
 pub const GENERATORS: [(TableSeedGenerator, &str); 33] = [
     (TableSeedGenerator::Email, "Email"),
@@ -47,6 +50,17 @@ pub enum ColumnMode {
     Values,
     Generator(TableSeedGenerator),
 }
+impl ColumnMode {
+    /// Text generators take a length range. Auto does when the backend
+    /// reports the column's Auto source as text (`auto_length`).
+    pub fn accepts_length(self, auto_length: bool) -> bool {
+        match self {
+            ColumnMode::Auto => auto_length,
+            ColumnMode::Generator(generator) => generator.accepts_length(),
+            ColumnMode::Default | ColumnMode::Constant | ColumnMode::Values => false,
+        }
+    }
+}
 
 #[derive(Clone, Default)]
 pub struct ColumnDraft {
@@ -54,12 +68,23 @@ pub struct ColumnDraft {
     pub constant: String,
     pub values_text: String,
     pub null_percent: String,
+    /// Character-length range for generated text; blank ends are automatic.
+    pub min_length: String,
+    pub max_length: String,
 }
 impl ColumnDraft {
-    pub fn overridden(&self, nullable: bool) -> bool {
-        self.mode != ColumnMode::Auto || (nullable && !self.null_percent.trim().is_empty())
+    pub fn overridden(&self, nullable: bool, auto_length: bool) -> bool {
+        self.mode != ColumnMode::Auto
+            || (nullable && !self.null_percent.trim().is_empty())
+            || (self.mode.accepts_length(auto_length)
+                && !(self.min_length.trim().is_empty() && self.max_length.trim().is_empty()))
     }
-    pub fn spec(&self, column: &str, nullable: bool) -> Result<TableSeedColumnSpec, &'static str> {
+    pub fn spec(
+        &self,
+        column: &str,
+        nullable: bool,
+        auto_length: bool,
+    ) -> Result<TableSeedColumnSpec, &'static str> {
         if column.is_empty() || column.len() > 63 || column.contains('\0') {
             return Err("Seed column identity is invalid");
         }
@@ -103,11 +128,16 @@ impl ColumnDraft {
                 TableSeedSource::Values { values: captured }
             }
         };
+        let length = if self.mode.accepts_length(auto_length) {
+            parse_length(&self.min_length, &self.max_length)?
+        } else {
+            None
+        };
         Ok(TableSeedColumnSpec {
             column: column.to_owned(),
             source,
             null_rate,
-            length: None,
+            length,
         })
     }
 }
@@ -134,6 +164,61 @@ pub fn parse_row_count(value: &str) -> Result<u32, &'static str> {
         .filter(|count| (1..=1_000_000).contains(count))
         .ok_or("Rows must be a whole number from 1 to 1000000")?;
     Ok(count as u32)
+}
+
+/// Either end may be blank (automatic); both blank means no range.
+pub fn parse_length(min: &str, max: &str) -> Result<Option<TableSeedLength>, &'static str> {
+    const MESSAGE: &str = "Lengths must be whole numbers from 1 to 100000, minimum at most maximum";
+    let parse = |value: &str| -> Result<Option<u32>, &'static str> {
+        let value = value.trim();
+        if value.is_empty() {
+            return Ok(None);
+        }
+        if !value.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(MESSAGE);
+        }
+        value
+            .parse::<u32>()
+            .ok()
+            .filter(|length| (1..=MAX_TABLE_SEED_TEXT_CHARS).contains(length))
+            .map(Some)
+            .ok_or(MESSAGE)
+    };
+    let (min, max) = (parse(min)?, parse(max)?);
+    if min.zip(max).is_some_and(|(min, max)| min > max) {
+        return Err(MESSAGE);
+    }
+    Ok((min.is_some() || max.is_some()).then_some(TableSeedLength { min, max }))
+}
+
+/// Comma-separated locale ids; blank means en-US.
+pub fn parse_locales(value: &str) -> Result<Vec<TableSeedLocale>, &'static str> {
+    const MESSAGE: &str = "Locales are comma-separated, without repeats, from: en-US, en-GB, en-IN, de, fr, es, pt-BR, ja";
+    let mut locales = Vec::new();
+    for id in value.split(',').map(str::trim).filter(|id| !id.is_empty()) {
+        let locale = TableSeedLocale::ALL
+            .into_iter()
+            .find(|locale| locale.id().eq_ignore_ascii_case(id))
+            .ok_or(MESSAGE)?;
+        // Repeats are refused, so the list never outgrows the eight locales
+        // (MAX_TABLE_SEED_LOCALES); the backend checks the bound again.
+        if locales.contains(&locale) {
+            return Err(MESSAGE);
+        }
+        locales.push(locale);
+    }
+    if locales.is_empty() {
+        locales.push(TableSeedLocale::EnUs);
+    }
+    Ok(locales)
+}
+
+pub fn locales_text(locales: &[TableSeedLocale]) -> String {
+    locales
+        .iter()
+        .map(|locale| locale.id())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn parse_null_rate(value: &str) -> Result<Option<f64>, &'static str> {

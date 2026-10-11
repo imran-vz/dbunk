@@ -12,6 +12,8 @@ mod planning;
 mod retention;
 #[cfg(test)]
 pub(crate) mod tests;
+/// Seed used to preview a recipe that leaves its seed to review.
+const PREVIEW_SEED: u64 = 1;
 pub(crate) struct Plan {
     pub description: Option<TableSeedDescription>,
     pub intent: TableSeedIntent,
@@ -24,6 +26,41 @@ pub(crate) struct Plan {
 impl Plan {
     pub(crate) fn checked_heap_bytes(&self) -> Option<usize> {
         retention::checked(self)
+    }
+    /// Sample values for `intent` against this inspected table, without a
+    /// database: the same planning and capacity checks as review, then a few
+    /// generated rows. The preview seed is the intent's, or a fixed one.
+    pub(crate) fn preview(
+        &self,
+        intent: &TableSeedIntent,
+    ) -> Result<TableSeedPreview, TableSeedError> {
+        if intent.endpoint != self.intent.endpoint {
+            return Err(TableSeedError::StaleReview);
+        }
+        let draft = planning::draft(&self.catalog, intent)?;
+        planning::capacity(&draft, intent.row_count, intent)?;
+        // Prepare refuses a recipe that inserts nothing; so does preview.
+        let inserted = planning::columns(&self.catalog, Some(&draft))
+            .iter()
+            .filter(|c| c.action != TableSeedColumnAction::Default)
+            .count();
+        if inserted == 0 {
+            return Err(TableSeedError::InvalidRecipe);
+        }
+        let seed = intent.seed.unwrap_or(PREVIEW_SEED);
+        // The inspected clock stands in for the one review will freeze.
+        let rows = crate::seed::preview_rows(
+            draft,
+            &self.catalog.structure(),
+            &planning::options(intent),
+            self.clock,
+            seed,
+            TABLE_SEED_PREVIEW_ROWS.min(intent.row_count),
+            TABLE_SEED_PREVIEW_BYTES,
+        )
+        .map_err(|_| TableSeedError::InvalidRecipe)?
+        .ok_or(TableSeedError::Limit)?;
+        Ok(TableSeedPreview::new(seed, intent.seed.is_some(), rows))
     }
 }
 #[derive(Debug)]

@@ -35,6 +35,15 @@ impl TableSeedView {
                     })
             }
             Action::Prepare => setup && self.recipe.is_some(),
+            Action::Realism => self.editable && !store.busy(),
+            Action::Preview => {
+                setup
+                    && self.recipe.as_ref().is_some_and(|recipe| {
+                        store.inspection_payload().is_some_and(|inspection| {
+                            inspection.intent().endpoint == recipe.setup.endpoint
+                        })
+                    })
+            }
             Action::Mode | Action::SaveColumn => self.editable && self.column.is_some(),
             Action::Refresh => self.editable,
             Action::Review => {
@@ -120,7 +129,7 @@ impl TableSeedView {
                         if matches!(action, Action::Prepare) {
                             let recipe = self.recipe.as_ref().expect("enabled recipe");
                             if !recipe.discarded {
-                                let id = recipe.attempt;
+                                let id = recipe.setup.attempt;
                                 if !self
                                     .store
                                     .update(cx, |store, cx| store.discard_preparation(id, cx))
@@ -130,22 +139,13 @@ impl TableSeedView {
                                 self.recipe.as_mut().expect("recipe").discarded = true;
                             }
                         }
-                        let endpoint = intent.endpoint.clone();
-                        let row_count = intent.row_count;
-                        let seed = intent.seed;
+                        let prepared = intent.clone();
                         if let Some(id) = self.store.update(cx, |store, cx| store.begin(intent, cx))
                         {
-                            self.setup_anchor = Some(recipe::SetupAnchor {
-                                attempt: id,
-                                endpoint,
-                                row_count,
-                                seed,
-                            });
+                            self.setup_anchor = Some(recipe::SetupAnchor::of(id, &prepared));
                             if matches!(action, Action::Prepare) {
                                 let recipe = self.recipe.as_mut().expect("prepared recipe");
-                                recipe.attempt = id;
-                                recipe.row_count = row_count;
-                                recipe.seed = seed;
+                                recipe.setup = recipe::SetupAnchor::of(id, &prepared);
                                 recipe.changed = false;
                                 recipe.discarded = false;
                             }
@@ -180,19 +180,24 @@ impl TableSeedView {
                                 .intent()
                                 .seed
                                 .map_or_else(String::new, |seed| seed.to_string());
+                            let locales = locales_text(&inspection.intent().locales);
+                            self.realism = inspection.intent().realism;
                             self.connection = Some(endpoint.connection_id);
                             self.preset = [endpoint.schema, endpoint.table];
-                            for (index, value) in
-                                [self.preset[0].clone(), self.preset[1].clone(), rows, seed]
-                                    .into_iter()
-                                    .enumerate()
-                            {
+                            for (index, value) in [
+                                (0, self.preset[0].clone()),
+                                (1, self.preset[1].clone()),
+                                (2, rows),
+                                (3, seed),
+                                (LOCALES_FIELD, locales),
+                            ] {
                                 self.fields[index]
                                     .update(cx, |field, cx| field.set_value(value, window, cx))
                                     .ok();
                             }
                             self.pending_preset = false;
                             self.recipe = Some(recipe);
+                            self.preview = None;
                             self.column = None;
                             self.column_dirty = false;
                             self.choosing_mode = false;
@@ -214,6 +219,41 @@ impl TableSeedView {
             }
             Action::SaveColumn => {
                 self.save_column(cx);
+            }
+            Action::Realism => {
+                self.preview = None;
+                self.realism = match self.realism {
+                    TableSeedRealism::FictionalSafe => TableSeedRealism::Realistic,
+                    TableSeedRealism::Realistic => TableSeedRealism::FictionalSafe,
+                };
+                self.status = match self.realism {
+                    TableSeedRealism::FictionalSafe => "Contact details are fictional-safe: reserved email domains and, in the US, UK, Germany and France, fiction-only phone ranges. Prepare to review the change.",
+                    TableSeedRealism::Realistic => "Contact details are realistic: real mail providers and valid numbers that may belong to real people. Prepare to review the change.",
+                }
+                .into();
+            }
+            Action::Preview => {
+                if self.column_dirty && !self.save_column(cx) {
+                    return;
+                }
+                let result = self.intent(true, cx).and_then(|intent| {
+                    self.store
+                        .read(cx)
+                        .inspection_payload()
+                        .ok_or("Edit a recipe first")
+                        .map(|inspection| inspection.preview(&intent))
+                });
+                match result {
+                    Ok(Ok(preview)) => {
+                        self.preview = Some(recipe::preview_text(&preview));
+                        self.status = "Sample values below are display only. Apply always runs the exact reviewed recipe.".into();
+                    }
+                    Ok(Err(error)) => {
+                        self.preview = None;
+                        self.status = format!("Preview refused: {error}");
+                    }
+                    Err(error) => self.status = error.into(),
+                }
             }
             Action::Refresh => self.store.update(cx, |store, cx| store.refresh(cx)),
             Action::Review => {
@@ -256,14 +296,16 @@ impl TableSeedView {
         cx.notify();
     }
     pub(super) fn setup_changed(&self, id: TableSeedAttemptId, cx: &gpui::App) -> bool {
-        if let Some(recipe) = self.recipe.as_ref().filter(|recipe| recipe.attempt == id) {
+        if let Some(recipe) = self
+            .recipe
+            .as_ref()
+            .filter(|recipe| recipe.setup.attempt == id)
+        {
             return recipe.changed
                 || self.column_dirty
-                || self.intent(false, cx).map_or(true, |intent| {
-                    recipe.endpoint != intent.endpoint
-                        || recipe.row_count != intent.row_count
-                        || recipe.seed != intent.seed
-                });
+                || self
+                    .intent(false, cx)
+                    .map_or(true, |intent| !recipe.setup.matches(&intent));
         }
         self.setup_anchor
             .as_ref()
@@ -306,7 +348,7 @@ impl TableSeedView {
                 .recipe
                 .as_ref()
                 .ok_or("Load and inspect columns first")?;
-            if recipe.endpoint != endpoint {
+            if recipe.setup.endpoint != endpoint {
                 return Err(
                     "Edited destination differs from inspected columns; load its columns before preparing",
                 );
@@ -315,7 +357,9 @@ impl TableSeedView {
         } else {
             Vec::new()
         };
+        let locales = parse_locales(&self.fields[LOCALES_FIELD].read(cx).value(cx)?)?;
         TableSeedIntent::new(endpoint, rows, seed, columns)
+            .and_then(|intent| intent.with_generation(locales, self.realism))
             .map_err(|_| "Seed recipe exceeds its validated request bounds")
     }
     fn save_column(&mut self, cx: &mut Context<Self>) -> bool {
@@ -326,6 +370,8 @@ impl TableSeedView {
                 constant: self.fields[4].read(cx).value(cx)?,
                 values_text: self.fields[5].read(cx).value(cx)?,
                 null_percent: self.fields[6].read(cx).value(cx)?,
+                min_length: self.fields[7].read(cx).value(cx)?,
+                max_length: self.fields[8].read(cx).value(cx)?,
             };
             self.recipe
                 .as_mut()
@@ -335,6 +381,7 @@ impl TableSeedView {
         match result {
             Ok(()) => {
                 self.column_dirty = false;
+                self.preview = None;
                 self.status =
                     "Column saved locally. Prepare edited recipe to obtain a new exact review."
                         .into();
@@ -360,22 +407,28 @@ impl TableSeedView {
             cx.notify();
             return;
         }
-        let Some(recipe) = self.recipe.as_ref().filter(|recipe| recipe.attempt == id) else {
+        let Some(recipe) = self
+            .recipe
+            .as_ref()
+            .filter(|recipe| recipe.setup.attempt == id)
+        else {
             return;
         };
         let Some(draft) = recipe.drafts.get(index) else {
             return;
         };
         let values = [
-            draft.constant.clone(),
-            draft.values_text.clone(),
-            draft.null_percent.clone(),
+            (4, draft.constant.clone()),
+            (5, draft.values_text.clone()),
+            (6, draft.null_percent.clone()),
+            (7, draft.min_length.clone()),
+            (8, draft.max_length.clone()),
         ];
         self.mode = draft.mode;
         self.column = Some(index);
         self.choosing_mode = false;
-        for (offset, value) in values.into_iter().enumerate() {
-            self.fields[offset + 4]
+        for (field, value) in values {
+            self.fields[field]
                 .update(cx, |field, cx| field.set_value(value, window, cx))
                 .ok();
         }
@@ -398,7 +451,7 @@ impl TableSeedView {
             || !self
                 .recipe
                 .as_ref()
-                .is_some_and(|recipe| recipe.attempt == id)
+                .is_some_and(|recipe| recipe.setup.attempt == id)
         {
             return;
         }

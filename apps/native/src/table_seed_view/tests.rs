@@ -74,15 +74,14 @@ fn recipe_size_refusal_preserves_prior_column() {
     assert!(recipe.drafts[0].mode == ColumnMode::Auto);
 }
 fn recipe_with_columns(count: usize) -> Recipe {
+    let endpoint = TableSeedEndpoint {
+        connection_id: "test".into(),
+        schema: "public".into(),
+        table: "rows".into(),
+    };
+    let intent = TableSeedIntent::new(endpoint, 100, None, vec![]).unwrap();
     Recipe {
-        attempt: TableSeedAttemptId::new(),
-        endpoint: TableSeedEndpoint {
-            connection_id: "test".into(),
-            schema: "public".into(),
-            table: "rows".into(),
-        },
-        row_count: 100,
-        seed: None,
+        setup: recipe::SetupAnchor::of(TableSeedAttemptId::new(), &intent),
         columns: (0..count)
             .map(|index| recipe::Column {
                 name: format!("column{index}"),
@@ -91,6 +90,7 @@ fn recipe_with_columns(count: usize) -> Recipe {
                 generated: false,
                 identity: false,
                 has_default: false,
+                auto_length: true,
             })
             .collect(),
         drafts: vec![ColumnDraft::default(); count],
@@ -102,13 +102,9 @@ fn recipe_with_columns(count: usize) -> Recipe {
 #[test]
 fn setup_anchor_compares_exact_endpoint_count_and_optional_u64_seed() {
     let recipe = recipe_with_columns(0);
-    let anchor = recipe::SetupAnchor {
-        attempt: recipe.attempt,
-        endpoint: recipe.endpoint.clone(),
-        row_count: 100,
-        seed: Some(u64::MAX),
-    };
-    let mut intent = TableSeedIntent::new(recipe.endpoint, 100, Some(u64::MAX), vec![]).unwrap();
+    let mut intent =
+        TableSeedIntent::new(recipe.setup.endpoint, 100, Some(u64::MAX), vec![]).unwrap();
+    let anchor = recipe::SetupAnchor::of(recipe.setup.attempt, &intent);
     assert!(anchor.matches(&intent));
     intent.seed = Some(u64::MAX - 1);
     assert!(!anchor.matches(&intent));
@@ -118,6 +114,52 @@ fn setup_anchor_compares_exact_endpoint_count_and_optional_u64_seed() {
     intent.row_count = 100;
     intent.endpoint.table = "other".into();
     assert!(!anchor.matches(&intent));
+}
+
+#[test]
+fn locales_and_realism_are_part_of_the_reviewed_setup() {
+    let recipe = recipe_with_columns(0);
+    let intent = TableSeedIntent::new(recipe.setup.endpoint, 100, None, vec![]).unwrap();
+    let anchor = recipe::SetupAnchor::of(recipe.setup.attempt, &intent);
+    let realistic = intent
+        .clone()
+        .with_generation(vec![TableSeedLocale::EnUs], TableSeedRealism::Realistic)
+        .unwrap();
+    assert!(!anchor.matches(&realistic));
+    let japanese = intent
+        .with_generation(vec![TableSeedLocale::Ja], TableSeedRealism::FictionalSafe)
+        .unwrap();
+    assert!(!anchor.matches(&japanese));
+}
+
+#[test]
+fn saving_a_length_range_marks_the_recipe_changed() {
+    let mut recipe = recipe_with_columns(1);
+    recipe
+        .save(
+            0,
+            ColumnDraft {
+                min_length: "10".into(),
+                max_length: "50".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(recipe.changed);
+    let specs = recipe.specs().unwrap();
+    assert_eq!(
+        specs[0].length,
+        Some(TableSeedLength {
+            min: Some(10),
+            max: Some(50)
+        })
+    );
+    let inverted = ColumnDraft {
+        min_length: "50".into(),
+        max_length: "10".into(),
+        ..Default::default()
+    };
+    assert!(recipe.save(0, inverted).is_err());
 }
 
 #[test]
@@ -151,4 +193,81 @@ fn tiny_reviewed_null_rates_fit_the_editor_without_being_dropped() {
             .unwrap();
         assert_eq!(parsed, rate);
     }
+}
+
+#[test]
+fn preview_text_shows_values_lengths_and_non_values() {
+    let value = |text: &str, chars| TableSeedPreviewCell::Value {
+        text: text.into(),
+        chars,
+    };
+    let preview = TableSeedPreview {
+        seed: 7,
+        seed_chosen: true,
+        columns: vec![
+            TableSeedPreviewColumn {
+                name: "email".into(),
+                cells: vec![
+                    value("a@b.test", 8),
+                    value("long", 300),
+                    TableSeedPreviewCell::Null,
+                ],
+            },
+            TableSeedPreviewColumn {
+                name: "id".into(),
+                cells: vec![TableSeedPreviewCell::Default],
+            },
+            TableSeedPreviewColumn {
+                name: "customer_id".into(),
+                cells: vec![TableSeedPreviewCell::FromParent],
+            },
+        ],
+    };
+    let text = recipe::preview_text(&preview);
+    assert!(text.starts_with("Sample values (seed 7;"), "{text}");
+    assert!(
+        text.contains("email [8–300 chars]: a@b.test | long… | NULL"),
+        "{text}"
+    );
+    assert!(text.contains("id: DEFAULT"), "{text}");
+    assert!(text.contains("customer_id: (parent row)"), "{text}");
+}
+
+#[test]
+fn preview_text_is_bounded() {
+    let preview = TableSeedPreview {
+        seed: 1,
+        seed_chosen: false,
+        columns: (0..1600)
+            .map(|index| TableSeedPreviewColumn {
+                name: format!("column{index}"),
+                cells: vec![
+                    TableSeedPreviewCell::Value {
+                        text: "x".repeat(TABLE_SEED_PREVIEW_CHARS),
+                        chars: 5000,
+                    };
+                    8
+                ],
+            })
+            .collect(),
+    };
+    let text = recipe::preview_text(&preview);
+    assert!(text.len() <= 64 * 1024 + 64);
+    assert!(
+        text.ends_with("more columns"),
+        "{}",
+        &text[text.len() - 40..]
+    );
+}
+
+#[test]
+fn unchosen_seeds_are_called_illustrative() {
+    let preview = TableSeedPreview {
+        seed: 1,
+        seed_chosen: false,
+        columns: vec![],
+    };
+    let text = recipe::preview_text(&preview);
+    assert!(text.contains("illustrative seed"), "{text}");
+    assert!(!text.contains("seed 1"), "{text}");
 }

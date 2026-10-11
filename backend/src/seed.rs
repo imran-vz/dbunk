@@ -1256,6 +1256,27 @@ pub(crate) fn check_capacity(
     Ok(())
 }
 
+/// Per column, whether its Auto source is a text generator and so takes a
+/// length range. Foreign-key, database-supplied and enum columns never do.
+pub(crate) fn auto_takes_length(dialect: SeedDialect, structure: &TableStructure) -> Vec<bool> {
+    structure
+        .columns
+        .iter()
+        .map(|column| {
+            let data_type = normalize_data_type(dialect, &column.data_type);
+            let foreign = structure
+                .foreign_keys
+                .iter()
+                .any(|fk| fk.columns.contains(&column.name));
+            !foreign
+                && !is_database_supplied(dialect, column, structure, &data_type)
+                && enum_members(&data_type).is_none()
+                && classify_column(&column.name, &data_type)
+                    .is_some_and(|kind| kind.text_limits().is_some())
+        })
+        .collect()
+}
+
 /// Decide every column's value source from the table's structure plus
 /// the Seed Spec. Pure: no database access, no clock.
 pub(crate) fn analyze_plan(
@@ -1556,6 +1577,77 @@ fn is_database_supplied(
 // ---------------------------------------------------------------------------
 // Row generation
 // ---------------------------------------------------------------------------
+
+/// One cell of a preview: what the run would put in the column.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PreviewCell {
+    Value(String),
+    Null,
+    /// Omitted from the INSERT; the database supplies its default.
+    Default,
+    /// Sampled from the parent table's rows at run time.
+    Parent,
+}
+
+/// A preview's columns: each name with its sampled cells.
+pub(crate) type PreviewColumns = Vec<(String, Vec<PreviewCell>)>;
+
+/// Stands in for a parent row's value in a preview. No generator emits NUL.
+const PARENT_MARKER: &str = "\u{0}parent";
+
+/// Sample rows for a draft without touching a database. Each foreign key
+/// gets a one-row placeholder pool, so the preview draws the RNG exactly as
+/// the run does and every other column shows what the run would insert with
+/// the same seed and clock. Only unique sequences differ: the run starts
+/// them above the table's current maximum. Returns `None` when the rows'
+/// worst-case size exceeds `budget` bytes.
+pub(crate) fn preview_rows(
+    draft: PlanDraft,
+    structure: &TableStructure,
+    options: &GenOptions,
+    now_epoch_secs: i64,
+    seed: u64,
+    rows: u32,
+    budget: usize,
+) -> Result<Option<PreviewColumns>, PlanError> {
+    let pools = structure
+        .foreign_keys
+        .iter()
+        .enumerate()
+        .map(|(index, fk)| {
+            draft
+                .needed_pools
+                .contains(&index)
+                .then(|| vec![vec![PARENT_MARKER.to_string(); fk.columns.len()]])
+        })
+        .collect();
+    let mut plan = finalize_plan(structure, draft, pools, &[], now_epoch_secs)?;
+    plan.options = options.clone();
+    if rows_within(&plan, budget) < rows as usize {
+        return Ok(None);
+    }
+    let generated = generate_rows_from(&plan, 0, rows, &mut SeedRng::new(seed));
+    let mut columns: Vec<(String, Vec<PreviewCell>)> = Vec::with_capacity(plan.columns.len());
+    let mut slot = 0;
+    for column in &plan.columns {
+        let cells = if matches!(column.source, ColumnSource::Skip) {
+            vec![PreviewCell::Default; rows as usize]
+        } else {
+            let cells = generated
+                .iter()
+                .map(|row| match &row[slot] {
+                    Some(value) if value == PARENT_MARKER => PreviewCell::Parent,
+                    Some(value) => PreviewCell::Value(value.clone()),
+                    None => PreviewCell::Null,
+                })
+                .collect();
+            slot += 1;
+            cells
+        };
+        columns.push((column.name.clone(), cells));
+    }
+    Ok(Some(columns))
+}
 
 /// Names of the columns that will appear in the INSERT, in plan order.
 pub(crate) fn insert_columns(plan: &SeedPlan) -> Vec<String> {
@@ -3281,6 +3373,128 @@ mod plan_tests {
         let mut expected = SeedRng::new(6);
         expected.next_u64();
         assert_eq!(rng.next_u64(), expected.next_u64());
+    }
+
+    #[test]
+    fn previews_mark_defaults_and_parent_rows_without_a_database() {
+        let mut table = structure(vec![
+            column("id", "integer"),
+            column("customer_id", "integer"),
+            column("email", "text"),
+        ]);
+        table.columns[0].default_value = Some("nextval('seq')".into());
+        table.foreign_keys.push(ForeignKeyInfo {
+            name: "fk".into(),
+            columns: vec!["customer_id".into()],
+            referenced_schema: "public".into(),
+            referenced_table: "customers".into(),
+            referenced_columns: vec!["id".into()],
+            on_update: None,
+            on_delete: None,
+        });
+        let draft = run(SeedDialect::Postgres, &table);
+        let preview = preview_rows(
+            draft,
+            &table,
+            &GenOptions::default(),
+            0,
+            1,
+            4,
+            BATCH_VALUE_BYTES,
+        )
+        .expect("preview")
+        .expect("within budget");
+        assert_eq!(preview.len(), 3);
+        assert!(preview[0].1.iter().all(|c| *c == PreviewCell::Default));
+        assert!(preview[1].1.iter().all(|c| *c == PreviewCell::Parent));
+        assert!(preview[2]
+            .1
+            .iter()
+            .all(|c| matches!(c, PreviewCell::Value(v) if v.contains('@'))));
+        // The same seed previews the same values.
+        let again = preview_rows(
+            run(SeedDialect::Postgres, &table),
+            &table,
+            &GenOptions::default(),
+            0,
+            1,
+            4,
+            BATCH_VALUE_BYTES,
+        )
+        .expect("preview")
+        .expect("within budget");
+        assert_eq!(preview, again);
+    }
+
+    #[test]
+    fn previews_show_exactly_what_the_run_inserts_with_the_same_seed() {
+        let mut table = structure(vec![
+            column("customer_id", "integer"),
+            column("email", "text"),
+            column("joined", "date"),
+        ]);
+        table.columns[0].nullable = true;
+        table.foreign_keys.push(ForeignKeyInfo {
+            name: "fk".into(),
+            columns: vec!["customer_id".into()],
+            referenced_schema: "public".into(),
+            referenced_table: "customers".into(),
+            referenced_columns: vec!["id".into()],
+            on_update: None,
+            on_delete: None,
+        });
+        let specs = [SeedColumnSpec {
+            null_rate: Some(0.5),
+            ..spec("customer_id", None, (None, None))
+        }];
+        let clock = 1_750_000_000;
+        let draft = analyze_plan(SeedDialect::Postgres, &table, &specs).expect("plan");
+        let parents = vec![Some(vec![
+            vec!["10".to_string()],
+            vec!["11".to_string()],
+            vec!["12".to_string()],
+        ])];
+        let plan = finalize_plan(&table, draft, parents, &[], clock).expect("plan");
+        let run_rows = generate_rows(&plan, 8, &mut SeedRng::new(7));
+
+        let draft = analyze_plan(SeedDialect::Postgres, &table, &specs).expect("plan");
+        let preview = preview_rows(
+            draft,
+            &table,
+            &GenOptions::default(),
+            clock,
+            7,
+            8,
+            BATCH_VALUE_BYTES,
+        )
+        .expect("preview")
+        .expect("within budget");
+        let mut nulls = 0;
+        for (row, run_row) in run_rows.iter().enumerate() {
+            match (&preview[0].1[row], &run_row[0]) {
+                (PreviewCell::Null, None) => nulls += 1,
+                (PreviewCell::Parent, Some(_)) => {}
+                (cell, value) => panic!("row {row}: preview {cell:?}, run {value:?}"),
+            }
+            for column in [1, 2] {
+                assert_eq!(
+                    preview[column].1[row],
+                    PreviewCell::Value(run_row[column].clone().unwrap()),
+                    "row {row} column {column}"
+                );
+            }
+        }
+        assert!((1..8).contains(&nulls), "the NULL draws were exercised");
+    }
+
+    #[test]
+    fn previews_refuse_rows_over_their_byte_budget() {
+        let table = structure(vec![column("body", "text")]);
+        let specs = [spec("body", None, (Some(90_000), Some(100_000)))];
+        let draft = analyze_plan(SeedDialect::Postgres, &table, &specs).expect("plan");
+        let preview =
+            preview_rows(draft, &table, &GenOptions::default(), 0, 1, 8, 400_000).expect("plan");
+        assert!(preview.is_none());
     }
 
     #[test]

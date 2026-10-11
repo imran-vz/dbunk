@@ -8,25 +8,39 @@ pub(super) struct Column {
     pub generated: bool,
     pub identity: bool,
     pub has_default: bool,
+    /// The backend's Auto source for this column takes a length range.
+    pub auto_length: bool,
 }
 pub(super) struct SetupAnchor {
     pub attempt: TableSeedAttemptId,
     pub endpoint: TableSeedEndpoint,
     pub row_count: u32,
     pub seed: Option<u64>,
+    pub locales: Vec<TableSeedLocale>,
+    pub realism: TableSeedRealism,
 }
 impl SetupAnchor {
+    pub fn of(attempt: TableSeedAttemptId, intent: &TableSeedIntent) -> Self {
+        Self {
+            attempt,
+            endpoint: intent.endpoint.clone(),
+            row_count: intent.row_count,
+            seed: intent.seed,
+            locales: intent.locales.clone(),
+            realism: intent.realism,
+        }
+    }
     pub fn matches(&self, intent: &TableSeedIntent) -> bool {
         self.endpoint == intent.endpoint
             && self.row_count == intent.row_count
             && self.seed == intent.seed
+            && self.locales == intent.locales
+            && self.realism == intent.realism
     }
 }
 pub(super) struct Recipe {
-    pub attempt: TableSeedAttemptId,
-    pub endpoint: TableSeedEndpoint,
-    pub row_count: u32,
-    pub seed: Option<u64>,
+    /// The run-level setup the recipe was inspected or prepared with.
+    pub setup: SetupAnchor,
     pub columns: Vec<Column>,
     pub drafts: Vec<ColumnDraft>,
     pub changed: bool,
@@ -79,6 +93,7 @@ impl Recipe {
                 generated: column.generated,
                 identity: column.identity,
                 has_default: column.has_default,
+                auto_length: column.auto_length,
             });
             let mut draft = ColumnDraft::default();
             if let Some(spec) = specs.iter().find(|spec| spec.column == column.name) {
@@ -98,14 +113,15 @@ impl Recipe {
                     }
                 };
                 draft.null_percent = spec.null_rate.map_or_else(String::new, percent_text);
+                if let Some(length) = spec.length {
+                    draft.min_length = length.min.map_or_else(String::new, |v| v.to_string());
+                    draft.max_length = length.max.map_or_else(String::new, |v| v.to_string());
+                }
             }
             drafts.push(draft);
         }
         let recipe = Self {
-            attempt: inspection.attempt_id(),
-            endpoint: inspection.intent().endpoint.clone(),
-            row_count: inspection.intent().row_count,
-            seed: inspection.intent().seed,
+            setup: SetupAnchor::of(inspection.attempt_id(), inspection.intent()),
             columns: captured,
             drafts,
             changed: false,
@@ -138,11 +154,13 @@ impl Recipe {
         {
             return Err("Editable column recipes exceed 512 KiB; previous value retained");
         }
-        let _ = draft.spec(&column.name, column.nullable)?;
+        let _ = draft.spec(&column.name, column.nullable, column.auto_length)?;
         let changed = old.mode != draft.mode
             || old.constant != draft.constant
             || old.values_text != draft.values_text
-            || old.null_percent != draft.null_percent;
+            || old.null_percent != draft.null_percent
+            || old.min_length != draft.min_length
+            || old.max_length != draft.max_length;
         self.drafts[index] = draft;
         self.changed |= changed;
         Ok(())
@@ -152,7 +170,7 @@ impl Recipe {
             .columns
             .iter()
             .zip(&self.drafts)
-            .filter(|(column, draft)| draft.overridden(column.nullable));
+            .filter(|(column, draft)| draft.overridden(column.nullable, column.auto_length));
         let count = selected.clone().count();
         let mut bytes = count
             .checked_mul(size_of::<TableSeedColumnSpec>())
@@ -186,13 +204,17 @@ impl Recipe {
         }
         let mut specs = Vec::with_capacity(count);
         for (column, draft) in selected {
-            specs.push(draft.spec(&column.name, column.nullable)?);
+            specs.push(draft.spec(&column.name, column.nullable, column.auto_length)?);
         }
         Ok(specs)
     }
 }
 fn draft_bytes(draft: &ColumnDraft) -> usize {
-    draft.constant.capacity() + draft.values_text.capacity() + draft.null_percent.capacity()
+    draft.constant.capacity()
+        + draft.values_text.capacity()
+        + draft.null_percent.capacity()
+        + draft.min_length.capacity()
+        + draft.max_length.capacity()
 }
 /// Auto, Default, Constant and Values, then one mode per generator.
 pub(super) const MODE_COUNT: usize = 4 + GENERATORS.len();
@@ -230,4 +252,57 @@ pub(super) fn percent_text(rate: f64) -> String {
     } else {
         format!("{percent:e}")
     }
+}
+
+/// Bound on the formatted preview kept by the view.
+const PREVIEW_TEXT_BYTES: usize = 64 * 1024;
+
+/// One line per column: its sample values and the lengths they span.
+pub(super) fn preview_text(preview: &TableSeedPreview) -> String {
+    use std::fmt::Write;
+    let seed = if preview.seed_chosen {
+        format!("seed {}", preview.seed)
+    } else {
+        "illustrative seed; the run picks its own at review, so its values will differ".into()
+    };
+    let mut out = format!("Sample values ({seed}; display only, Apply runs the reviewed recipe)\n");
+    for (shown, column) in preview.columns.iter().enumerate() {
+        let lengths: Vec<usize> = column
+            .cells
+            .iter()
+            .filter_map(|cell| match cell {
+                TableSeedPreviewCell::Value { chars, .. } => Some(*chars),
+                _ => None,
+            })
+            .collect();
+        let span = match (lengths.iter().min(), lengths.iter().max()) {
+            (Some(min), Some(max)) if min == max => format!(" [{min} chars]"),
+            (Some(min), Some(max)) => format!(" [{min}–{max} chars]"),
+            _ => String::new(),
+        };
+        let values: Vec<String> = column
+            .cells
+            .iter()
+            .map(|cell| match cell {
+                TableSeedPreviewCell::Value { text, chars } => {
+                    let text = text.replace(['\n', '\r'], " ");
+                    if *chars > text.chars().count() {
+                        format!("{text}…")
+                    } else {
+                        text
+                    }
+                }
+                TableSeedPreviewCell::Null => "NULL".into(),
+                TableSeedPreviewCell::Default => "DEFAULT".into(),
+                TableSeedPreviewCell::FromParent => "(parent row)".into(),
+            })
+            .collect();
+        let line = format!("{}{span}: {}\n", column.name, values.join(" | "));
+        if out.len() + line.len() > PREVIEW_TEXT_BYTES {
+            let _ = write!(out, "… {} more columns", preview.columns.len() - shown);
+            break;
+        }
+        out.push_str(&line);
+    }
+    out
 }

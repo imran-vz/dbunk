@@ -123,12 +123,17 @@ pub(super) fn columns(
         .iter()
         .filter(|k| k.kind == "f")
         .collect::<Vec<_>>();
+    let text = seed::auto_takes_length(SeedDialect::Postgres, &catalog.structure());
     catalog
         .relation
         .columns
         .iter()
         .enumerate()
         .map(|(index, c)| {
+            let enumerated = catalog
+                .enum_labels
+                .iter()
+                .any(|(name, _)| name == &c.public.name);
             let action = match draft
                 .and_then(|d| d.columns().get(index))
                 .map(|c| &c.source)
@@ -151,6 +156,7 @@ pub(super) fn columns(
                 generated: c.public.generated,
                 identity: c.public.identity,
                 action,
+                auto_length: text.get(index).copied().unwrap_or(false) && !enumerated,
             }
         })
         .collect()

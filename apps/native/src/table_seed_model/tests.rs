@@ -37,18 +37,18 @@ fn recipe_preserves_empty_constants_and_ignores_inapplicable_null_settings() {
         null_percent: "25".into(),
         ..Default::default()
     };
-    let spec = draft.spec("value", true).unwrap();
+    let spec = draft.spec("value", true, true).unwrap();
     assert!(matches!(spec.source, TableSeedSource::Constant { value } if value.is_empty()));
     assert_eq!(spec.null_rate, Some(0.25));
     draft.mode = ColumnMode::Default;
     draft.null_percent = "invalid".into();
     assert!(matches!(
-        draft.spec("value", true).unwrap().source,
+        draft.spec("value", true, true).unwrap().source,
         TableSeedSource::Default
     ));
     draft.mode = ColumnMode::Auto;
-    assert_eq!(draft.spec("value", false).unwrap().null_rate, None);
-    assert!(!draft.overridden(false));
+    assert_eq!(draft.spec("value", false, true).unwrap().null_rate, None);
+    assert!(!draft.overridden(false, true));
 }
 
 #[test]
@@ -57,14 +57,102 @@ fn values_are_indexed_recipe_data_and_empty_lists_never_become_auto() {
         mode: ColumnMode::Values,
         ..Default::default()
     };
-    assert!(draft.spec("value", true).is_err());
+    assert!(draft.spec("value", true, true).is_err());
     draft.values_text = " one, 日本語, , one ".into();
-    let TableSeedSource::Values { values } = draft.spec("value", true).unwrap().source else {
+    let TableSeedSource::Values { values } = draft.spec("value", true, true).unwrap().source else {
         panic!("values source expected");
     };
     assert_eq!(values, ["one", "日本語", "one"]);
     draft.values_text = std::iter::repeat_n("x", 1025).collect::<Vec<_>>().join(",");
-    assert!(draft.spec("value", true).is_err());
+    assert!(draft.spec("value", true, true).is_err());
     draft.values_text = "x".repeat(8193);
-    assert!(draft.spec("value", true).is_err());
+    assert!(draft.spec("value", true, true).is_err());
+}
+
+#[test]
+fn lengths_parse_whole_ranges_and_refuse_inverted_or_out_of_bounds_ones() {
+    assert_eq!(parse_length(" ", ""), Ok(None));
+    assert_eq!(
+        parse_length("10", "50"),
+        Ok(Some(TableSeedLength {
+            min: Some(10),
+            max: Some(50)
+        }))
+    );
+    assert_eq!(
+        parse_length("", "5000"),
+        Ok(Some(TableSeedLength {
+            min: None,
+            max: Some(5000)
+        }))
+    );
+    for (min, max) in [
+        ("0", ""),
+        ("50", "10"),
+        ("", "100001"),
+        ("1.5", ""),
+        ("-3", ""),
+    ] {
+        assert!(parse_length(min, max).is_err(), "{min}..{max}");
+    }
+}
+
+#[test]
+fn locales_parse_known_ids_once_each() {
+    assert_eq!(parse_locales(""), Ok(vec![TableSeedLocale::EnUs]));
+    assert_eq!(
+        parse_locales(" ja, PT-br ,de"),
+        Ok(vec![
+            TableSeedLocale::Ja,
+            TableSeedLocale::PtBr,
+            TableSeedLocale::De
+        ])
+    );
+    assert!(parse_locales("en-AU").is_err());
+    assert!(parse_locales("fr, fr").is_err());
+    assert_eq!(
+        locales_text(&TableSeedLocale::ALL),
+        "en-US, en-GB, en-IN, de, fr, es, pt-BR, ja"
+    );
+    assert_eq!(
+        parse_locales(&locales_text(&TableSeedLocale::ALL)),
+        Ok(TableSeedLocale::ALL.to_vec())
+    );
+}
+
+#[test]
+fn lengths_reach_the_spec_only_for_generated_text() {
+    let mut draft = ColumnDraft {
+        min_length: "10".into(),
+        max_length: "50".into(),
+        ..Default::default()
+    };
+    assert!(draft.overridden(false, true));
+    let spec = draft.spec("email", false, true).unwrap();
+    assert_eq!(
+        spec.length,
+        Some(TableSeedLength {
+            min: Some(10),
+            max: Some(50)
+        })
+    );
+    draft.mode = ColumnMode::Constant;
+    draft.constant = "x".into();
+    assert_eq!(draft.spec("email", false, true).unwrap().length, None);
+    draft.mode = ColumnMode::Generator(TableSeedGenerator::Integer);
+    assert!(!draft.mode.accepts_length(true));
+    assert_eq!(draft.spec("email", false, true).unwrap().length, None);
+}
+
+#[test]
+fn auto_takes_a_length_only_where_the_backend_reports_text() {
+    let draft = ColumnDraft {
+        min_length: "5".into(),
+        max_length: "10".into(),
+        ..Default::default()
+    };
+    assert!(!draft.overridden(false, false));
+    assert_eq!(draft.spec("count", false, false).unwrap().length, None);
+    assert!(draft.overridden(false, true));
+    assert!(ColumnMode::Generator(TableSeedGenerator::Email).accepts_length(false));
 }

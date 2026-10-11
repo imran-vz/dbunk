@@ -368,6 +368,13 @@ ADR-0005 for the writes-by-default posture.
   (emit the database `DEFAULT`; automatic for identity columns).
   Text-like columns also carry a **Length Range** and, where it applies,
   locales and a realism setting (fictional-safe by default).
+- **Seed Preview** — the first rows an edited Seed Spec would produce for
+  the inspected table, built without touching the database. With the
+  recipe's own seed it shows what the run inserts, except that foreign-key
+  values show as sampled from the parent and unique sequences start at
+  zero; without one it uses an illustrative seed and says so. It reports
+  the errors Prepare would, and is display only: Apply always runs the
+  exact reviewed recipe.
 - **Length Range** — the inclusive minimum and maximum character length a
   generated value may have: the user's choice limited by the column's
   capacity and by what the generator can produce. Values are built to a

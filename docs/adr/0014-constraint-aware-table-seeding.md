@@ -58,6 +58,10 @@ generators are rebuilt around these decisions:
   the data and the generation algorithms, is recorded with each seed, because
   a seed reproduces its rows only under the same version.
 - **First locales:** en-US, en-GB, en-IN, de, fr, es, pt-BR and ja.
+- **Locales and realism are run-level, lengths per column.** Both are part
+  of the reviewed setup: changing either after review disables Apply until
+  the recipe is prepared again. A preview of sample values is built from the
+  inspected catalog without database work and grants nothing.
 
 ### Considered options
 

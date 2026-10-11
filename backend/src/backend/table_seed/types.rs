@@ -15,6 +15,12 @@ pub const MAX_TABLE_SEED_EXECUTION_POOL_BYTES: usize = 128 * 1024 * 1024;
 pub const MAX_TABLE_SEED_TEXT_CHARS: u32 = crate::seed::MAX_GENERATED_CHARS as u32;
 /// Most locales one run may mix.
 pub const MAX_TABLE_SEED_LOCALES: usize = 8;
+/// Rows a preview generates.
+pub const TABLE_SEED_PREVIEW_ROWS: u32 = 8;
+/// Characters of each previewed value kept for display.
+pub const TABLE_SEED_PREVIEW_CHARS: usize = 120;
+/// Worst-case bytes a preview may generate before it is cut for display.
+pub const TABLE_SEED_PREVIEW_BYTES: usize = 16 * 1024 * 1024;
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TableSeedAttemptId(pub(super) uuid::Uuid);
 impl TableSeedAttemptId {
@@ -158,6 +164,10 @@ pub enum TableSeedGenerator {
     FullAddress,
 }
 impl TableSeedGenerator {
+    /// Whether this generator builds text and so takes a length range.
+    pub fn accepts_length(self) -> bool {
+        crate::seed::parse_generator_id(self.id()).is_ok_and(|kind| kind.text_limits().is_some())
+    }
     pub fn id(self) -> &'static str {
         match self {
             Self::Email => "email",
@@ -473,6 +483,69 @@ pub struct TableSeedColumn {
     pub generated: bool,
     pub identity: bool,
     pub action: TableSeedColumnAction,
+    /// Whether this column's Auto source is a text generator, which takes
+    /// a length range.
+    pub auto_length: bool,
+}
+/// One previewed cell.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TableSeedPreviewCell {
+    /// `text` is the value cut to [`TABLE_SEED_PREVIEW_CHARS`] for display;
+    /// `chars` is the full value's length.
+    Value {
+        text: String,
+        chars: usize,
+    },
+    Null,
+    /// The database's DEFAULT applies.
+    Default,
+    /// Sampled from the referenced parent table at run time.
+    FromParent,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TableSeedPreviewColumn {
+    pub name: String,
+    pub cells: Vec<TableSeedPreviewCell>,
+}
+/// Sample rows of an edited recipe. Display only: it grants nothing and is
+/// not what Apply runs, which is always the exact reviewed recipe.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TableSeedPreview {
+    /// The seed the values were generated with.
+    pub seed: u64,
+    /// Whether that is the recipe's own seed. When the recipe leaves its
+    /// seed to review, the preview uses a fixed one and the run's values
+    /// will differ.
+    pub seed_chosen: bool,
+    pub columns: Vec<TableSeedPreviewColumn>,
+}
+impl TableSeedPreview {
+    pub(crate) fn new(seed: u64, seed_chosen: bool, columns: crate::seed::PreviewColumns) -> Self {
+        use crate::seed::PreviewCell;
+        let columns = columns
+            .into_iter()
+            .map(|(name, cells)| TableSeedPreviewColumn {
+                name,
+                cells: cells
+                    .into_iter()
+                    .map(|cell| match cell {
+                        PreviewCell::Value(value) => TableSeedPreviewCell::Value {
+                            chars: value.chars().count(),
+                            text: value.chars().take(TABLE_SEED_PREVIEW_CHARS).collect(),
+                        },
+                        PreviewCell::Null => TableSeedPreviewCell::Null,
+                        PreviewCell::Default => TableSeedPreviewCell::Default,
+                        PreviewCell::Parent => TableSeedPreviewCell::FromParent,
+                    })
+                    .collect(),
+            })
+            .collect();
+        Self {
+            seed,
+            seed_chosen,
+            columns,
+        }
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TableSeedPhase {

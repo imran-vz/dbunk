@@ -2,7 +2,10 @@
 //! store owns exact reviewed attempts and recovery after this tab closes.
 use crate::{
     bounded_field::Field,
-    table_seed_model::{ColumnDraft, ColumnMode, GENERATORS, parse_row_count, parse_seed},
+    table_seed_model::{
+        ColumnDraft, ColumnMode, GENERATORS, locales_text, parse_locales, parse_row_count,
+        parse_seed,
+    },
     table_seed_store::SeedStore,
 };
 use dbunk_lib::backend::{
@@ -28,7 +31,7 @@ const MIB: usize = 1024 * 1024;
 // Editors, compact column metadata, recipe replacement and bounded spec build.
 // No generated rows or opaque backend preparation ownership is retained here.
 const SETUP_BYTES: usize = 3 * MIB;
-const FIELDS: [(&str, usize, bool); 7] = [
+const FIELDS: [(&str, usize, bool); 10] = [
     ("Destination schema", 63, false),
     ("Destination table", 63, false),
     ("Rows (1–1000000)", 7, false),
@@ -36,7 +39,29 @@ const FIELDS: [(&str, usize, bool); 7] = [
     ("Constant value", 8192, true),
     ("Comma-separated values", 128 * 1024, true),
     ("NULL percentage (0–100, blank for default)", 32, false),
+    (
+        "Minimum length in characters (blank for automatic)",
+        6,
+        false,
+    ),
+    (
+        "Maximum length in characters (blank for automatic)",
+        6,
+        false,
+    ),
+    (
+        "Locales (comma-separated: en-US, en-GB, en-IN, de, fr, es, pt-BR, ja)",
+        96,
+        false,
+    ),
 ];
+/// Fields that set up the whole run, in display order.
+const RUN_FIELDS: [usize; 5] = [0, 1, 2, 3, LOCALES_FIELD];
+const LOCALES_FIELD: usize = 9;
+/// Fields that edit the selected column.
+fn column_field(index: usize) -> bool {
+    (4..=8).contains(&index)
+}
 #[derive(Clone, Copy)]
 enum Action {
     Connection,
@@ -51,8 +76,10 @@ enum Action {
     Cancel,
     Reconcile,
     Dismiss,
+    Realism,
+    Preview,
 }
-const ACTIONS: [(Action, &str); 12] = [
+const ACTIONS: [(Action, &str); 14] = [
     (Action::Connection, "Choose destination connection"),
     (Action::Load, "Load columns with Auto recipe"),
     (Action::Inspect, "Edit selected recipe"),
@@ -65,6 +92,8 @@ const ACTIONS: [(Action, &str); 12] = [
     (Action::Cancel, "Cancel selected seed"),
     (Action::Reconcile, "Reconcile uncertain seed"),
     (Action::Dismiss, "Dismiss finished seed"),
+    (Action::Realism, "Contact details"),
+    (Action::Preview, "Preview sample values"),
 ];
 pub struct TableSeedView {
     store: Entity<SeedStore>,
@@ -94,6 +123,10 @@ pub struct TableSeedView {
     column_dirty: bool,
     armed: Option<TableSeedAttemptId>,
     editable: bool,
+    /// Run-level: whether emails, phones and URLs may look real.
+    realism: TableSeedRealism,
+    /// The last preview, formatted. Display only; never executable.
+    preview: Option<String>,
     status: String,
     root: FocusHandle,
     buttons: Vec<FocusHandle>,
@@ -125,7 +158,7 @@ impl TableSeedView {
             connection: document.connection_id.clone(), choosing: false, choice: None,
             selected: None, recipe: None, setup_anchor: None, column: None, review_column: None, review_focus: cx.focus_handle(), review_scroll: UniformListScrollHandle::new(), mode: ColumnMode::Auto,
             choosing_mode: false, mode_choice: None, column_dirty: false, armed: None,
-            editable: true, status: "Load columns, edit their sources, then prepare and review the exact recipe. Rows change only after saved admission.".into(),
+            editable: true, realism: TableSeedRealism::FictionalSafe, preview: None, status: "Load columns, edit their sources, then prepare and review the exact recipe. Rows change only after saved admission.".into(),
             root: cx.focus_handle(), buttons: ACTIONS.iter().map(|_|cx.focus_handle()).collect(),
             job_focus: cx.focus_handle(), choice_focus: cx.focus_handle(), column_focus: cx.focus_handle(),
             mode_focus: cx.focus_handle(), details_focus: cx.focus_handle(), previous: None,
@@ -163,6 +196,7 @@ impl TableSeedView {
     pub fn bind_connection(&mut self, connection: String, cx: &mut Context<Self>) {
         if self.connection.as_ref() != Some(&connection) {
             self.connection = Some(connection);
+            self.preview = None;
             self.preset = Default::default();
             self.pending_preset = true;
             self.choosing = false;
@@ -229,6 +263,7 @@ impl TableSeedView {
                     let value = match index {
                         0 | 1 => self.preset[index].clone(),
                         2 => "100".into(),
+                        LOCALES_FIELD => "en-US".into(),
                         _ => String::new(),
                     };
                     cx.new(|cx| Field::new(label, *limit, *multiline, value, window, cx))
@@ -242,9 +277,12 @@ impl TableSeedView {
                     cx.subscribe(
                         field,
                         move |this, _, _: &crate::bounded_field::Changed, cx| {
-                            if index >= 4 {
+                            if column_field(index) {
                                 this.refresh_column_dirty(cx);
                             }
+                            // A shown preview describes the setup it was
+                            // made from; any edit makes it stale.
+                            this.preview = None;
                             cx.notify();
                         },
                     )
@@ -262,7 +300,7 @@ impl TableSeedView {
             self.pending_preset = false;
         }
         for (index, field) in self.fields.iter().enumerate() {
-            let readonly = !self.editable || (index >= 4 && self.column.is_none());
+            let readonly = !self.editable || (column_field(index) && self.column.is_none());
             field.update(cx, |field, cx| field.set_readonly(readonly, cx));
         }
     }
@@ -277,6 +315,8 @@ impl TableSeedView {
                         (&draft.constant, 4),
                         (&draft.values_text, 5),
                         (&draft.null_percent, 6),
+                        (&draft.min_length, 7),
+                        (&draft.max_length, 8),
                     ]
                     .iter()
                     .any(|(saved, index)| {
@@ -335,18 +375,18 @@ impl TableSeedView {
             .map(|(handle, _)| handle.clone())
             .collect();
         handles.extend(
-            self.fields
+            RUN_FIELDS
                 .iter()
-                .take(4)
+                .filter_map(|index| self.fields.get(*index))
                 .map(|field| field.focus_handle(cx)),
         );
         if self.column.is_some() {
             handles.extend(
                 self.fields
                     .iter()
-                    .skip(4)
-                    .filter(|field| self.field_visible(field, cx))
-                    .map(|field| field.focus_handle(cx)),
+                    .enumerate()
+                    .filter(|(index, field)| column_field(*index) && self.field_visible(field, cx))
+                    .map(|(_, field)| field.focus_handle(cx)),
             );
         }
         if self.choosing {
@@ -388,6 +428,12 @@ impl TableSeedView {
                     .is_some_and(|column| column.nullable)
                     && self.mode != ColumnMode::Default
             }
+            7 | 8 => self.mode.accepts_length(
+                self.recipe
+                    .as_ref()
+                    .and_then(|recipe| self.column.and_then(|i| recipe.columns.get(i)))
+                    .is_some_and(|column| column.auto_length),
+            ),
             _ => true,
         }
     }

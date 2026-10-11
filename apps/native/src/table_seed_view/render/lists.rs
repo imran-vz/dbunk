@@ -114,7 +114,7 @@ impl TableSeedView {
                                 format!(" · {}% NULL", draft.null_percent)
                             }
                         );
-                        let id = recipe.attempt;
+                        let id = recipe.setup.attempt;
                         let weak = cx.weak_entity();
                         Some(
                             div()
@@ -152,12 +152,12 @@ impl TableSeedView {
     pub(super) fn modes(&self, cx: &mut Context<Self>) -> AnyElement {
         uniform_list(
             "seed-mode-list",
-            30,
+            recipe::MODE_COUNT,
             cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
                 range
                     .filter_map(|index| {
                         let mode = recipe::mode_at(index)?;
-                        let id = this.recipe.as_ref()?.attempt;
+                        let id = this.recipe.as_ref()?.setup.attempt;
                         let column = this.column?;
                         let text = recipe::mode_label(mode);
                         let weak = cx.weak_entity();

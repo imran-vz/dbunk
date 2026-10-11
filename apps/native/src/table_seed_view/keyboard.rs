@@ -84,7 +84,7 @@ impl TableSeedView {
                 if let (Some(recipe), Some(column), Some(index)) =
                     (&self.recipe, self.column, self.mode_choice)
                 {
-                    self.select_mode(recipe.attempt, column, index, window, cx);
+                    self.select_mode(recipe.setup.attempt, column, index, window, cx);
                 }
             } else if key == "escape" {
                 self.choosing_mode = false;
@@ -121,7 +121,7 @@ impl TableSeedView {
         } else if self.column_focus.is_focused(window) {
             if let Some(recipe) = &self.recipe {
                 if let Some(index) = move_index(self.column, recipe.columns.len(), key) {
-                    self.select_column(recipe.attempt, index, window, cx);
+                    self.select_column(recipe.setup.attempt, index, window, cx);
                     self.columns_scroll
                         .scroll_to_item(index, ScrollStrategy::Nearest);
                 } else {
