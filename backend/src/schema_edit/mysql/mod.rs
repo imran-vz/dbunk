@@ -2,34 +2,51 @@
 //! `information_schema` introspection cross-checked against `SHOW CREATE
 //! TABLE`, a version gate, a combined-ALTER planner and an executor on a
 //! dedicated short connection.
+//!
+//! - [`version`]: `VERSION()` parsing, the MySQL 8.0 / MariaDB 10.6 gate and
+//!   feature flags.
+//! - [`catalog`]: raw catalog rows and the definition text.
+//! - [`definition`]: the `SHOW CREATE TABLE` parser and the `sqlparser`
+//!   cross-check.
+//! - [`build`]: rows plus definition into a baseline, ids and drift token.
+//! - [`planner`]: the draft as ordered `ALTER TABLE` statements.
+//! - [`executor`]: apply, partial-apply outcomes and verification.
 use super::{
     EnginePlan, PlanError, PlanOptions, SchemaBaseline, SchemaChangeSet, SchemaDraft,
-    SchemaEditFailure, SchemaEditOutcome, SchemaEditPreview,
+    SchemaEditOutcome, SchemaEditPreview,
 };
 use sqlx::mysql::{MySqlConnectOptions, MySqlConnection};
 
+mod build;
+mod catalog;
+mod definition;
+mod executor;
+mod planner;
+mod sql;
+mod version;
+
 /// Plans `draft` as ordered MySQL statements. Pure and deterministic.
 pub fn plan(
-    _baseline: &SchemaBaseline,
-    _draft: &SchemaDraft,
-    _changes: &SchemaChangeSet,
-    _options: &PlanOptions,
+    baseline: &SchemaBaseline,
+    draft: &SchemaDraft,
+    changes: &SchemaChangeSet,
+    options: &PlanOptions,
 ) -> Result<EnginePlan, PlanError> {
-    Err(PlanError::Unsupported {
-        reason: "MySQL schema editing is not available yet".into(),
-    })
+    planner::plan(baseline, draft, changes, options)
 }
 
 /// Captures `database.table` on the session connection. `server_version` is
 /// `VERSION()`. A server below MySQL 8.0 / MariaDB 10.6, or any catalog and
 /// `SHOW CREATE TABLE` disagreement, yields a `ReadOnly` baseline.
 pub(crate) async fn capture(
-    _connection: &mut MySqlConnection,
-    _server_version: &str,
-    _database: &str,
-    _table: &str,
+    connection: &mut MySqlConnection,
+    server_version: &str,
+    database: &str,
+    table: &str,
 ) -> Result<SchemaBaseline, String> {
-    Err("MySQL schema editing is not available yet".into())
+    let version = version::Version::parse(server_version);
+    let catalog = catalog::read(connection, version, database, table).await?;
+    Ok(build::baseline(server_version, database, table, &catalog))
 }
 
 /// Runs a reviewed plan on a dedicated short connection opened from
@@ -37,14 +54,15 @@ pub(crate) async fn capture(
 /// transaction. The caller has already re-planned, compared `preview` and
 /// checked the policy.
 pub(crate) async fn execute(
-    _options: &MySqlConnectOptions,
-    _baseline: &SchemaBaseline,
-    _draft: &SchemaDraft,
-    _preview: &SchemaEditPreview,
+    options: &MySqlConnectOptions,
+    baseline: &SchemaBaseline,
+    draft: &SchemaDraft,
+    preview: &SchemaEditPreview,
 ) -> SchemaEditOutcome {
-    SchemaEditOutcome::NotDispatched {
-        reason: SchemaEditFailure::Unsupported {
-            reason: "MySQL schema editing is not available yet".into(),
-        },
-    }
+    executor::execute(options, baseline, draft, preview).await
 }
+
+#[cfg(test)]
+mod capture_tests;
+#[cfg(test)]
+mod planner_tests;
