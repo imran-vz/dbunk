@@ -308,3 +308,283 @@ async fn a_held_lock_times_out_without_dispatch() {
         .expect("release");
     holder.close().await;
 }
+
+async fn connect(spec: &ResolvedPostgresConnectSpec) -> dedicated::DedicatedConnection {
+    dedicated::connect(spec, NoticeSink::Ignore)
+        .await
+        .expect("connect")
+}
+
+#[tokio::test]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
+async fn the_lock_timeout_is_lowered_only_inside_the_transaction() {
+    let spec = live_spec();
+    let connection = connect(&spec).await;
+    let client = &connection.client;
+    for (inherited, inside) in [
+        ("0", "10s"),
+        ("1min", "10s"),
+        ("500ms", "500ms"),
+        ("1ms", "1ms"),
+    ] {
+        client
+            .batch_execute(&format!("SET lock_timeout = '{inherited}'"))
+            .await
+            .expect("set");
+        client.batch_execute(executor::BEGIN).await.expect("begin");
+        client
+            .batch_execute(executor::LOCK_TIMEOUT_LOCAL)
+            .await
+            .expect("lower");
+        let lowered: String = client
+            .query_one("SELECT current_setting('lock_timeout')", &[])
+            .await
+            .expect("read")
+            .get(0);
+        assert_eq!(lowered, inside, "inherited {inherited}");
+        client.batch_execute("COMMIT").await.expect("commit");
+        let after: String = client
+            .query_one("SELECT current_setting('lock_timeout')", &[])
+            .await
+            .expect("read")
+            .get(0);
+        assert_eq!(after, inherited, "the session keeps its own setting");
+    }
+    connection.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
+async fn verification_reads_render_like_the_capture_in_any_session_time_zone() {
+    let spec = live_spec();
+    let table = "time_zone";
+    fresh(&spec, table).await;
+    run_sql(
+        &spec,
+        &format!(
+            "ALTER TABLE {SCHEMA}.{table} ADD COLUMN created timestamptz DEFAULT '2020-01-01 00:00:00+00'"
+        ),
+    )
+    .await;
+    let baseline = capture(&spec, table).await;
+    let connection = connect(&spec).await;
+    connection
+        .client
+        .batch_execute("SET TimeZone = 'America/New_York'; BEGIN")
+        .await
+        .expect("begin");
+    let (observed, _) = catalog::observe(&connection.client, SCHEMA, table, &[])
+        .await
+        .expect("observe");
+    connection
+        .client
+        .batch_execute("ROLLBACK")
+        .await
+        .expect("rollback");
+    connection.close().await;
+    assert_eq!(
+        column(&observed, "created").default,
+        column(&baseline.table, "created").default
+    );
+
+    // And an apply under that session's defaults verifies.
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.add_column("nick", "text");
+    let outcome = apply(&spec, &baseline, &draft, &PlanOptions::default()).await;
+    assert!(outcome.applied(), "{outcome:?}");
+}
+
+#[tokio::test]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
+async fn a_domain_typed_column_verifies() {
+    let spec = live_spec();
+    let table = "domain_typed";
+    fresh(&spec, table).await;
+    run_sql(
+        &spec,
+        &format!(
+            "DROP DOMAIN IF EXISTS {SCHEMA}.short_text CASCADE;
+CREATE DOMAIN {SCHEMA}.short_text AS varchar(20) CHECK (VALUE <> '');"
+        ),
+    )
+    .await;
+    let baseline = capture(&spec, table).await;
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.add_column("nick", format!("{SCHEMA}.short_text"));
+    let outcome = apply(&spec, &baseline, &draft, &PlanOptions::default()).await;
+    assert!(outcome.applied(), "{outcome:?}");
+    let after = capture(&spec, table).await;
+    assert_eq!(
+        column(&after.table, "nick").data_type,
+        format!("{SCHEMA}.short_text")
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
+async fn a_failed_concurrent_build_drops_its_invalid_index() {
+    let spec = live_spec();
+    let table = "invalid_index";
+    fresh(&spec, table).await;
+    run_sql(
+        &spec,
+        &format!(
+            "INSERT INTO {SCHEMA}.{table}(email, name) VALUES ('a@example.com', 'same'), ('b@example.com', 'same')"
+        ),
+    )
+    .await;
+    let baseline = capture(&spec, table).await;
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    let name = draft
+        .table
+        .columns
+        .iter()
+        .find(|c| c.name == "name")
+        .unwrap()
+        .origin;
+    let index = draft.new_origin();
+    let index_name = format!("{table}_name_key");
+    draft.table.indexes.push(IndexModel {
+        origin: index,
+        name: index_name.clone(),
+        unique: true,
+        method: None,
+        members: vec![IndexMember::column(name)],
+        include: Vec::new(),
+        predicate: None,
+    });
+    let options = PlanOptions {
+        concurrent_indexes: vec![index],
+        ..PlanOptions::default()
+    };
+    match apply(&spec, &baseline, &draft, &options).await {
+        SchemaEditOutcome::Stopped {
+            committed: 0,
+            failed_statement: 0,
+            reason: SchemaEditFailure::Database { code, message },
+        } => {
+            assert_eq!(code.as_deref(), Some("23505"));
+            assert!(message.contains("was dropped"), "{message}");
+        }
+        other => panic!("{other:?}"),
+    }
+    let connection = connect(&spec).await;
+    let left = connection
+        .client
+        .query_opt(
+            "SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $1 AND c.relname = $2",
+            &[&SCHEMA, &index_name],
+        )
+        .await
+        .expect("lookup");
+    connection.close().await;
+    assert!(left.is_none(), "the invalid index was dropped");
+    let after = capture(&spec, table).await;
+    assert_eq!(after.editable, Editability::Editable);
+}
+
+#[tokio::test]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
+async fn a_self_reference_follows_table_and_column_renames() {
+    let spec = live_spec();
+    let table = "self_ref";
+    let renamed = "self_ref_renamed";
+    run_sql(
+        &spec,
+        &format!("DROP TABLE IF EXISTS {SCHEMA}.{renamed} CASCADE"),
+    )
+    .await;
+    fresh(&spec, table).await;
+    run_sql(
+        &spec,
+        &format!(
+            "ALTER TABLE {SCHEMA}.{table} ADD COLUMN parent_id bigint CONSTRAINT {table}_parent_fkey REFERENCES {SCHEMA}.{table}(id)"
+        ),
+    )
+    .await;
+    let baseline = capture(&spec, table).await;
+    assert_eq!(baseline.editable, Editability::Editable);
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    let by_name = |draft: &SchemaDraft, name: &str| {
+        draft
+            .table
+            .columns
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap()
+            .origin
+    };
+    let id = by_name(&draft, "id");
+    let parent = by_name(&draft, "parent_id");
+    draft.table.name = renamed.into();
+    draft.table.column_mut(id).unwrap().name = "ident".into();
+    // Retyping the referencing column re-creates the key after the renames.
+    draft.table.column_mut(parent).unwrap().data_type = "integer".into();
+    let outcome = apply(&spec, &baseline, &draft, &PlanOptions::default()).await;
+    assert!(outcome.applied(), "{outcome:?}");
+    let after = capture(&spec, renamed).await;
+    let key = &after.table.foreign_keys[0];
+    assert_eq!(key.referenced_table, renamed);
+    assert_eq!(key.referenced_columns, vec!["ident".to_owned()]);
+
+    // An untouched self-reference verifies across another pair of renames.
+    let mut draft = SchemaDraft::from_baseline(&after);
+    draft.table.name = table.into();
+    let ident = by_name(&draft, "ident");
+    draft.table.column_mut(ident).unwrap().name = "id".into();
+    let outcome = apply(&spec, &after, &draft, &PlanOptions::default()).await;
+    assert!(outcome.applied(), "{outcome:?}");
+}
+
+#[tokio::test]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
+async fn an_index_comment_blocks_its_recreate_and_moves_the_drift_token() {
+    let spec = live_spec();
+    let table = "index_comment";
+    fresh(&spec, table).await;
+    let before_comment = capture(&spec, table).await;
+    run_sql(
+        &spec,
+        &format!("COMMENT ON INDEX {SCHEMA}.{table}_name_idx IS 'keep me'"),
+    )
+    .await;
+
+    // The comment is a catalog change the old baseline must notice.
+    let mut stale = SchemaDraft::from_baseline(&before_comment);
+    stale.add_column("nick", "text");
+    assert_eq!(
+        apply(&spec, &before_comment, &stale, &PlanOptions::default()).await,
+        SchemaEditOutcome::NotDispatched {
+            reason: SchemaEditFailure::BaselineChanged
+        }
+    );
+
+    let baseline = capture(&spec, table).await;
+    assert_eq!(baseline.editable, Editability::Editable);
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.indexes[0].members[0].descending = true;
+    match plan_review(&baseline, &draft, &PlanOptions::default()) {
+        Err(PlanError::Unsupported { reason }) => {
+            assert!(reason.contains("has a comment"), "{reason}")
+        }
+        other => panic!("{other:?}"),
+    }
+
+    // Other edits still apply, and the comment survives them.
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.add_column("nick", "text");
+    let outcome = apply(&spec, &baseline, &draft, &PlanOptions::default()).await;
+    assert!(outcome.applied(), "{outcome:?}");
+    let connection = connect(&spec).await;
+    let comment: Option<String> = connection
+        .client
+        .query_one(
+            &format!("SELECT obj_description('{SCHEMA}.{table}_name_idx'::regclass, 'pg_class')"),
+            &[],
+        )
+        .await
+        .expect("comment")
+        .get(0);
+    connection.close().await;
+    assert_eq!(comment.as_deref(), Some("keep me"));
+}

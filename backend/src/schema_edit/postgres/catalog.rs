@@ -1,7 +1,10 @@
 //! Catalog reads for capture and apply: the drift token, and the
 //! in-transaction re-capture used to verify an applied plan. SQL is internal;
 //! names and OIDs are always bound parameters.
-use super::capture::{baseline_from_snapshot, drift_token, estimated_rows};
+use super::capture::{
+    baseline_from_snapshot, drift_token, estimated_rows, mark_preserved, PreservedAttributes,
+};
+use super::planner::PRESERVED_ATTRIBUTES;
 use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
 use crate::postgres::dedicated::{self, DriverJoins, NoticeSink};
 use crate::postgres::native_catalog::{
@@ -22,8 +25,10 @@ use tokio_postgres::Client;
 
 /// One statement, so one snapshot: the relation OID and a digest of the
 /// catalog row versions (xmin) of the table and everything the editor reads
-/// from it. Any committed ALTER, constraint, index, comment, trigger, rule,
-/// policy or inheritance change moves at least one xmin.
+/// from it. Any committed ALTER, constraint, index (including its columns'
+/// statistics targets), comment (on the table, its columns, indexes and
+/// constraints), trigger, rule, policy or inheritance change moves at least
+/// one xmin.
 pub(super) const DRIFT: &str = r#"SELECT c.oid::bigint AS oid,c.reltuples::float8 AS reltuples,
 pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(pg_catalog.concat_ws('|',c.xmin::text,
 coalesce((SELECT pg_catalog.string_agg(a.attnum::text||':'||a.xmin::text,',' ORDER BY a.attnum) FROM pg_catalog.pg_attribute a WHERE a.attrelid=c.oid AND a.attnum>0),''),
@@ -34,13 +39,44 @@ coalesce((SELECT pg_catalog.string_agg(s.objsubid::text||':'||s.xmin::text,',' O
 coalesce((SELECT pg_catalog.string_agg(t.oid::text||':'||t.xmin::text,',' ORDER BY t.oid) FROM pg_catalog.pg_trigger t WHERE t.tgrelid=c.oid),''),
 coalesce((SELECT pg_catalog.string_agg(r.oid::text||':'||r.xmin::text,',' ORDER BY r.oid) FROM pg_catalog.pg_rewrite r WHERE r.ev_class=c.oid),''),
 coalesce((SELECT pg_catalog.string_agg(p.oid::text||':'||p.xmin::text,',' ORDER BY p.oid) FROM pg_catalog.pg_policy p WHERE p.polrelid=c.oid),''),
-coalesce((SELECT pg_catalog.string_agg(h.inhrelid::text||'>'||h.inhparent::text||':'||h.xmin::text,',' ORDER BY h.inhrelid,h.inhparent) FROM pg_catalog.pg_inherits h WHERE h.inhrelid=c.oid OR h.inhparent=c.oid),'')
+coalesce((SELECT pg_catalog.string_agg(h.inhrelid::text||'>'||h.inhparent::text||':'||h.xmin::text,',' ORDER BY h.inhrelid,h.inhparent) FROM pg_catalog.pg_inherits h WHERE h.inhrelid=c.oid OR h.inhparent=c.oid),''),
+coalesce((SELECT pg_catalog.string_agg(a.attrelid::text||'.'||a.attnum::text||':'||a.xmin::text,',' ORDER BY a.attrelid,a.attnum) FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_index i ON i.indexrelid=a.attrelid WHERE i.indrelid=c.oid),''),
+coalesce((SELECT pg_catalog.string_agg(s.objoid::text||'.'||s.objsubid::text||':'||s.xmin::text,',' ORDER BY s.objoid,s.objsubid) FROM pg_catalog.pg_description s JOIN pg_catalog.pg_index i ON i.indexrelid=s.objoid WHERE s.classoid='pg_catalog.pg_class'::pg_catalog.regclass AND i.indrelid=c.oid),''),
+coalesce((SELECT pg_catalog.string_agg(s.objoid::text||':'||s.xmin::text,',' ORDER BY s.objoid) FROM pg_catalog.pg_description s JOIN pg_catalog.pg_constraint k ON k.oid=s.objoid WHERE s.classoid='pg_catalog.pg_constraint'::pg_catalog.regclass AND k.conrelid=c.oid),'')
 ),'UTF8')),'hex') AS digest
 FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1::text AND c.relname=$2::text"#;
 
 const RELATION: &str = "SELECT c.oid::bigint FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1::text AND c.relname=$2::text";
 
 const HEADER: &str = "SELECT c.oid::bigint AS oid,c.relkind::text AS kind,pg_catalog.obj_description(c.oid,'pg_class') AS comment FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1::text AND c.relname=$2::text";
+
+/// Per-object attributes a re-create would lose, in
+/// `planner::PRESERVED_ATTRIBUTES` order. A key's backing index folds into its
+/// constraint row (a foreign key's `conindid` is the referenced table's index,
+/// so only p/u/x join it).
+pub(super) const ATTRIBUTES: &str = r#"WITH r AS (SELECT c.oid FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1::text AND c.relname=$2::text),
+x AS (SELECT i.indexrelid,ic.reloptions IS NOT NULL AS storage,ic.reltablespace<>0 AS tablespace,
+EXISTS(SELECT 1 FROM pg_catalog.pg_description d WHERE d.objoid=i.indexrelid AND d.classoid='pg_catalog.pg_class'::pg_catalog.regclass) AS comment,
+i.indisreplident AS replica,i.indisclustered AS clustered,
+EXISTS(SELECT 1 FROM pg_catalog.pg_attribute a WHERE a.attrelid=i.indexrelid AND a.attnum>0 AND coalesce(a.attstattarget::integer,-1)<>-1) AS statistics
+FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class ic ON ic.oid=i.indexrelid WHERE i.indrelid=(SELECT oid FROM r))
+SELECT 'index'::text AS kind,x.indexrelid::bigint AS oid,x.storage,x.tablespace,x.comment,x.replica,x.clustered,x.statistics FROM x
+UNION ALL
+SELECT 'constraint'::text,k.oid::bigint,coalesce(x.storage,false),coalesce(x.tablespace,false),
+EXISTS(SELECT 1 FROM pg_catalog.pg_description d WHERE d.objoid=k.oid AND d.classoid='pg_catalog.pg_constraint'::pg_catalog.regclass) OR coalesce(x.comment,false),
+coalesce(x.replica,false),coalesce(x.clustered,false),coalesce(x.statistics,false)
+FROM pg_catalog.pg_constraint k LEFT JOIN x ON k.contype IN ('p','u','x') AND x.indexrelid=k.conindid WHERE k.conrelid=(SELECT oid FROM r)"#;
+
+/// True when `schema.index` exists on table `$3` and is invalid: what a
+/// failed `CREATE INDEX CONCURRENTLY` leaves behind.
+pub(super) const INVALID_INDEX: &str = "SELECT NOT i.indisvalid FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class c ON c.oid=i.indexrelid JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1::text AND c.relname=$2::text AND i.indrelid=$3::oid";
+
+/// The session the Structure reader captures under
+/// (`native_catalog::table_structure::reader`), so `pg_get_expr`,
+/// `format_type` and timestamptz constants render byte for byte as
+/// captured. Transaction-local.
+pub(super) const CAPTURE_SESSION: &str =
+    "SET LOCAL search_path TO pg_catalog; SET LOCAL TIME ZONE 'UTC'";
 
 const CANONICAL_TYPES: &str = "SELECT pg_catalog.format_type(t.oid,t.typmod) FROM ROWS FROM (pg_catalog.unnest($1::oid[]),pg_catalog.unnest($2::int4[])) WITH ORDINALITY AS t(oid,typmod,ord) ORDER BY t.ord";
 
@@ -132,6 +168,80 @@ pub(super) async fn drift(
         .map(|oid| (drift_token(oid, &digest), estimated_rows(reltuples))))
 }
 
+/// The preserved-attribute flags of `schema.table`'s constraints and
+/// indexes (empty when the table is gone).
+pub(super) async fn attributes(
+    client: &Client,
+    schema: &str,
+    table: &str,
+) -> Result<PreservedAttributes, tokio_postgres::Error> {
+    let mut out = PreservedAttributes::default();
+    for row in client.query(ATTRIBUTES, &[&schema, &table]).await? {
+        let kind: String = row.try_get("kind")?;
+        let oid: i64 = row.try_get("oid")?;
+        let mut flags = [false; 6];
+        for (slot, column) in flags.iter_mut().zip([
+            "storage",
+            "tablespace",
+            "comment",
+            "replica",
+            "clustered",
+            "statistics",
+        ]) {
+            *slot = row.try_get::<_, bool>(column)?;
+        }
+        let bits = attribute_bits(flags);
+        let Ok(oid) = u32::try_from(oid) else {
+            continue;
+        };
+        if bits == 0 {
+            continue;
+        }
+        match kind.as_str() {
+            "index" => out.indexes.insert(oid, bits),
+            _ => out.constraints.insert(oid, bits),
+        };
+    }
+    Ok(out)
+}
+
+/// The flag bits for one `ATTRIBUTES` row, in `PRESERVED_ATTRIBUTES` order.
+pub(super) fn attribute_bits(flags: [bool; 6]) -> u64 {
+    PRESERVED_ATTRIBUTES
+        .iter()
+        .zip(flags)
+        .filter(|(_, set)| *set)
+        .fold(0, |bits, ((bit, _), _)| bits | bit)
+}
+
+/// True when `schema.index` is an invalid index on table `table`.
+pub(super) async fn invalid_index(
+    client: &Client,
+    schema: &str,
+    index: &str,
+    table: u32,
+) -> Result<bool, SchemaEditFailure> {
+    let row = client
+        .query_opt(INVALID_INDEX, &[&schema, &index, &table])
+        .await
+        .map_err(failure)?;
+    match row {
+        None => Ok(false),
+        Some(row) => row.try_get::<_, bool>(0).map_err(|_| unreadable()),
+    }
+}
+
+/// A draft type as the capture reports a column of that type. The wire
+/// RowDescription reports a domain's base type and typmod; `pg_typeof`
+/// names the domain itself, which a column records with typmod -1.
+pub(super) fn declared_type(described: (u32, i32), declared: u32) -> (u32, i32) {
+    if declared == described.0 {
+        described
+    } else {
+        (declared, -1)
+    }
+}
+
 pub(super) async fn relation(
     client: &Client,
     schema: &str,
@@ -174,8 +284,8 @@ async fn json_rows<T: DeserializeOwned>(
 /// The applied table, read inside the still-open apply transaction, plus
 /// the server's rendering of each requested draft type. Types resolve with
 /// the session's search_path (as the planned statements did); every read
-/// then runs with `search_path = pg_catalog`, as the capture did, so
-/// untouched types and expressions render byte for byte as captured.
+/// then runs under `CAPTURE_SESSION`, as the capture did, so untouched types
+/// and expressions render byte for byte as captured.
 pub(super) async fn observe(
     client: &Client,
     schema: &str,
@@ -187,24 +297,32 @@ pub(super) async fn observe(
         let select = types
             .iter()
             .enumerate()
-            .map(|(index, data_type)| format!("NULL::{data_type} AS c{index}"))
+            .map(|(index, data_type)| {
+                format!("NULL::{data_type} AS c{index},pg_catalog.pg_typeof(NULL::{data_type})::oid AS t{index}")
+            })
             .collect::<Vec<_>>()
             .join(",");
         let statement = client
             .prepare(&format!("SELECT {select}"))
             .await
             .map_err(failure)?;
-        resolved = statement
+        let described: Vec<(u32, i32)> = statement
             .columns()
             .iter()
+            .step_by(2)
             .map(|column| (column.type_().oid(), column.type_modifier()))
             .collect();
-        if resolved.len() != types.len() {
+        if described.len() != types.len() || statement.columns().len() != types.len() * 2 {
             return Err(unreadable());
+        }
+        let row = client.query_one(&statement, &[]).await.map_err(failure)?;
+        for (index, described) in described.into_iter().enumerate() {
+            let declared: u32 = row.try_get(index * 2 + 1).map_err(|_| unreadable())?;
+            resolved.push(declared_type(described, declared));
         }
     }
     client
-        .batch_execute("SET LOCAL search_path TO pg_catalog")
+        .batch_execute(CAPTURE_SESSION)
         .await
         .map_err(failure)?;
     let mut canonical = Vec::with_capacity(resolved.len());
@@ -294,12 +412,16 @@ const CLEANUP_GRACE: Duration = Duration::from_secs(1);
 
 /// The drift token on its own short connection, with the same cancel,
 /// deadline and driver-join discipline as the other owned catalog reads.
+/// With `with_attributes`, the preserved attributes are read first on the
+/// same connection, so a drift read before them that equals this one proves
+/// they belong to that token.
 async fn owned_drift(
     spec: &ResolvedPostgresConnectSpec,
     drivers: &DriverJoins,
     mut cancellation: watch::Receiver<u64>,
     request: &SchemaEditRequest,
-) -> Result<Option<(DriftToken, Option<u64>)>, CatalogError> {
+    with_attributes: bool,
+) -> Result<(Option<(DriftToken, Option<u64>)>, PreservedAttributes), CatalogError> {
     let deadline = Instant::now() + CAPTURE_TIMEOUT;
     let connected = tokio::select! {
         biased;
@@ -314,7 +436,15 @@ async fn owned_drift(
                 biased;
                 _ = cancellation.changed() => Err(CatalogError::Cancelled),
                 _ = tokio::time::sleep_until(deadline) => Err(CatalogError::Timeout),
-                result = drift(&connection.client, &request.schema, &request.table) => result.map_err(|error| match error.code().map(|code| code.code()) {
+                result = async {
+                    let attributes = if with_attributes {
+                        attributes(&connection.client, &request.schema, &request.table).await?
+                    } else {
+                        PreservedAttributes::default()
+                    };
+                    let token = drift(&connection.client, &request.schema, &request.table).await?;
+                    Ok::<_, tokio_postgres::Error>((token, attributes))
+                } => result.map_err(|error| match error.code().map(|code| code.code()) {
                     Some("42501") => CatalogError::StructurePermission,
                     _ => CatalogError::Database,
                 }),
@@ -363,8 +493,9 @@ pub(crate) async fn capture(
         .validate()
         .map_err(|_| CatalogError::InvalidReference)?;
     for _ in 0..2 {
-        let before = owned_drift(spec, drivers, cancellation.clone(), &request)
+        let before = owned_drift(spec, drivers, cancellation.clone(), &request, false)
             .await?
+            .0
             .ok_or(CatalogError::ObjectNotFound)?;
         let snapshot = table_structure::read(
             spec,
@@ -377,14 +508,16 @@ pub(crate) async fn capture(
             },
         )
         .await?;
-        let after = owned_drift(spec, drivers, cancellation.clone(), &request)
-            .await?
-            .ok_or(CatalogError::ObjectNotFound)?;
+        let (after, attributes) =
+            owned_drift(spec, drivers, cancellation.clone(), &request, true).await?;
+        let after = after.ok_or(CatalogError::ObjectNotFound)?;
         let (token, rows) = before;
         if token == after.0
             && super::capture::drift_oid(&token) == Some(snapshot.identity.relation_oid)
         {
-            return Ok(baseline_from_snapshot(&snapshot, token, rows));
+            let mut baseline = baseline_from_snapshot(&snapshot, token, rows);
+            mark_preserved(&mut baseline.table, &attributes);
+            return Ok(baseline);
         }
     }
     Err(CatalogError::StructureIdentityChanged)

@@ -20,13 +20,80 @@ use crate::postgres::sql_lex::{lex_sql, SqlToken};
 use crate::quote_double;
 use crate::schema_edit::{
     normalize_type, plan_steps, BaselineId, ColumnField, ColumnModel, DefaultValue, Deferrable,
-    EngineNote, EnginePlan, Identity, IndexTarget, NoteKind, Origin, PlanError, PlanOptions,
-    PlanStep, PreviewGroup, PreviewStatement, ReferentialAction, SchemaBaseline, SchemaDraft,
-    SchemaObject, TableModel,
+    EngineNote, EnginePlan, ForeignKeyModel, Identity, IndexTarget, NoteKind, Origin, PlanError,
+    PlanOptions, PlanStep, PreviewGroup, PreviewStatement, ReferentialAction, SchemaBaseline,
+    SchemaDraft, SchemaObject, TableModel,
 };
 
 /// PostgreSQL identifiers are at most 63 bytes.
 const MAX_IDENTIFIER_BYTES: usize = 63;
+
+/// Attributes of an existing key, check, foreign key or index that the model
+/// does not carry, so dropping and re-creating the object would silently lose
+/// them. Capture records them as flag bits in the object's `BaselineId`
+/// (bits 32..48, between the OID and the kind tag), so they stay stable across
+/// captures of an unchanged table and need no model field.
+pub(crate) const PRESERVED_ATTRIBUTES: [(u64, &str); 6] = [
+    (1 << 32, "storage parameters (WITH …)"),
+    (1 << 33, "a tablespace"),
+    (1 << 34, "a comment"),
+    (1 << 35, "the replica identity"),
+    (1 << 36, "the CLUSTER mark"),
+    (1 << 37, "column statistics targets"),
+];
+
+/// The attributes `origin` carries that a re-create would lose.
+pub(crate) fn preserved_attributes(origin: Origin) -> Vec<&'static str> {
+    let Some(id) = origin.existing() else {
+        return Vec::new();
+    };
+    PRESERVED_ATTRIBUTES
+        .iter()
+        .filter(|(bit, _)| id.0 & bit != 0)
+        .map(|(_, label)| *label)
+        .collect()
+}
+
+/// The table and column names a foreign key references once the plan has run.
+/// A self-reference (this table, by its captured name) follows the draft's
+/// table rename, and an unedited self-reference also follows its referenced
+/// columns' renames: those names are as captured. Edited references are taken
+/// as written against the draft.
+pub(crate) fn referenced_target(
+    old: &TableModel,
+    new: &TableModel,
+    key: &ForeignKeyModel,
+) -> (String, Vec<String>) {
+    let same_schema = key
+        .referenced_schema
+        .as_deref()
+        .is_none_or(|schema| schema == old.schema);
+    if !same_schema || key.referenced_table != old.name {
+        return (key.referenced_table.clone(), key.referenced_columns.clone());
+    }
+    let unedited = old.foreign_key(key.origin).is_some_and(|previous| {
+        !key.origin.is_new()
+            && previous.referenced_schema == key.referenced_schema
+            && previous.referenced_table == key.referenced_table
+            && previous.referenced_columns == key.referenced_columns
+    });
+    let columns = if unedited {
+        key.referenced_columns
+            .iter()
+            .map(|name| {
+                old.columns
+                    .iter()
+                    .find(|column| column.name == *name)
+                    .and_then(|column| new.column(column.origin))
+                    .map_or_else(|| name.clone(), |column| column.name.clone())
+            })
+            .collect()
+    } else {
+        key.referenced_columns.clone()
+    };
+    (new.name.clone(), columns)
+}
+
 /// Above this estimate the review suggests NOT VALID and CONCURRENTLY.
 pub(crate) const LARGE_TABLE_ROWS: u64 = 1_000_000;
 
@@ -59,6 +126,20 @@ impl Built {
             .iter()
             .take_while(|role| **role == Role::Atomic)
             .count()
+    }
+
+    /// The draft index a `CREATE INDEX CONCURRENTLY` statement builds:
+    /// concurrent statements come last, in `deferred_indexes` order.
+    #[cfg_attr(not(feature = "isolated-profile"), allow(dead_code))]
+    pub(crate) fn concurrent_index(&self, statement: usize) -> Option<Origin> {
+        if self.roles.get(statement) != Some(&Role::ConcurrentIndex) {
+            return None;
+        }
+        let first = self
+            .roles
+            .iter()
+            .position(|role| *role == Role::ConcurrentIndex)?;
+        self.deferred_indexes.get(statement - first).copied()
     }
 
     pub(crate) fn groups(&self) -> Vec<PreviewGroup> {
@@ -294,6 +375,35 @@ fn precheck(
                 dropped.name
             )));
         }
+        // PostgreSQL silently drops an index whose expression or predicate
+        // uses the column, so keeping it in the draft would fail
+        // verification.
+        if let Some(index) = new.indexes.iter().find(|index| {
+            index.members.iter().any(|member| match &member.target {
+                IndexTarget::Expression(sql) => references_identifier(sql.as_str(), &dropped.name),
+                IndexTarget::Column(_) => false,
+            }) || index
+                .predicate
+                .as_ref()
+                .is_some_and(|predicate| references_identifier(predicate.as_str(), &dropped.name))
+        }) {
+            return Err(unsupported(format!(
+                "Index {} uses column {} in an expression or predicate, which is being dropped; remove or edit the index first",
+                index.name, dropped.name
+            )));
+        }
+        // A generated column that uses it blocks the drop server-side.
+        if let Some(generated) = new.columns.iter().find(|column| {
+            column
+                .generated
+                .as_ref()
+                .is_some_and(|g| references_identifier(g.expression.as_str(), &dropped.name))
+        }) {
+            return Err(unsupported(format!(
+                "Generated column {} uses column {}, which is being dropped; remove or edit the generated column first",
+                generated.name, dropped.name
+            )));
+        }
     }
     Ok(())
 }
@@ -478,6 +588,23 @@ impl<'a> Emitter<'a> {
 
     fn push(&mut self, op: PgObjectOp) {
         self.atomic.push(op);
+    }
+
+    /// Refuses to re-create an existing object that carries attributes the
+    /// model cannot restate; other edits to the table stay allowed.
+    fn keep_attributes(&self, origin: Origin, kind: &str, name: &str) -> Result<(), PlanError> {
+        let lost = preserved_attributes(origin);
+        if lost.is_empty() {
+            return Ok(());
+        }
+        let listed = match lost.split_last() {
+            Some((last, [])) => (*last).to_owned(),
+            Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+            None => String::new(),
+        };
+        Err(unsupported(format!(
+            "{kind} {name} has {listed}, which re-creating it would lose; undo the change to it or make the change outside the editor"
+        )))
     }
 
     fn drop_constraint(&mut self, name: &Option<String>) -> Result<(), PlanError> {
@@ -679,6 +806,11 @@ impl<'a> Emitter<'a> {
                     .as_ref()
                     .filter(|key| key.origin == *origin)
                     .ok_or_else(|| internal("an added primary key is not in the draft"))?;
+                self.keep_attributes(
+                    key.origin,
+                    "Primary key",
+                    key.name.as_deref().unwrap_or("(unnamed)"),
+                )?;
                 let op = PgObjectOp::AddPrimaryKey(AddPrimaryKeyOp {
                     schema: self.schema.clone(),
                     table: self.table.clone(),
@@ -695,6 +827,11 @@ impl<'a> Emitter<'a> {
                     .iter()
                     .find(|key| key.origin == *origin)
                     .ok_or_else(|| internal("an added unique key is not in the draft"))?;
+                self.keep_attributes(
+                    key.origin,
+                    "Unique key",
+                    key.name.as_deref().unwrap_or("(unnamed)"),
+                )?;
                 let op = PgObjectOp::AddUnique(AddUniqueOp {
                     schema: self.schema.clone(),
                     table: self.table.clone(),
@@ -980,6 +1117,11 @@ impl<'a> Emitter<'a> {
             .after()
             .check(origin)
             .ok_or_else(|| internal("an added check is not in the draft"))?;
+        self.keep_attributes(
+            origin,
+            "Check",
+            check.name.as_deref().unwrap_or(check.expression.as_str()),
+        )?;
         if !check.enforced {
             return Err(unsupported(
                 "NOT ENFORCED checks are not supported on PostgreSQL",
@@ -1010,7 +1152,14 @@ impl<'a> Emitter<'a> {
             .after()
             .foreign_key(origin)
             .ok_or_else(|| internal("an added foreign key is not in the draft"))?;
+        self.keep_attributes(
+            origin,
+            "Foreign key",
+            key.name.as_deref().unwrap_or("(unnamed)"),
+        )?;
         let columns = self.new_names(&key.columns)?;
+        let (referenced_table, referenced_columns) =
+            referenced_target(self.before(), self.after(), key);
         let later = self.options.validate_separately;
         let name = match (&key.name, later) {
             (Some(name), _) => Some(name.clone()),
@@ -1031,8 +1180,8 @@ impl<'a> Emitter<'a> {
                 .referenced_schema
                 .clone()
                 .unwrap_or_else(|| self.schema.clone()),
-            referenced_table: key.referenced_table.clone(),
-            referenced_columns: key.referenced_columns.clone(),
+            referenced_table,
+            referenced_columns,
             on_update: referential(key.on_update),
             on_delete: referential(key.on_delete),
             deferrable,
@@ -1051,6 +1200,17 @@ impl<'a> Emitter<'a> {
             .after()
             .index(origin)
             .ok_or_else(|| internal("a created index is not in the draft"))?;
+        self.keep_attributes(origin, "Index", &index.name)?;
+        let concurrently = self.options.concurrent_indexes.contains(&origin);
+        if concurrently && !origin.is_new() {
+            // The old index is dropped inside the atomic group; a concurrent
+            // rebuild after COMMIT could fail and leave the table without
+            // it (and without its uniqueness).
+            return Err(unsupported(format!(
+                "Index {} is re-created, and CONCURRENTLY applies only to new indexes: the old index is dropped in the atomic change, so a failed concurrent rebuild would leave the table without it; turn off concurrent builds for this change",
+                index.name
+            )));
+        }
         let mut columns = Vec::with_capacity(index.members.len());
         for member in &index.members {
             if member.prefix_length.is_some() || member.collation.is_some() {
@@ -1068,7 +1228,6 @@ impl<'a> Emitter<'a> {
                 descending: member.descending,
             });
         }
-        let concurrently = self.options.concurrent_indexes.contains(&origin);
         let op = PgObjectOp::CreateIndex(CreateIndexOp {
             schema: self.schema.clone(),
             table: self.table.clone(),

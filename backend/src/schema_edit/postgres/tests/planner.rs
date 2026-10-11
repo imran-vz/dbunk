@@ -1,5 +1,6 @@
 use super::super::planner::{
-    binary_coercible, build, references_identifier, resolve_renames, server_major,
+    binary_coercible, build, preserved_attributes, referenced_target, references_identifier,
+    resolve_renames, server_major,
 };
 use super::{review, setup, sql};
 use crate::schema_edit::fixtures::existing;
@@ -387,29 +388,135 @@ fn concurrent_indexes_and_separate_validation_run_after_the_atomic_group() {
 }
 
 #[test]
-fn a_concurrently_recreated_index_is_dropped_inside_the_atomic_group() {
+fn a_recreated_index_cannot_be_built_concurrently() {
     let (baseline, mut draft) = setup();
     draft.table.indexes[0].members[0].descending = true;
     let options = PlanOptions {
         concurrent_indexes: vec![existing(500)],
         ..PlanOptions::default()
     };
-    let preview = review(&baseline, &draft, &options).unwrap();
+    match review(&baseline, &draft, &options) {
+        Err(PlanError::Unsupported { reason }) => {
+            assert!(
+                reason.starts_with("Index users_name_idx is re-created"),
+                "{reason}"
+            );
+            assert!(reason.contains("only to new indexes"), "{reason}");
+        }
+        other => panic!("expected Unsupported, got {other:?}"),
+    }
+    // Without the option the rebuild stays inside the atomic group.
     assert_eq!(
-        sql(&preview),
+        plan_sql(&baseline, &draft),
         vec![
             r#"DROP INDEX "public"."users_name_idx" RESTRICT;"#,
-            r#"CREATE INDEX CONCURRENTLY "users_name_idx" ON "public"."users" USING "btree" ("name" DESC);"#,
+            r#"CREATE INDEX "users_name_idx" ON "public"."users" USING "btree" ("name" DESC);"#,
         ]
     );
+}
+
+fn flagged(id: u64, bits: u64) -> Origin {
+    Origin::Existing(BaselineId(id | bits))
+}
+
+#[test]
+fn objects_with_attributes_the_model_lacks_are_never_recreated() {
+    const COMMENT: u64 = 1 << 34;
+    const TABLESPACE: u64 = 1 << 33;
+    let (mut baseline, _) = setup();
+    baseline.table.indexes[0].origin = flagged(500, COMMENT | TABLESPACE);
+    baseline.table.foreign_keys[0].origin = flagged(300, COMMENT);
     assert_eq!(
-        preview.groups,
+        preserved_attributes(baseline.table.indexes[0].origin),
+        vec!["a tablespace", "a comment"]
+    );
+    assert!(preserved_attributes(existing(500)).is_empty());
+
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.indexes[0].members[0].descending = true;
+    assert_eq!(
+        unsupported(&baseline, &draft),
+        "Index users_name_idx has a tablespace and a comment, which re-creating it would lose; undo the change to it or make the change outside the editor"
+    );
+
+    // Retyping the column re-creates its foreign key, which has a comment.
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.column_mut(existing(4)).unwrap().data_type = "integer".into();
+    assert!(
+        unsupported(&baseline, &draft).starts_with("Foreign key users_org_id_fkey has a comment")
+    );
+
+    // Renames, drops and unrelated edits are still planned.
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.indexes[0].name = "users_name_idx2".into();
+    draft.table.foreign_keys.clear();
+    draft.add_column("nick", "text");
+    assert_eq!(
+        plan_sql(&baseline, &draft),
         vec![
-            PreviewGroup::Atomic {
-                statements: vec![0]
-            },
-            PreviewGroup::Standalone { statement: 1 },
+            r#"ALTER TABLE "public"."users" DROP CONSTRAINT "users_org_id_fkey" RESTRICT;"#,
+            r#"ALTER INDEX "public"."users_name_idx" RENAME TO "users_name_idx2";"#,
+            r#"ALTER TABLE "public"."users" ADD COLUMN "nick" text;"#,
         ]
+    );
+}
+
+fn self_referencing() -> SchemaBaseline {
+    let (mut baseline, _) = setup();
+    let key = &mut baseline.table.foreign_keys[0];
+    key.name = Some("users_parent_fkey".into());
+    key.referenced_table = "users".into();
+    key.referenced_columns = vec!["id".into()];
+    baseline
+}
+
+#[test]
+fn a_recreated_self_reference_follows_table_and_column_renames() {
+    let baseline = self_referencing();
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.name = "people".into();
+    draft.table.column_mut(existing(1)).unwrap().name = "ident".into();
+    draft.table.column_mut(existing(4)).unwrap().data_type = "integer".into();
+    let statements = plan_sql(&baseline, &draft);
+    let added = statements.last().unwrap();
+    assert!(
+        added.contains(r#"FOREIGN KEY ("org_id") REFERENCES "public"."people" ("ident")"#),
+        "{added}"
+    );
+}
+
+#[test]
+fn referenced_targets_map_only_unedited_self_references() {
+    let baseline = self_referencing();
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.name = "people".into();
+    draft.table.column_mut(existing(1)).unwrap().name = "ident".into();
+    let (old, new) = (&baseline.table, &draft.table);
+    assert_eq!(
+        referenced_target(old, new, &new.foreign_keys[0]),
+        ("people".to_owned(), vec!["ident".to_owned()])
+    );
+
+    // An edited reference is already written against the draft.
+    let mut edited = new.foreign_keys[0].clone();
+    edited.referenced_columns = vec!["email".into()];
+    assert_eq!(
+        referenced_target(old, new, &edited),
+        ("people".to_owned(), vec!["email".to_owned()])
+    );
+
+    // Another table, or this name in another schema, is left alone.
+    let mut other = new.foreign_keys[0].clone();
+    other.referenced_table = "orgs".into();
+    assert_eq!(
+        referenced_target(old, new, &other),
+        ("orgs".to_owned(), vec!["id".to_owned()])
+    );
+    other.referenced_table = "users".into();
+    other.referenced_schema = Some("archive".into());
+    assert_eq!(
+        referenced_target(old, new, &other),
+        ("users".to_owned(), vec!["id".to_owned()])
     );
 }
 
@@ -481,6 +588,57 @@ fn a_check_on_a_dropped_column_is_refused_before_anything_runs() {
     assert_eq!(
         unsupported(&baseline, &draft),
         "Check users_email_check uses column email, which is being dropped; remove or edit the check first"
+    );
+}
+
+#[test]
+fn an_index_expression_or_generated_column_on_a_dropped_column_is_refused() {
+    let (baseline, mut draft) = setup();
+    let origin = draft.new_origin();
+    draft.table.indexes.push(IndexModel {
+        origin,
+        name: "users_lower_name_idx".into(),
+        unique: false,
+        method: None,
+        members: vec![IndexMember {
+            target: IndexTarget::Expression(SqlFragment::new("lower(name)")),
+            descending: false,
+            prefix_length: None,
+            collation: None,
+        }],
+        include: Vec::new(),
+        predicate: None,
+    });
+    assert!(draft.remove_column(existing(3)));
+    assert_eq!(
+        unsupported(&baseline, &draft),
+        "Index users_lower_name_idx uses column name in an expression or predicate, which is being dropped; remove or edit the index first"
+    );
+
+    let (baseline, mut draft) = setup();
+    let origin = draft.new_origin();
+    draft.table.indexes.push(IndexModel {
+        origin,
+        name: "users_named_idx".into(),
+        unique: false,
+        method: None,
+        members: vec![IndexMember::column(existing(1))],
+        include: Vec::new(),
+        predicate: Some(SqlFragment::new("name IS NOT NULL")),
+    });
+    assert!(draft.remove_column(existing(3)));
+    assert!(unsupported(&baseline, &draft).starts_with("Index users_named_idx uses column name"));
+
+    let (baseline, mut draft) = setup();
+    let upper = draft.add_column("upper_name", "text");
+    draft.table.column_mut(upper).unwrap().generated = Some(Generated {
+        expression: SqlFragment::new("upper(name)"),
+        stored: true,
+    });
+    assert!(draft.remove_column(existing(3)));
+    assert_eq!(
+        unsupported(&baseline, &draft),
+        "Generated column upper_name uses column name, which is being dropped; remove or edit the generated column first"
     );
 }
 

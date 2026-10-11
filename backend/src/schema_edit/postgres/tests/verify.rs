@@ -197,3 +197,26 @@ fn structural_differences_fail() {
     empty.table.comment = Some(String::new());
     assert_eq!(compare(&baseline, &empty, &good, &[]), Ok(()));
 }
+
+#[test]
+fn a_self_reference_is_compared_after_the_draft_renames() {
+    let (mut baseline, _) = setup();
+    let key = &mut baseline.table.foreign_keys[0];
+    key.referenced_table = "users".into();
+    key.referenced_columns = vec!["id".into()];
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.name = "people".into();
+    draft.table.column_mut(existing(1)).unwrap().name = "ident".into();
+
+    // The server reports the untouched key under the new names.
+    let mut actual = as_captured(&draft.table);
+    actual.foreign_keys[0].referenced_table = "people".into();
+    actual.foreign_keys[0].referenced_columns = vec!["ident".into()];
+    assert_eq!(compare(&baseline, &draft, &actual, &[]), Ok(()));
+
+    let mut stale = actual.clone();
+    stale.foreign_keys[0].referenced_columns = vec!["id".into()];
+    assert!(compare(&baseline, &draft, &stale, &[])
+        .unwrap_err()
+        .contains("users_org_id_fkey"));
+}
