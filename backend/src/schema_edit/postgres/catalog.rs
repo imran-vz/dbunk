@@ -42,7 +42,7 @@ const RELATION: &str = "SELECT c.oid::bigint FROM pg_catalog.pg_class c JOIN pg_
 
 const HEADER: &str = "SELECT c.oid::bigint AS oid,c.relkind::text AS kind,pg_catalog.obj_description(c.oid,'pg_class') AS comment FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1::text AND c.relname=$2::text";
 
-const CANONICAL_TYPES: &str = "SELECT pg_catalog.format_type(t.oid,t.typmod) FROM pg_catalog.unnest($1::oid[],$2::int4[]) WITH ORDINALITY AS t(oid,typmod,ord) ORDER BY t.ord";
+const CANONICAL_TYPES: &str = "SELECT pg_catalog.format_type(t.oid,t.typmod) FROM ROWS FROM (pg_catalog.unnest($1::oid[]),pg_catalog.unnest($2::int4[])) WITH ORDINALITY AS t(oid,typmod,ord) ORDER BY t.ord";
 
 // The same shapes as the Structure reader (`table_structure::queries`), one
 // JSON document per row, read inside the apply transaction.
@@ -60,7 +60,7 @@ coalesce((SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('number',a.a
 c.condeferrable AS deferrable,c.condeferred AS initially_deferred FROM pg_catalog.pg_constraint c WHERE c.conrelid=$1::oid AND c.contype='p') s ORDER BY s.oid"#;
 
 const FOREIGN_KEYS: &str = r#"SELECT pg_catalog.to_jsonb(s)::text FROM (SELECT c.oid::bigint AS oid,c.conname::text AS name,c.conrelid::bigint AS source_oid,ns.nspname::text AS source_schema,src.relname::text AS source_table,c.confrelid::bigint AS target_oid,nt.nspname::text AS target_schema,t.relname::text AS target_table,
-coalesce((SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('source_number',a.attnum::int,'source',a.attname::text,'target_number',b.attnum::int,'target',b.attname::text) ORDER BY k.o) FROM pg_catalog.unnest(c.conkey,c.confkey) WITH ORDINALITY k(an,bn,o) JOIN pg_catalog.pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.an JOIN pg_catalog.pg_attribute b ON b.attrelid=c.confrelid AND b.attnum=k.bn),'[]'::jsonb) AS columns,
+coalesce((SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('source_number',a.attnum::int,'source',a.attname::text,'target_number',b.attnum::int,'target',b.attname::text) ORDER BY k.o) FROM ROWS FROM (pg_catalog.unnest(c.conkey),pg_catalog.unnest(c.confkey)) WITH ORDINALITY k(an,bn,o) JOIN pg_catalog.pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.an JOIN pg_catalog.pg_attribute b ON b.attrelid=c.confrelid AND b.attnum=k.bn),'[]'::jsonb) AS columns,
 CASE c.confupdtype WHEN 'a' THEN 'no_action' WHEN 'r' THEN 'restrict' WHEN 'c' THEN 'cascade' WHEN 'n' THEN 'set_null' WHEN 'd' THEN 'set_default' ELSE 'unknown' END AS on_update,
 CASE c.confdeltype WHEN 'a' THEN 'no_action' WHEN 'r' THEN 'restrict' WHEN 'c' THEN 'cascade' WHEN 'n' THEN 'set_null' WHEN 'd' THEN 'set_default' ELSE 'unknown' END AS on_delete,
 CASE c.confmatchtype WHEN 'f' THEN 'FULL' WHEN 'p' THEN 'PARTIAL' WHEN 's' THEN 'SIMPLE' ELSE 'unknown' END AS match_type,c.condeferrable AS deferrable,c.condeferred AS initially_deferred,c.convalidated AS validated
