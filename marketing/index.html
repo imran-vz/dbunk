@@ -826,6 +826,23 @@
         max-width: 270px;
       }
 
+      footer .legal {
+        grid-column: 1 / -1;
+        margin-top: 12px;
+        padding-top: 18px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        color: var(--faint);
+        font-size: 10.5px;
+        line-height: 1.6;
+      }
+      footer .legal ul {
+        margin-top: 6px;
+        gap: 0;
+      }
+      footer .legal a {
+        color: var(--muted);
+      }
+
       /* ── Responsive ────────────────────────────────────── */
       @media (max-width: 1020px) {
         .band::before {
@@ -1276,7 +1293,6 @@
             <div class="about">
               <a class="logo" href="#top"><img src="images/favicon.webp" alt="" width="24" height="24" />dbunk</a>
               <p class="fine">A native database client for macOS. The app is GPL-3.0-or-later; the backend library is MIT.</p>
-              <p class="fine">PostgreSQL®, MySQL®, ClickHouse® and Redis® are registered trademarks of their respective owners: Postgres, PostgreSQL and the Slonik Logo are trademarks or registered trademarks of the PostgreSQL Community Association of Canada; MySQL is a registered trademark of Oracle and/or its affiliates; ClickHouse is a registered trademark of ClickHouse, Inc. (<a href="https://clickhouse.com">clickhouse.com</a>); Redis is a registered trademark of Redis Ltd. Any rights therein are reserved to Redis Ltd. dbunk is an independent project and is not affiliated with, endorsed, supported or certified by any of them.</p>
             </div>
             <div>
               <h4>Product</h4>
@@ -1293,6 +1309,16 @@
                 <li><a href="https://github.com/imran-vz/dbunk/blob/main/CONTRIBUTING.md">Contributing</a></li>
                 <li><a href="https://github.com/imran-vz/dbunk/blob/main/SECURITY.md">Security</a></li>
                 <li><a href="https://github.com/imran-vz/dbunk/issues">Issues</a></li>
+              </ul>
+            </div>
+            <div class="legal">
+              <p>dbunk is an independent project, not affiliated with, endorsed, supported or certified by any database vendor. Logos are shown only to identify the engines dbunk connects to.</p>
+              <ul>
+                <li>Postgres, PostgreSQL and the Slonik Logo are trademarks or registered trademarks of the PostgreSQL Community Association of Canada.</li>
+                <li>MySQL is a registered trademark of Oracle and/or its affiliates.</li>
+                <li>SQLite is a registered trademark of Hipp, Wyrick &amp; Company, Inc.</li>
+                <li>ClickHouse is a registered trademark of ClickHouse, Inc. <a href="https://clickhouse.com">clickhouse.com</a></li>
+                <li>Redis is a registered trademark of Redis Ltd. Any rights therein are reserved to Redis Ltd.</li>
               </ul>
             </div>
           </div>
