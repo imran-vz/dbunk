@@ -179,10 +179,14 @@ identity; see the **Keyspace model** section below.
 - **Drift Token** — opaque, engine-specific evidence that a table is unchanged
   since capture (PostgreSQL OID and xmins, SQLite `schema_version`, a hash of
   the MySQL introspection). A mismatch at apply is `BaselineChanged`.
-- **Table Designer** — the `table-designer` Workspace Tab for creating one
-  PostgreSQL table. Its form maps purely to a `createTable` operation followed
-  by table/column comments and extra indexes, continuously previews the typed
-  plan, and opens the created table after reviewed apply.
+- **Table Designer** — the retired Tauri `table-designer` tab for creating
+  one PostgreSQL table. The native app has no table designer; legacy import
+  does not carry its drafts. Creating and dropping tables in the Schema
+  Editor is Plan 033 phase 4.
+- **Schema Editor** — the Structure tab's draft mode on PostgreSQL, MySQL and
+  SQLite (Plan 033, ADR-0016). It edits a Schema Draft with live diff tints,
+  then reviews the Schema Change Set, its impact and the exact SQL of the
+  Schema Edit Preview before a gated apply.
 - **Routine Editor** — the shared create/edit dialog for PostgreSQL functions
   and procedures. It round-trips Routine Source fields into one typed
   `createFunction` or `createProcedure` operation; edit mode always uses
@@ -442,17 +446,18 @@ ADR-0005 for the writes-by-default posture.
 - **Drop Impact** — the bounded transitive PostgreSQL dependency set for an
   Object Ref, grouped by dependency depth. It is inspected before a drop;
   CASCADE remains an explicit opt-in and server truncation is disclosed.
-- **DDL Statement** — a schema-level change (CREATE/ALTER/DROP). PostgreSQL
-  object lifecycle statements are generated from a DDL Plan and reviewed in a
-  DDL Preview before apply. Atomic groups run in a transaction; standalone
-  statements run outside one, so earlier statements can remain applied after
-  a later failure. The PostgreSQL structure editor queues typed `PgObjectOp`s
-  and commits them through the same preview → review → gated
-  `apply_object_ddl` workflow (Plan 015); ClickHouse structure edits are the
-  remaining `execute_ddl` caller (plus the unsupported MySQL/SQLite
-  dead end). Materialized-view refresh is not DDL and deliberately
-  remains on the existing safety-confirmed command path. Redis has no
-  schema-shaped surface.
+- **DDL Statement** — a schema-level change (CREATE/ALTER/DROP). The UI never
+  sends DDL text (ADR-0011). PostgreSQL object lifecycle statements are
+  generated from typed `PgObjectOp`s and reviewed before apply. Table
+  structure edits on PostgreSQL, MySQL and SQLite go through the Schema
+  Editor: a per-engine planner renders the Schema Edit Preview, which apply
+  re-renders and compares before running it under `WriteIntent::Ddl`
+  (ADR-0016). Atomic groups run in a transaction; standalone statements (and
+  every MySQL statement, since MySQL DDL commits implicitly) run outside one,
+  so earlier statements can remain applied after a later failure.
+  Materialized-view refresh is not DDL and deliberately remains on the
+  existing safety-confirmed command path. Redis has no schema-shaped
+  surface.
 - **Pending Mutation** — a single ClickHouse `ALTER TABLE … UPDATE` or
   `ALTER TABLE … DELETE` statement that has been accepted by the server
   and is applying asynchronously across MergeTree parts. Identified by
