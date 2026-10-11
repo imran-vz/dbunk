@@ -39,8 +39,10 @@ impl TableSeedDiagnostic {
             }
             n = n.checked_add(value.capacity())?;
         }
+        // A five-character SQLSTATE (PostgreSQL, MySQL) or SQLite's
+        // numeric extended result code.
         if self.sqlstate.as_ref().is_some_and(|s| {
-            s.len() != 5
+            !(1..=8).contains(&s.len())
                 || !s
                     .bytes()
                     .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())

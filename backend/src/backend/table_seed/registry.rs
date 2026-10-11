@@ -31,7 +31,7 @@ pub(super) type Inspector = Arc<
             TableSeedConnection,
         ) -> futures_util::future::BoxFuture<
             'static,
-            Result<Plan, crate::postgres::native_table_seed::Failure>,
+            Result<Plan, super::engine::Failure>,
         > + Send
         + Sync,
 >;
@@ -41,7 +41,7 @@ pub(super) type Runner = Arc<
             Arc<Control>,
         ) -> futures_util::future::BoxFuture<
             'static,
-            crate::postgres::native_table_seed::Execution,
+            super::engine::Execution,
         > + Send
         + Sync,
 >;

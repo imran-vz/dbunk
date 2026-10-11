@@ -84,11 +84,37 @@ impl TableSeedEndpoint {
         Some(n)
     }
 }
+/// The database engine a seed targets.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TableSeedEngine {
+    #[default]
+    Postgres,
+    MySql,
+    Sqlite,
+}
+impl TableSeedEngine {
+    fn is_postgres(&self) -> bool {
+        *self == Self::Postgres
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Postgres => "PostgreSQL",
+            Self::MySql => "MySQL",
+            Self::Sqlite => "SQLite",
+        }
+    }
+}
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TableSeedConnection {
+    /// Omitted for PostgreSQL, so receipts saved before other engines were
+    /// supported read back unchanged.
+    #[serde(default, skip_serializing_if = "TableSeedEngine::is_postgres")]
+    pub engine: TableSeedEngine,
     pub connection_name: String,
+    /// The server host, or the database file for SQLite.
     pub host: String,
+    /// 0 for SQLite, which has no port.
     pub port: u16,
     pub database: String,
     pub user: String,
@@ -98,7 +124,7 @@ pub struct TableSeedConnection {
 }
 impl TableSeedConnection {
     pub fn checked_heap_bytes(&self) -> Option<usize> {
-        if self.port == 0
+        if (self.port == 0) != (self.engine == TableSeedEngine::Sqlite)
             || !matches!(
                 self.environment.as_str(),
                 "Development" | "Test" | "Staging" | "Production"
@@ -393,6 +419,11 @@ pub struct TableSeedDescription {
     /// a seed reproduces its rows only on the same version. 0 predates
     /// versioning.
     pub generator_version: u32,
+    /// SHA-256 of the reviewed table definition, identifying a MySQL or
+    /// SQLite table (which have no OIDs; their `*_oid` fields are 0).
+    /// Absent for PostgreSQL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub table_fingerprint: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -411,6 +442,8 @@ struct DescriptionFields {
     defaulted_columns: u16,
     #[serde(default)]
     generator_version: u32,
+    #[serde(default)]
+    table_fingerprint: Option<String>,
 }
 impl TryFrom<DescriptionFields> for TableSeedDescription {
     type Error = TableSeedError;
@@ -429,6 +462,7 @@ impl TryFrom<DescriptionFields> for TableSeedDescription {
             inserted_columns: f.inserted_columns,
             defaulted_columns: f.defaulted_columns,
             generator_version: f.generator_version,
+            table_fingerprint: f.table_fingerprint,
         };
         value.validate()?;
         Ok(value)
@@ -437,8 +471,19 @@ impl TryFrom<DescriptionFields> for TableSeedDescription {
 
 impl TableSeedDescription {
     pub fn checked_heap_bytes(&self) -> Option<usize> {
-        if self.database_oid == 0
-            || self.relation_oid == 0
+        let identified = match self.connection.engine {
+            TableSeedEngine::Postgres => {
+                self.database_oid != 0 && self.relation_oid != 0 && self.table_fingerprint.is_none()
+            }
+            TableSeedEngine::MySql | TableSeedEngine::Sqlite => {
+                self.database_oid == 0
+                    && self.relation_oid == 0
+                    && self.table_fingerprint.as_ref().is_some_and(|f| {
+                        f.len() == 64 && f.bytes().all(|c| c.is_ascii_hexdigit())
+                    })
+            }
+        };
+        if !identified
             || !(1..=MAX_TABLE_SEED_ROWS).contains(&self.row_count)
             || self.recipe_sha256.len() != 64
             || !self.recipe_sha256.bytes().all(|c| c.is_ascii_hexdigit())
@@ -608,7 +653,9 @@ impl fmt::Display for TableSeedError {
         f.write_str(match self {
             Self::InvalidRequest => "Invalid or oversized seed request",
             Self::InvalidRecipe => "Seed recipe names an unavailable column or incompatible source",
-            Self::UnsupportedTarget => "Seeding requires a supported PostgreSQL table",
+            Self::UnsupportedTarget => {
+                "Seeding requires an ordinary PostgreSQL, MySQL (InnoDB) or SQLite table"
+            }
             Self::UnsupportedColumn => {
                 "No Auto generator for a required column; provide a constant or value list"
             }
@@ -624,7 +671,7 @@ impl fmt::Display for TableSeedError {
             }
             Self::PolicyBlocked => "Stored connection policy blocks seeding",
             Self::Credentials => "Connection credentials are unavailable",
-            Self::Database => "PostgreSQL rejected the seed operation; inspect constraint details",
+            Self::Database => "The database rejected the seed operation; inspect constraint details",
             Self::StaleReview => "Seed review or connection changed; prepare a new attempt",
             Self::TargetChanged => "Table or constraints changed since review",
             Self::Missing => "Seed attempt is unavailable",

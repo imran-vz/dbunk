@@ -1,3 +1,4 @@
+use super::engine::{Execution, Failure};
 use super::*;
 use crate::{
     backend::{admit_connection, Inner},
@@ -9,22 +10,56 @@ use crate::{
     StoredConnection,
 };
 use tokio::time::Duration;
+/// The bounded description of a destination, compared again before the
+/// run to detect a changed connection.
 fn target(stored: &StoredConnection) -> Result<TableSeedConnection, TableSeedError> {
-    let StoredConnection::PostgreSQL(pg) = stored else {
-        return Err(TableSeedError::UnsupportedTarget);
-    };
-    let target = TableSeedConnection {
-        connection_name: pg.name.clone(),
-        host: pg.host.clone(),
-        port: pg.effective_port(),
-        database: pg.database.clone(),
-        user: pg.user.clone(),
-        environment: format!("{:?}", pg.environment),
-        safe_mode: format!("{:?}", pg.safe_mode),
-        read_only: pg.read_only,
+    let target = match stored {
+        StoredConnection::PostgreSQL(pg) => TableSeedConnection {
+            engine: TableSeedEngine::Postgres,
+            connection_name: pg.name.clone(),
+            host: pg.host.clone(),
+            port: pg.effective_port(),
+            database: pg.database.clone(),
+            user: pg.user.clone(),
+            environment: format!("{:?}", pg.environment),
+            safe_mode: format!("{:?}", pg.safe_mode),
+            read_only: pg.read_only,
+        },
+        StoredConnection::MySQL(mysql) => TableSeedConnection {
+            engine: TableSeedEngine::MySql,
+            connection_name: mysql.name.clone(),
+            host: mysql.host.clone(),
+            port: stored.effective_port(),
+            database: mysql.database.clone(),
+            user: mysql.user.clone(),
+            environment: format!("{:?}", mysql.environment),
+            safe_mode: format!("{:?}", mysql.safe_mode),
+            read_only: mysql.read_only,
+        },
+        StoredConnection::SQLite(sqlite) => TableSeedConnection {
+            engine: TableSeedEngine::Sqlite,
+            connection_name: sqlite.name.clone(),
+            // The file, cut from the front to the bound so its name stays.
+            host: tail(&sqlite.database, 256),
+            port: 0,
+            database: "main".into(),
+            user: String::new(),
+            environment: format!("{:?}", sqlite.environment),
+            safe_mode: format!("{:?}", sqlite.safe_mode),
+            read_only: sqlite.read_only,
+        },
+        _ => return Err(TableSeedError::UnsupportedTarget),
     };
     target.checked_heap_bytes().ok_or(TableSeedError::Limit)?;
     Ok(target)
+}
+/// The last `limit` bytes of `value`, on a character boundary.
+fn tail(value: &str, limit: usize) -> String {
+    let mut start = value.len().saturating_sub(limit);
+    while !value.is_char_boundary(start) {
+        start += 1;
+    }
+    value[start..].to_owned()
 }
 fn policy(
     stored: &StoredConnection,
@@ -42,8 +77,14 @@ fn policy(
         ),
     }
 }
+/// A resolved destination with its secret.
+enum Target {
+    Postgres(ResolvedPostgresConnectSpec),
+    MySql(crate::MySqlStoredConnection),
+    Sqlite(crate::SqliteStoredConnection),
+}
 struct Authorized {
-    specs: ResolvedPostgresConnectSpec,
+    specs: Target,
     targets: TableSeedConnection,
     requires_confirmation: bool,
     audit: AuditDisposition,
@@ -74,8 +115,15 @@ async fn authorize(
     let hydrated = crate::app::find_connection(&inner.state, id)
         .await
         .map_err(|_| TableSeedError::Credentials)?;
-    let specs = ResolvedPostgresConnectSpec::from_connection(&hydrated)
-        .map_err(|_| TableSeedError::UnsupportedTarget)?;
+    let specs = match hydrated {
+        StoredConnection::PostgreSQL(_) => Target::Postgres(
+            ResolvedPostgresConnectSpec::from_connection(&hydrated)
+                .map_err(|_| TableSeedError::UnsupportedTarget)?,
+        ),
+        StoredConnection::MySQL(mysql) => Target::MySql(mysql),
+        StoredConnection::SQLite(sqlite) => Target::Sqlite(sqlite),
+        _ => return Err(TableSeedError::UnsupportedTarget),
+    };
     Ok(Authorized {
         specs,
         targets,
@@ -107,7 +155,7 @@ pub(super) async fn prepare(inner: Arc<Inner>, id: TableSeedAttemptId) {
         .await
         .and_then(|plan| {
             plan.checked_heap_bytes()
-                .ok_or(runner::Failure::from(TableSeedError::Limit))?;
+                .ok_or(Failure::from(TableSeedError::Limit))?;
             Ok((plan, authorized.requires_confirmation))
         }),
         Err(error) => Err(error.into()),
@@ -212,7 +260,7 @@ pub(super) async fn execute(
             authorized.audit,
         ),
         Err(error) => (
-            runner::Execution {
+            Execution {
                 outcome: TableSeedOutcome::NotStarted,
                 failure: Some(error.into()),
             },
@@ -238,7 +286,7 @@ fn finish(
     inner: &Inner,
     id: TableSeedAttemptId,
     review: &TableSeedReview,
-    execution: runner::Execution,
+    execution: Execution,
 ) {
     let mut state = inner.table_seed.state.lock().unwrap();
     let changed = matches!(
@@ -293,12 +341,12 @@ fn finish(
 
 async fn inspect(
     inner: &Inner,
-    specs: &ResolvedPostgresConnectSpec,
+    specs: &Target,
     intent: TableSeedIntent,
     targets: TableSeedConnection,
     drivers: &crate::postgres::dedicated::DriverJoins,
-    control: &Control,
-) -> Result<Plan, runner::Failure> {
+    control: &Arc<Control>,
+) -> Result<Plan, Failure> {
     #[cfg(test)]
     {
         let injected = inner.table_seed.inspector.lock().unwrap().clone();
@@ -306,16 +354,19 @@ async fn inspect(
             return tokio::select! {biased;_=control.cancelled()=>Err(TableSeedError::Cancelled.into()),r=inspect(intent,targets)=>r};
         }
     }
-    let _ = inner;
-    runner::inspect(specs, intent, targets, drivers, control).await
+    match specs {
+        Target::Postgres(spec) => runner::inspect(spec, intent, targets, drivers, control).await,
+        Target::MySql(stored) => super::mysql::inspect(inner, stored, intent, targets, control).await,
+        Target::Sqlite(stored) => super::sqlite::inspect(stored, intent, targets, control).await,
+    }
 }
 async fn run(
     inner: &Inner,
-    specs: &ResolvedPostgresConnectSpec,
+    specs: &Target,
     plan: Arc<Plan>,
     drivers: &crate::postgres::dedicated::DriverJoins,
     control: Arc<Control>,
-) -> runner::Execution {
+) -> Execution {
     #[cfg(test)]
     {
         let injected = inner.table_seed.runner.lock().unwrap().clone();
@@ -323,6 +374,9 @@ async fn run(
             return run(control).await;
         }
     }
-    let _ = inner;
-    runner::execute(specs, plan, drivers, &control).await
+    match specs {
+        Target::Postgres(spec) => runner::execute(spec, plan, drivers, &control).await,
+        Target::MySql(stored) => super::mysql::execute(inner, stored, plan, &control).await,
+        Target::Sqlite(stored) => super::sqlite::execute(stored, plan, &control).await,
+    }
 }

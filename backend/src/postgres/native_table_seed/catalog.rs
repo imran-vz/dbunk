@@ -3,7 +3,7 @@ use crate::postgres::transfer::runner::catalog::{self, RelationState};
 use crate::{ColumnInfo, ForeignKeyInfo, IndexInfo, StructureCapabilities, TableStructure};
 use futures_util::{pin_mut, TryStreamExt};
 #[derive(Clone, PartialEq, Eq)]
-pub(super) struct Key {
+pub(crate) struct Key {
     pub name: String,
     pub kind: String,
     pub columns: Vec<String>,
@@ -14,14 +14,14 @@ pub(super) struct Key {
     pub fingerprint: String,
 }
 #[derive(Clone, PartialEq, Eq)]
-pub(super) struct Index {
+pub(crate) struct Index {
     pub name: String,
     pub columns: Vec<String>,
     pub primary: bool,
     pub fingerprint: String,
 }
 #[derive(Clone, PartialEq, Eq)]
-pub(super) struct Catalog {
+pub(crate) struct Catalog {
     pub database: u32,
     pub relation: RelationState,
     pub keys: Vec<Key>,
@@ -33,6 +33,31 @@ pub(super) struct Catalog {
     pub enum_labels: Vec<(String, Vec<String>)>,
 }
 impl Catalog {
+    /// The engine-neutral view the shared planner works from.
+    pub(crate) fn table(&self) -> crate::backend::table_seed::engine::SeedTable {
+        use crate::backend::table_seed::engine::{SeedTable, TableColumn};
+        SeedTable {
+            dialect: crate::seed::SeedDialect::Postgres,
+            structure: self.structure(),
+            columns: self
+                .relation
+                .columns
+                .iter()
+                .map(|c| TableColumn {
+                    name: c.public.name.clone(),
+                    data_type: c.public.data_type.clone(),
+                    nullable: c.public.nullable,
+                    has_default: c.public.has_default,
+                    generated: c.public.generated,
+                    identity: c.public.identity,
+                })
+                .collect(),
+            enum_labels: self.enum_labels.clone(),
+        }
+    }
+    pub(crate) fn heap_bytes(&self) -> Option<usize> {
+        super::retention::catalog_bytes(self)
+    }
     pub fn structure(&self) -> TableStructure {
         let primary_key = self
             .indexes

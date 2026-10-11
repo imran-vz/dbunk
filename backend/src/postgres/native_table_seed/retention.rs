@@ -1,12 +1,9 @@
 use super::*;
 use std::mem::size_of;
-/// Validate actual owned Vec/String capacities before publishing a fixed 4 MiB
-/// capture. Stack headers are counted conservatively in nested public DTO checks.
-pub(super) fn checked(plan: &Plan) -> Option<usize> {
-    let mut n = size_of::<Plan>().checked_add(plan.intent.checked_heap_bytes()?)?;
-    if let Some(description) = &plan.description {
-        n = n.checked_add(description.checked_heap_bytes()?)?;
-    }
+/// Owned Vec/String capacities of a PostgreSQL catalog, counted into the plan's
+/// fixed 4 MiB capture.
+pub(super) fn catalog_bytes(catalog: &Catalog) -> Option<usize> {
+    let mut n = 0usize;
     macro_rules! add {
         ($bytes:expr) => {
             n = n.checked_add($bytes)?;
@@ -17,16 +14,7 @@ pub(super) fn checked(plan: &Plan) -> Option<usize> {
             add!($v.capacity().checked_mul(size_of::<$t>())?);
         };
     }
-    vec![plan.columns, TableSeedColumn];
-    for c in &plan.columns {
-        add!(c.name.capacity());
-        add!(c.data_type.capacity());
-        if let TableSeedColumnAction::ForeignKey { schema, table } = &c.action {
-            add!(schema.capacity());
-            add!(table.capacity());
-        }
-    }
-    let catalog = &plan.catalog;
+
     add!(catalog.relation.kind.capacity());
     vec![
         catalog.relation.columns,
@@ -70,5 +58,12 @@ pub(super) fn checked(plan: &Plan) -> Option<usize> {
     for s in &catalog.serial_columns {
         add!(s.capacity());
     }
-    (n <= MAX_TABLE_SEED_REVIEW_BYTES).then_some(n)
+    for (name, labels) in &catalog.enum_labels {
+        add!(name.capacity());
+        vec![labels, String];
+        for label in labels {
+            add!(label.capacity());
+        }
+    }
+    Some(n)
 }

@@ -12,90 +12,20 @@ mod planning;
 mod retention;
 #[cfg(test)]
 pub(crate) mod tests;
-/// Seed used to preview a recipe that leaves its seed to review.
-const PREVIEW_SEED: u64 = 1;
-pub(crate) struct Plan {
-    pub description: Option<TableSeedDescription>,
-    pub intent: TableSeedIntent,
-    pub columns: Vec<TableSeedColumn>,
-    pub issue: Option<TableSeedError>,
-    pub seed_used: u64,
-    clock: i64,
-    catalog: catalog::Catalog,
-}
-impl Plan {
-    pub(crate) fn checked_heap_bytes(&self) -> Option<usize> {
-        retention::checked(self)
-    }
-    /// Sample values for `intent` against this inspected table, without a
-    /// database: the same planning and capacity checks as review, then a few
-    /// generated rows. The preview seed is the intent's, or a fixed one.
-    pub(crate) fn preview(
-        &self,
-        intent: &TableSeedIntent,
-    ) -> Result<TableSeedPreview, TableSeedError> {
-        if intent.endpoint != self.intent.endpoint {
-            return Err(TableSeedError::StaleReview);
-        }
-        let draft = planning::draft(&self.catalog, intent)?;
-        planning::capacity(&draft, intent.row_count, intent)?;
-        // Prepare refuses a recipe that inserts nothing; so does preview.
-        let inserted = planning::columns(&self.catalog, Some(&draft))
-            .iter()
-            .filter(|c| c.action != TableSeedColumnAction::Default)
-            .count();
-        if inserted == 0 {
-            return Err(TableSeedError::InvalidRecipe);
-        }
-        let seed = intent.seed.unwrap_or(PREVIEW_SEED);
-        // The inspected clock stands in for the one review will freeze.
-        let rows = crate::seed::preview_rows(
-            draft,
-            &self.catalog.structure(),
-            &planning::options(intent),
-            self.clock,
-            seed,
-            TABLE_SEED_PREVIEW_ROWS.min(intent.row_count),
-            TABLE_SEED_PREVIEW_BYTES,
-        )
-        .map_err(|_| TableSeedError::InvalidRecipe)?
-        .ok_or(TableSeedError::Limit)?;
-        Ok(TableSeedPreview::new(seed, intent.seed.is_some(), rows))
-    }
-}
-#[derive(Debug)]
-pub(crate) struct Failure {
-    pub error: TableSeedError,
-    pub diagnostic: Option<Box<TableSeedDiagnostic>>,
-}
-impl From<TableSeedError> for Failure {
-    fn from(error: TableSeedError) -> Self {
-        Self {
-            error,
-            diagnostic: None,
-        }
-    }
-}
-pub(crate) struct Execution {
-    pub outcome: TableSeedOutcome,
-    pub failure: Option<Failure>,
-}
+pub(crate) use catalog::Catalog;
+use crate::backend::table_seed::engine::{self, EngineCatalog, Execution, Failure, Identity, Plan};
 fn database_error(error: tokio_postgres::Error) -> Failure {
-    let bounded = |s: Option<&str>| {
-        s.filter(|s| s.len() <= 63 && !s.contains('\0'))
-            .map(str::to_owned)
-    };
-    Failure {
-        error: TableSeedError::Database,
-        diagnostic: error.as_db_error().map(|e| {
-            Box::new(TableSeedDiagnostic {
-                sqlstate: Some(e.code().code().to_owned()),
-                constraint: bounded(e.constraint()),
-                column: bounded(e.column()),
-                parent_schema: None,
-                parent_table: None,
-            })
-        }),
+    match error.as_db_error() {
+        Some(e) => Failure::database(Some(e.code().code()), e.constraint(), e.column()),
+        None => TableSeedError::Database.into(),
+    }
+}
+/// The reviewed PostgreSQL catalog of a plan; plans reach this runner only
+/// for PostgreSQL targets.
+fn catalog_of(plan: &Plan) -> Result<&Catalog, Failure> {
+    match &plan.catalog {
+        EngineCatalog::Postgres(catalog) => Ok(catalog),
+        _ => Err(TableSeedError::UnsupportedTarget.into()),
     }
 }
 fn qualified(e: &TableSeedEndpoint) -> String {
@@ -133,63 +63,14 @@ pub(crate) async fn inspect(
             .await
             .map_err(database_error)?;
         let catalog = catalog::inspect(&c, &intent.endpoint).await?;
-        // Capacity needs the row count, so it is checked here as well as
-        // at execution: a recipe that cannot fit fails at review.
-        let draft = planning::draft(&catalog, &intent).and_then(|draft| {
-            planning::capacity(&draft, intent.row_count, &intent)?;
-            Ok(draft)
-        });
-        let columns = planning::columns(&catalog, draft.as_ref().ok());
-        let inserted = columns
-            .iter()
-            .filter(|c| c.action != TableSeedColumnAction::Default)
-            .count();
-        let issue = draft
-            .err()
-            .or_else(|| (inserted == 0).then_some(TableSeedError::InvalidRecipe));
-        let seed_used = intent.seed.unwrap_or_else(|| {
-            let bytes = uuid::Uuid::new_v4().into_bytes();
-            u64::from_le_bytes(bytes[..8].try_into().unwrap())
-        });
-        let clock = chrono::Utc::now().timestamp();
-        let description = if issue.is_none() {
-            let encoded =
-                serde_json::to_string(&(&intent.columns, &intent.locales, intent.realism))
-                    .map_err(|_| TableSeedError::Limit)?;
-            let recipe_sha256:String=c.client.query_one("SELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to($1::text,'UTF8')),'hex')",&[&encoded]).await.map_err(database_error)?.get(0);
-            let (recipe_summary, recipe_summary_truncated) = planning::summary(&intent);
-            let d = TableSeedDescription {
-                endpoint: intent.endpoint.clone(),
-                connection: target,
-                database_oid: catalog.database,
-                relation_oid: catalog.relation.oid,
-                row_count: intent.row_count,
-                seed_used,
-                clock_epoch_seconds: clock,
-                recipe_sha256,
-                recipe_summary,
-                recipe_summary_truncated,
-                inserted_columns: inserted as u16,
-                defaulted_columns: (columns.len() - inserted) as u16,
-                generator_version: crate::seed::SEED_GENERATOR_VERSION,
-            };
-            d.validate()?;
-            Some(d)
-        } else {
-            None
-        };
         c.close().await;
-        Ok(Plan {
-            description,
-            intent,
-            columns,
-            issue,
-            seed_used,
-            clock,
-            catalog,
-        })
+        let identity = Identity::Postgres {
+            database_oid: catalog.database,
+            relation_oid: catalog.relation.oid,
+        };
+        Plan::build(EngineCatalog::Postgres(catalog), intent, target, identity)
     };
-    let result = tokio::select! {biased;_=control.cancelled()=>Err(TableSeedError::Cancelled.into()),r=tokio::time::timeout(Duration::from_secs(30),operation)=>r.map_err(|_|Failure::from(TableSeedError::Timeout)).and_then(|r|r)};
+    let result = tokio::select! {biased;_=control.cancelled()=>Err(TableSeedError::Cancelled.into()),r=tokio::time::timeout(engine::INSPECTION_DEADLINE,operation)=>r.map_err(|_|Failure::from(TableSeedError::Timeout)).and_then(|r|r)};
     drivers.abort_all();
     drivers.drain().await;
     result
@@ -200,7 +81,7 @@ pub(crate) async fn execute(
     drivers: &DriverJoins,
     control: &Control,
 ) -> Execution {
-    let deadline = Instant::now() + Duration::from_secs(600);
+    let deadline = engine::deadline();
     let mut connection = None;
     let mut began = false;
     let operation = async {
@@ -227,15 +108,16 @@ pub(crate) async fn execute(
             ))
             .await
             .map_err(database_error)?;
-        if catalog::inspect(c, &plan.intent.endpoint).await? != plan.catalog {
+        let reviewed = catalog_of(&plan)?;
+        if &catalog::inspect(c, &plan.intent.endpoint).await? != reviewed {
             return Err(TableSeedError::TargetChanged.into());
         }
-        let seed = planning::finalize(c, &plan).await?;
+        let seed = planning::finalize(c, &plan, reviewed).await?;
         let names = crate::seed::insert_columns(&seed);
         let types = names
             .iter()
             .map(|n| {
-                plan.catalog
+                reviewed
                     .relation
                     .columns
                     .iter()
@@ -255,7 +137,9 @@ pub(crate) async fn execute(
                 .collect::<Vec<_>>()
                 .join(",")
         );
-        let batch = planning::batch_size(&seed, &types, prefix.len())?;
+        // Each value is `$n::text::type`.
+        let placeholders: Vec<usize> = types.iter().map(|t| t.len() + 16).collect();
+        let batch = engine::batch_size(&seed, &placeholders, prefix.len(), 60_000)?;
         let mut rng = crate::seed::SeedRng::new(plan.seed_used);
         let mut offset = 0;
         let mut inserted = 0;
@@ -282,7 +166,7 @@ pub(crate) async fn execute(
             offset += count;
             control.progress(u64::from(offset));
         }
-        if catalog::inspect(c, &plan.intent.endpoint).await? != plan.catalog {
+        if &catalog::inspect(c, &plan.intent.endpoint).await? != reviewed {
             return Err(TableSeedError::TargetChanged.into());
         }
         Ok::<u64, Failure>(inserted)
@@ -290,7 +174,7 @@ pub(crate) async fn execute(
     let ready = tokio::select! {biased;_=control.cancelled()=>Err(TableSeedError::Cancelled.into()),_=tokio::time::sleep_until(deadline)=>Err(TableSeedError::Timeout.into()),r=operation=>r};
     let execution = match ready {
         Ok(rows) => {
-            commit_result(
+            engine::commit_result(
                 async {
                     connection
                         .as_ref()
@@ -306,14 +190,7 @@ pub(crate) async fn execute(
             )
             .await
         }
-        Err(error) => Execution {
-            outcome: if began {
-                TableSeedOutcome::RolledBack
-            } else {
-                TableSeedOutcome::NotStarted
-            },
-            failure: Some(error),
-        },
+        Err(error) => Execution::failed(began, error),
     };
     // Driver teardown aborts any uncommitted transaction. Sequence advancement
     // and external trigger side effects are not transactional rollback promises.
@@ -351,36 +228,4 @@ fn insert_sql(prefix: &str, types: &[String], rows: u32) -> String {
         sql.push(')');
     }
     sql
-}
-async fn commit_result(
-    future: impl std::future::Future<Output = Result<(), Failure>>,
-    control: &Control,
-    rows: u64,
-    deadline: Instant,
-) -> Execution {
-    if Instant::now() >= deadline {
-        return Execution {
-            outcome: TableSeedOutcome::RolledBack,
-            failure: Some(TableSeedError::Timeout.into()),
-        };
-    }
-    if !control.admit_commit() {
-        return Execution {
-            outcome: TableSeedOutcome::RolledBack,
-            failure: Some(TableSeedError::Cancelled.into()),
-        };
-    }
-    tokio::pin!(future);
-    let deadline = deadline.min(Instant::now() + Duration::from_secs(10));
-    let result = tokio::select! {biased;r=&mut future=>r,_=tokio::time::sleep_until(deadline)=>Err(TableSeedError::Timeout.into()),_=control.cancelled()=>match tokio::time::timeout_at(deadline.min(Instant::now()+Duration::from_secs(1)),&mut future).await{Ok(r)=>r,Err(_)=>Err(TableSeedError::Cancelled.into())}};
-    match result {
-        Ok(()) => Execution {
-            outcome: TableSeedOutcome::Completed { rows },
-            failure: None,
-        },
-        Err(e) => Execution {
-            outcome: TableSeedOutcome::OutcomeUnknown,
-            failure: Some(e),
-        },
-    }
 }

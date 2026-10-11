@@ -1,239 +1,29 @@
 use super::*;
-use crate::seed::{self, ColumnSource, GenKind, SeedDialect};
+use crate::seed;
 use futures_util::{pin_mut, TryStreamExt};
-pub(super) fn specs(intent: &TableSeedIntent) -> Vec<crate::SeedColumnSpec> {
-    intent
-        .columns
-        .iter()
-        .map(|s| {
-            let (mut skip, mut constant, mut values, mut generator) = (false, None, None, None);
-            match &s.source {
-                TableSeedSource::Default => skip = true,
-                TableSeedSource::Constant { value } => constant = Some(value.clone()),
-                TableSeedSource::Values { values: v } => values = Some(v.clone()),
-                TableSeedSource::Auto { generator: g } => generator = g.map(|g| g.id().to_owned()),
-            }
-            crate::SeedColumnSpec {
-                column: s.column.clone(),
-                skip,
-                constant,
-                values,
-                generator,
-                min: None,
-                max: None,
-                min_length: s.length.and_then(|l| l.min).map(|v| v as usize),
-                max_length: s.length.and_then(|l| l.max).map(|v| v as usize),
-                null_rate: s.null_rate,
-            }
-        })
-        .collect()
-}
+// The planner itself is engine-neutral (`engine`); these take the
+// PostgreSQL catalog directly for the runner and its tests.
 pub(super) fn draft(
     catalog: &catalog::Catalog,
     intent: &TableSeedIntent,
 ) -> Result<seed::PlanDraft, TableSeedError> {
-    for s in &intent.columns {
-        let c = &catalog
-            .relation
-            .columns
-            .iter()
-            .find(|c| c.public.name == s.column)
-            .ok_or(TableSeedError::InvalidRecipe)?
-            .public;
-        if (c.generated || c.identity)
-            && !matches!(
-                s.source,
-                TableSeedSource::Default | TableSeedSource::Auto { generator: None }
-            )
-        {
-            return Err(TableSeedError::InvalidRecipe);
-        }
-    }
-    let mut specs = specs(intent);
-    // An enum's declared labels are the only values it accepts, so an
-    // Auto column draws from them instead of falling back to NULL.
-    for (column, labels) in &catalog.enum_labels {
-        match specs.iter_mut().find(|s| &s.column == column) {
-            Some(spec)
-                if !spec.skip
-                    && spec.constant.is_none()
-                    && spec.values.is_none()
-                    && spec.generator.is_none() =>
-            {
-                spec.values = Some(labels.clone());
-            }
-            Some(_) => {}
-            None => specs.push(crate::SeedColumnSpec {
-                column: column.clone(),
-                skip: false,
-                constant: None,
-                values: Some(labels.clone()),
-                generator: None,
-                min: None,
-                max: None,
-                min_length: None,
-                max_length: None,
-                null_rate: None,
-            }),
-        }
-    }
-    for c in catalog
-        .relation
-        .columns
-        .iter()
-        .filter(|c| c.public.generated || c.public.identity)
-    {
-        if let Some(spec) = specs.iter_mut().find(|s| s.column == c.public.name) {
-            spec.skip = true;
-        } else {
-            specs.push(crate::SeedColumnSpec {
-                column: c.public.name.clone(),
-                skip: true,
-                constant: None,
-                values: None,
-                generator: None,
-                min: None,
-                max: None,
-                min_length: None,
-                max_length: None,
-                null_rate: None,
-            });
-        }
-    }
-    seed::analyze_plan(SeedDialect::Postgres, &catalog.structure(), &specs).map_err(|e| {
-        match e.kind {
-            seed::PlanErrorKind::Length => TableSeedError::LengthRange,
-            seed::PlanErrorKind::Unsupported => TableSeedError::UnsupportedColumn,
-        }
-    })
-}
-/// Generation options carried by the intent.
-pub(super) fn options(intent: &TableSeedIntent) -> seed::GenOptions {
-    seed::GenOptions {
-        locales: intent.locales.clone(),
-        realism: intent.realism,
-    }
+    engine::draft(&catalog.table(), intent)
 }
 pub(super) fn columns(
     catalog: &catalog::Catalog,
     draft: Option<&seed::PlanDraft>,
 ) -> Vec<TableSeedColumn> {
-    let foreign = catalog
-        .keys
-        .iter()
-        .filter(|k| k.kind == "f")
-        .collect::<Vec<_>>();
-    let text = seed::auto_takes_length(SeedDialect::Postgres, &catalog.structure());
-    catalog
-        .relation
-        .columns
-        .iter()
-        .enumerate()
-        .map(|(index, c)| {
-            let enumerated = catalog
-                .enum_labels
-                .iter()
-                .any(|(name, _)| name == &c.public.name);
-            let action = match draft
-                .and_then(|d| d.columns().get(index))
-                .map(|c| &c.source)
-            {
-                Some(ColumnSource::Skip) => TableSeedColumnAction::Default,
-                Some(ColumnSource::Constant(Some(_))) => TableSeedColumnAction::Constant,
-                Some(ColumnSource::Constant(None)) => TableSeedColumnAction::UnsupportedNull,
-                Some(ColumnSource::ValueList(_)) => TableSeedColumnAction::Values,
-                Some(ColumnSource::FkPool { pool, .. }) => TableSeedColumnAction::ForeignKey {
-                    schema: foreign[*pool].parent_schema.clone(),
-                    table: foreign[*pool].parent_table.clone(),
-                },
-                _ => TableSeedColumnAction::Auto,
-            };
-            TableSeedColumn {
-                name: c.public.name.clone(),
-                data_type: c.public.data_type.clone(),
-                nullable: c.public.nullable,
-                has_default: c.public.has_default,
-                generated: c.public.generated,
-                identity: c.public.identity,
-                action,
-                auto_length: text.get(index).copied().unwrap_or(false) && !enumerated,
-            }
-        })
-        .collect()
+    engine::columns(&catalog.table(), draft)
 }
-pub(super) fn summary(intent: &TableSeedIntent) -> (String, bool) {
-    use std::fmt::Write;
-    let mut out = String::new();
-    let mut truncated = false;
-    for s in &intent.columns {
-        let source = match &s.source {
-            TableSeedSource::Default => "DEFAULT".into(),
-            TableSeedSource::Auto { generator } => {
-                generator.map(|g| g.id()).unwrap_or("Auto").into()
-            }
-            TableSeedSource::Constant { value } => format!(
-                "constant {:?}{} ({} UTF-8 bytes)",
-                value.chars().take(64).collect::<String>(),
-                if value.chars().count() > 64 {
-                    " [preview clipped]"
-                } else {
-                    ""
-                },
-                value.len()
-            ),
-            TableSeedSource::Values { values } => format!(
-                "{} values; first {:?} [full list in live review]",
-                values.len(),
-                values[0].chars().take(64).collect::<String>()
-            ),
-        };
-        let length = match s.length {
-            Some(l) => format!(
-                "; length {}..{}",
-                l.min.map_or("auto".into(), |v| v.to_string()),
-                l.max.map_or("auto".into(), |v| v.to_string())
-            ),
-            None => String::new(),
-        };
-        let line = format!(
-            "{}: {}; NULL rate {:?}{length}\n",
-            s.column, source, s.null_rate
-        );
-        if out.len() + line.len() > 8192 {
-            truncated = true;
-            break;
-        }
-        let _ = out.write_str(&line);
-    }
-    if out.is_empty() {
-        out.push_str("All columns Auto; database-supplied columns omitted\n");
-    }
-    let locales = intent
-        .locales
-        .iter()
-        .map(|l| l.id())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let realism = match intent.realism {
-        TableSeedRealism::FictionalSafe => "fictional-safe",
-        TableSeedRealism::Realistic => "realistic",
-    };
-    let line = format!("Locales {locales}; {realism} contact details\n");
-    if out.len() + line.len() > 8192 {
-        truncated = true;
-    } else {
-        out.push_str(&line);
-    }
-    (out, truncated)
-}
+pub(super) use engine::{capacity, options, summary};
 pub(super) async fn finalize(
     connection: &DedicatedConnection,
     plan: &Plan,
+    catalog: &catalog::Catalog,
 ) -> Result<seed::SeedPlan, Failure> {
-    let draft = draft(&plan.catalog, &plan.intent)?;
-    let structure = plan.catalog.structure();
-    let keys = plan
-        .catalog
+    let draft = draft(catalog, &plan.intent)?;
+    let structure = catalog.structure();
+    let keys = catalog
         .keys
         .iter()
         .filter(|k| k.kind == "f")
@@ -331,8 +121,7 @@ pub(super) async fn finalize(
             .await
             .map_err(database_error)?
             .get(0);
-        let c = &plan
-            .catalog
+        let c = &catalog
             .relation
             .columns
             .iter()
@@ -352,60 +141,9 @@ pub(super) async fn finalize(
         }
         maxes.push((name.clone(), value));
     }
-    capacity(&draft, plan.intent.row_count, &plan.intent)?;
+    engine::capacity(&draft, plan.intent.row_count, &plan.intent)?;
     let mut seed_plan = seed::finalize_plan(&structure, draft, pools, &maxes, plan.clock)
         .map_err(|_| TableSeedError::InvalidRecipe)?;
-    seed_plan.options = options(&plan.intent);
+    seed_plan.options = engine::options(&plan.intent);
     Ok(seed_plan)
-}
-/// Unique columns must have room for `row_count` distinct values: integer
-/// digits for fixed-point numbers, characters for tagged text.
-pub(super) fn capacity(
-    draft: &seed::PlanDraft,
-    row_count: u32,
-    intent: &TableSeedIntent,
-) -> Result<(), TableSeedError> {
-    seed::check_capacity(draft, row_count, &options(intent)).map_err(|e| match e {
-        seed::CapacityError::Numeric => TableSeedError::IntegerRange,
-        seed::CapacityError::Length => TableSeedError::LengthRange,
-        seed::CapacityError::Phone => TableSeedError::PhoneRange,
-    })
-}
-/// Worst-case admission before generator clones any literal, list member or FK
-/// value. Includes a second copy for parameters and conservative row/SQL overhead.
-pub(super) fn batch_size(
-    plan: &seed::SeedPlan,
-    types: &[String],
-    prefix_bytes: usize,
-) -> Result<u32, TableSeedError> {
-    let mut row = 0usize;
-    for c in &plan.columns {
-        if matches!(c.source, ColumnSource::Skip) {
-            continue;
-        }
-        let bytes = seed::worst_case_value_bytes(plan, c);
-        row = row
-            .checked_add(bytes.saturating_mul(4) + 128)
-            .ok_or(TableSeedError::Limit)?;
-    }
-    if types.is_empty() || row > 8 * 1024 * 1024 {
-        return Err(TableSeedError::Limit);
-    }
-    let sql_row = types
-        .iter()
-        .try_fold(0usize, |n, t| n.checked_add(t.len() + 32))
-        .ok_or(TableSeedError::Limit)?;
-    let count = 500usize
-        .min(60_000 / types.len())
-        .min(8 * 1024 * 1024 / row.max(1))
-        .min(
-            (1024usize * 1024)
-                .checked_sub(prefix_bytes)
-                .ok_or(TableSeedError::Limit)?
-                / sql_row.max(1),
-        );
-    if count == 0 {
-        return Err(TableSeedError::Limit);
-    }
-    Ok(count as u32)
 }
