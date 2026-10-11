@@ -1,2 +1,0 @@
-Command: ['just', 'fmt']
-cargo fmt --manifest-path src-tauri/Cargo.toml

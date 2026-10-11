@@ -1,6 +1,6 @@
-// Focused end-to-end check against the isolated GPUI spike, never the daily driver.
+// Focused end-to-end check against an isolated native fixture window, never the daily driver.
 // swiftc tools/measure/editor-accessibility.swift -o /tmp/dbunk-editor-ax
-// /tmp/dbunk-editor-ax <spike-pid>
+// /tmp/dbunk-editor-ax <spike-pid>  (Plan 024 spike, removed; see git history at 3e66b65)
 // /tmp/dbunk-editor-ax --native-fixture <native-pid> <marked-profile> [--prepare-metrics | --prepare-error-review]
 // --prepare-error-review leaves the verified fixture window open for visual/listening review.
 import AppKit

@@ -1,1 +1,0 @@
-Named owned blocker PID50834; exact backend/query start checked; pg_cancel_backend: t

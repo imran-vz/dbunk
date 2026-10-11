@@ -99,7 +99,7 @@ remaining items below are complete.
   `transaction-controls.tsx` expose multiple results, output/notices,
   cancellation outcomes, and manual transaction recovery.
 
-**Progress (2026-10-01):** [Plan 023](./023-query-session-bound-parameters-and-row-limit.md)
+**Progress (2026-10-01):** [Plan 023](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/023-query-session-bound-parameters-and-row-limit.md)
 is `READY FOR REVIEW` and uncommitted. It delivers the dark backend for
 driver-bound parameters and the per-execution row limit through a server-side
 cursor, settles a requested Stop as `cancelled`, and repairs the credit-loop
@@ -638,7 +638,7 @@ WebView allocation remains unmeasured; this status update claims no new tests.
 **Progress (2026-10-01):** [Historical Plan 022](https://github.com/imran-vz/dbunk/blob/db2dae24c504248d62f15f772bf82e4c8d1f5ff2/plans/022-postgres-schema-comparison-activation.md)
 activates source/target selection, paged object and field inspection, coverage
 and job lifecycle in the real workbench. The selected Object inspector
-reference is available in the [visual brief](./mocks/schema-compare/index.html).
+reference is available in the [visual brief](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/mocks/schema-compare/index.html).
 Imran selected **A: Object inspector** on 2026-09-14. On the same day the
 comparison observer, bounded reader, `schema-compare` rail destination and
 workspace were implemented with focused Vitest suites. The isolated native

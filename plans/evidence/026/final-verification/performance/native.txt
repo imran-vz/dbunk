@@ -1,1 +1,0 @@
-Native retained bytes: 1048626

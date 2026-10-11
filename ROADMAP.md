@@ -74,7 +74,7 @@ Today: schemas → tables + views + the items below.
 - ✅ Basic SQL completion (`src/lib/sql-completions.ts`)
 - ✅ EXPLAIN / EXPLAIN ANALYZE plan visualizer (tree + cost, JSON + text)
 - ✅ SQL templates / snippets library (toolbar dropdown)
-- 🟡 Bind variables — `:name` values are substituted into the SQL text as literals (`src/lib/bind-variables.ts`); the match is not string-, comment-, or slice-aware. The backend for driver-bound parameters is built in [Plan 023](plans/023-query-session-bound-parameters-and-row-limit.md) (dark, ready for review); the editor switches over in a later activation plan.
+- 🟡 Bind variables — `:name` values are substituted into the SQL text as literals (`src/lib/bind-variables.ts`); the match is not string-, comment-, or slice-aware. The backend for driver-bound parameters is built in [Plan 023](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/023-query-session-bound-parameters-and-row-limit.md) (dark, done at `645417c`); the editor switches over in a later activation plan.
 - ❌ PL/pgSQL debugger (breakpoints, step, variable inspect)
 - ❌ Visual query builder
 - ✅ SQL formatting (Format toolbar button + Cmd/Ctrl+Shift+F via `sql-formatter`)

@@ -1,7 +1,0 @@
-{
-  "key": "Return",
-  "before": "Markdown",
-  "expected": "Text",
-  "actual": "XLSX",
-  "pass": false
-}

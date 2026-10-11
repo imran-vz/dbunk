@@ -75,7 +75,7 @@ Rebuild bundles made before the Plan 027 Step 1 fixture-seeding correction.
 That correction removes a call to ordinary credential cleanup that could
 delete the normal app's Keychain entry during fresh fixture initialization.
 The fresh/reopen no-Keychain guard is now tested with a recording builder in
-a separate process. See `plans/evidence/027/step01-progress.md` for the
+a separate process. See [`plans/evidence/027/step01-progress.md`](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/027/step01-progress.md) for the
 correction to the earlier isolation claim.
 
 ```sh
@@ -200,7 +200,7 @@ profiles; do not delete an unknown or changed directory to retry creation.
 The backend supports all three credential modes, explicit recovery of interrupted
 Keychain operations, unlock, mode change and confirmed password reset. Native
 Keychain failure/recovery coverage uses injected stores, and a disposable real
-OS CLI probe has passed. [Packaged stage04 checks](../../plans/evidence/027/workspace-package-20261002/agent-verification.md)
+OS CLI probe has passed. [Packaged stage04 checks](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/027/workspace-package-20261002/agent-verification.md)
 also passed onboarding, secret-preserving blank edits, separate-process reopen,
 encrypted conversion/unlock and confirmed reset, with both scoped Keychain
 entries absent after cleanup. SQLite-only paths make no Keychain calls. Native connection metadata/password changes are atomic in SQLite modes;
@@ -233,10 +233,10 @@ The command above is a backend/headless check. Actual stage04 window acceptance
 uses `tools/measure/workspace-accessibility.swift` with the launcher's
 `identity.json`; it verifies exact process/profile/executable identity before
 keyboard or accessibility actions. It requires an unlocked macOS session.
-[Recovery window checks](../../plans/evidence/027/workspace-recovery-20261002/agent-verification.md)
+[Recovery window checks](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/027/workspace-recovery-20261002/agent-verification.md)
 passed corrupt/future snapshot quit without rewriting, explicit reset, and
 oversize save failure with exact SQL export and confirmed discard.
-[Workspace performance diagnostics](../../plans/evidence/027/workspace-performance-b/summary.json)
+[Workspace performance diagnostics](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/027/workspace-performance-b/summary.json)
 completed one/four-session typing and scrolling, 20 open/run/close cycles and
 joined teardown. These are measured diagnostics, not a universal performance
 pass; the capture predates the recovery fixes and used AC power while the
@@ -244,10 +244,10 @@ Plan 026 comparison used battery power.
 
 Plan 027 remains in progress. Imran deferred VoiceOver from the blocking gate
 on 2026-10-03. Real IME composition remains pending, along with the remaining window race/recovery cases in the
-[workspace progress record](../../plans/evidence/027/step02-workspace-progress.md).
+[workspace progress record](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/027/step02-workspace-progress.md).
 The frozen preflight package for human acceptance is identified by its
-[package hashes](../../plans/evidence/027/workspace-package-20261002/package.json)
-and [source manifest](../../plans/evidence/027/workspace-package-20261002/source-manifest.json).
+[package hashes](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/027/workspace-package-20261002/package.json)
+and [source manifest](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/027/workspace-package-20261002/source-manifest.json).
 It includes the recovery fixes and predates subsequent Plan 028 backend work;
 its window evidence does not validate that newer source. Full PostgreSQL
 parity is still being implemented.
@@ -430,5 +430,5 @@ endpoint capability is broader than this verification wrapper's allowed targets.
 The headless service probe uses `tools/native/workspace_probe.py PATH
 --general-profile` with a new disposable path. It checks owned fixture connections,
 two query sessions and encrypted disconnected restoration through the general
-constructor. Consult [current evidence](../../plans/evidence/030/general-profile-source-checks/README.md)
+constructor. Consult [current evidence](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/030/general-profile-source-checks/README.md)
 for which checks have actually passed.

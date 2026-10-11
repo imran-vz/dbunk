@@ -1,1 +1,0 @@
-FAIL: expected isolated spike PID or --native-fixture PID PROFILE

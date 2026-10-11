@@ -3,7 +3,7 @@
 **Status**: Accepted and implemented for the seam, the Query Session and
 connection services, and the build proof (Plan 025, 2026-10-02). The other
 service families and the move into `crates/dbunk-core` are not done. Part of
-the GPUI migration (`plans/gpui-migration.html`, stage 02); it stands on its
+the GPUI migration ([`plans/gpui-migration.html`](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/gpui-migration.html), stage 02); it stands on its
 own if the migration stops.
 
 ## Problem
@@ -103,7 +103,7 @@ The native entry point separates create from open and restores disconnected stat
 Normal and stage04 profiles share the process-selection guard; stage03's original
 constructor remains separate. This implements the explicit capability requested
 by Plan 030, not production identity, profile import or daily-driver cutover.
-See [current source evidence](../../plans/evidence/030/general-profile-source-checks/README.md).
+See [current source evidence](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/030/general-profile-source-checks/README.md).
 
 Plan 027's subsequent Step 1 implementation adds native Keychain mode changes
 with a secret-free SQLite recovery journal and namespace-scoped primary and
@@ -114,18 +114,18 @@ cover failed writes, recovery and namespace selection; SQLite-only lifecycle
 paths never construct a Keychain entry. A disposable real OS Keychain CLI probe
 also passes separate-process reopen, conversion and reset, with both owned
 entries absent after cleanup. The subsequent
-[packaged GPUI checks](../../plans/evidence/027/workspace-package-20261002/agent-verification.md)
+[packaged GPUI checks](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/027/workspace-package-20261002/agent-verification.md)
 also pass Keychain onboarding, blank-password edit preservation, separate-process
 reopen, encrypted SQLite conversion/unlock, conversion back to Keychain, and
 confirmed reset preserving SQL and connection metadata. All four launches join
 shutdown and return fixture activity to baseline; scoped cleanup verifies both
 entries absent.
 
-[Recovery window checks](../../plans/evidence/027/workspace-recovery-20261002/agent-verification.md)
+[Recovery window checks](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/027/workspace-recovery-20261002/agent-verification.md)
 verify that corrupt/future records survive ordinary quit unchanged and that an
 oversized current draft can be exported exactly before explicit discard without
 replacing its last durable version. The
-[workspace performance capture](../../plans/evidence/027/workspace-performance-b/summary.json)
+[workspace performance capture](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/027/workspace-performance-b/summary.json)
 records one/four-session diagnostics and 20 open/run/close cycles; it uses an
 earlier binary than these recovery fixes.
 
@@ -133,10 +133,10 @@ These checks do not complete Plan 027 or establish full PostgreSQL parity.
 VoiceOver is explicitly deferred and non-blocking under the current scope.
 Keyboard/AX, real IME in remaining controls and actual-window race/recovery
 gates retain their scoped pending status.
-The [frozen package source manifest](../../plans/evidence/027/workspace-package-20261002/source-manifest.json)
+The [frozen package source manifest](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/027/workspace-package-20261002/source-manifest.json)
 predates Plan 028 backend preparation, so its window evidence does not validate
 that newer source. Current scope and remaining gates are in the
-[workspace progress record](../../plans/evidence/027/step02-workspace-progress.md).
+[workspace progress record](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/027/step02-workspace-progress.md).
 
 ### The proof is a build without Tauri
 
@@ -178,7 +178,7 @@ ordinary Tauri manager construction does not enable that lifecycle. Tauri's
 wire format, sequence/ACK/credit behavior and service safety enforcement remain
 unchanged. PlainSqlite fixture initialization does not call credential migration
 or Keychain. This is an uncommitted stage 03 addition with separate verification
-in `plans/evidence/026/`, not retroactive Plan 025 completion evidence.
+in [`plans/evidence/026/`](https://github.com/imran-vz/dbunk/tree/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/026), not retroactive Plan 025 completion evidence.
 
 Plan 027 found that fresh fixture seeding indirectly called ordinary
 credential cleanup through `connections::save`, contradicting the no-Keychain
@@ -186,7 +186,7 @@ claim above. Fresh seeding now writes only its validated SQLite fixture
 records. A recording-keyring test in a separate process proves no Keychain
 entry is selected on fresh open or reopen. The public fixture constructor
 and profile guard are unchanged. See
-`plans/evidence/027/step01-progress.md` for the correction and red/green proof.
+[`plans/evidence/027/step01-progress.md`](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/027/step01-progress.md) for the correction and red/green proof.
 
 ## Consequences
 
@@ -238,4 +238,4 @@ The teardown evidence proves logical closure followed by eventual socket
 release, not a join of every opening/execution/driver task before return.
 Likewise, `close_window` does not retire the owner of an in-flight open.
 Plan 026 must provide an opt-in native lifecycle barrier without changing
-these Tauri behaviors. See `plans/evidence/025/stage03-review.md`.
+these Tauri behaviors. See [`plans/evidence/025/stage03-review.md`](https://github.com/imran-vz/dbunk/blob/3e66b65537bbddc18232d8726fb2989b8650c406/plans/evidence/025/stage03-review.md).
