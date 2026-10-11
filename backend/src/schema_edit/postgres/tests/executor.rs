@@ -1,7 +1,5 @@
 use super::super::capture::drift_token;
-use super::super::executor::{
-    run, Canceller, Transport, BEGIN, LOCK_TIMEOUT, LOCK_TIMEOUT_LOCAL,
-};
+use super::super::executor::{run, Canceller, Transport, BEGIN, LOCK_TIMEOUT, LOCK_TIMEOUT_LOCAL};
 use super::{review, setup};
 use crate::backend::table_ddl::WritePermit;
 use crate::schema_edit::fixtures::existing;
@@ -133,7 +131,10 @@ async fn locks_rechecks_drift_runs_verifies_and_commits_once() {
     let cleaned = fake.cleaned.clone();
     let permit = WritePermit::test_permit();
     let outcome = apply(fake, &permit, &case).await;
-    assert!(matches!(outcome, SchemaEditOutcome::Applied { .. }), "{outcome:?}");
+    assert!(
+        matches!(outcome, SchemaEditOutcome::Applied { .. }),
+        "{outcome:?}"
+    );
     assert_eq!(
         *commands.lock().unwrap(),
         vec![
@@ -171,7 +172,10 @@ async fn a_drifted_or_missing_table_refuses_before_any_statement() {
 async fn lock_timeout_and_a_vanished_table_are_not_dispatched() {
     let case = add_column();
     for (failure, reason) in [
-        (SchemaEditFailure::LockTimeout, SchemaEditFailure::LockTimeout),
+        (
+            SchemaEditFailure::LockTimeout,
+            SchemaEditFailure::LockTimeout,
+        ),
         (
             SchemaEditFailure::Database {
                 code: Some("42P01".into()),
@@ -298,11 +302,18 @@ async fn concurrent_builds_run_after_commit_and_report_the_committed_prefix() {
     let commands = ok.commands.clone();
     let permit = WritePermit::test_permit();
     let outcome = apply(ok, &permit, &case).await;
-    assert!(matches!(outcome, SchemaEditOutcome::Applied { .. }), "{outcome:?}");
+    assert!(
+        matches!(outcome, SchemaEditOutcome::Applied { .. }),
+        "{outcome:?}"
+    );
     let commands = commands.lock().unwrap().clone();
     assert_eq!(commands.last(), Some(&index_sql));
     let commit = commands.iter().position(|c| c == "COMMIT").unwrap();
-    assert_eq!(commit + 1, commands.len() - 1, "the build runs after COMMIT");
+    assert_eq!(
+        commit + 1,
+        commands.len() - 1,
+        "the build runs after COMMIT"
+    );
 
     let failure = SchemaEditFailure::Database {
         code: Some("23505".into()),
@@ -351,7 +362,8 @@ async fn concurrent_builds_run_after_commit_and_report_the_committed_prefix() {
 #[tokio::test]
 async fn a_tampered_preview_or_cancelled_permit_sends_nothing() {
     let mut case = add_column();
-    case.preview.statements[0].sql = "ALTER TABLE \"public\".\"users\" DROP COLUMN \"email\";".into();
+    case.preview.statements[0].sql =
+        "ALTER TABLE \"public\".\"users\" DROP COLUMN \"email\";".into();
     let fake_socket = fake(&case);
     let commands = fake_socket.commands.clone();
     let permit = WritePermit::test_permit();

@@ -33,7 +33,10 @@ fn adds_a_column_in_one_atomic_group_under_the_table_lock() {
         sql(&preview),
         vec![r#"ALTER TABLE "public"."users" ADD COLUMN "nick" text;"#]
     );
-    assert_eq!(preview.statements[0].summary, "Add column public.users.nick");
+    assert_eq!(
+        preview.statements[0].summary,
+        "Add column public.users.nick"
+    );
     assert!(!preview.statements[0].destructive);
     assert_eq!(
         preview.groups,
@@ -137,7 +140,10 @@ fn type_changes_note_rewrites_unless_binary_coercible() {
         vec![r#"ALTER TABLE "public"."users" ALTER COLUMN "email" TYPE text;"#]
     );
     assert!(preview.statements[0].destructive);
-    assert!(!preview.notes.iter().any(|note| note.kind == NoteKind::Rewrite));
+    assert!(!preview
+        .notes
+        .iter()
+        .any(|note| note.kind == NoteKind::Rewrite));
     assert!(has_note(&preview, NoteKind::Info, "needs no table rewrite"));
 
     let (baseline, mut draft) = setup();
@@ -251,7 +257,9 @@ fn generated_expression_changes_are_gated_by_server_version() {
     let preview = review(&baseline, &later, &PlanOptions::default()).unwrap();
     assert_eq!(
         sql(&preview),
-        vec![r#"ALTER TABLE "public"."users" ALTER COLUMN "name" SET EXPRESSION AS (lower(email));"#]
+        vec![
+            r#"ALTER TABLE "public"."users" ALTER COLUMN "name" SET EXPRESSION AS (lower(email));"#
+        ]
     );
     assert!(preview.statements[0].destructive);
     assert!(has_note(&preview, NoteKind::Rewrite, "Recomputes name"));
@@ -289,7 +297,9 @@ fn virtual_generated_columns_need_postgres_18() {
         if supported {
             assert_eq!(
                 plan_sql(&baseline, &draft),
-                vec![r#"ALTER TABLE "public"."users" ADD COLUMN "shout" text GENERATED ALWAYS AS (upper(email)) VIRTUAL;"#]
+                vec![
+                    r#"ALTER TABLE "public"."users" ADD COLUMN "shout" text GENERATED ALWAYS AS (upper(email)) VIRTUAL;"#
+                ]
             );
         } else {
             assert_eq!(
@@ -504,7 +514,11 @@ fn notes_cover_dependents_and_large_tables() {
         enforced: true,
     });
     let preview = review(&baseline, &draft, &PlanOptions::default()).unwrap();
-    assert!(has_note(&preview, NoteKind::Dependents, "public.posts.posts_author_fkey"));
+    assert!(has_note(
+        &preview,
+        NoteKind::Dependents,
+        "public.posts.posts_author_fkey"
+    ));
     assert!(has_note(&preview, NoteKind::LargeTable, "5000000 rows"));
     assert!(has_note(&preview, NoteKind::LargeTable, "NOT VALID"));
     assert!(has_note(&preview, NoteKind::LargeTable, "CONCURRENTLY"));

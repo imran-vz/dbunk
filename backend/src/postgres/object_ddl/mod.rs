@@ -41,8 +41,8 @@ pub(crate) use alter::{
 };
 #[allow(unused_imports)]
 pub(crate) use column::{
-    AddColumnOp, AlterColumnTypeOp, DropColumnOp, NewColumnSpec, PgDefaultValue,
-    PgGeneratedColumn, PgIdentity, RenameColumnOp, SetColumnDefaultOp, SetColumnNullableOp,
+    AddColumnOp, AlterColumnTypeOp, DropColumnOp, NewColumnSpec, PgDefaultValue, PgGeneratedColumn,
+    PgIdentity, RenameColumnOp, SetColumnDefaultOp, SetColumnNullableOp,
 };
 #[allow(unused_imports)]
 pub(crate) use common::PgGrantee;

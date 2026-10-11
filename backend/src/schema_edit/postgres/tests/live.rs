@@ -31,7 +31,11 @@ async fn run_sql(spec: &ResolvedPostgresConnectSpec, sql: &str) {
     let connection = dedicated::connect(spec, NoticeSink::Ignore)
         .await
         .expect("connect");
-    connection.client.batch_execute(sql).await.expect("setup SQL");
+    connection
+        .client
+        .batch_execute(sql)
+        .await
+        .expect("setup SQL");
     connection.close().await;
 }
 
@@ -168,23 +172,40 @@ async fn round_trip_applies_and_recaptures_the_draft() {
     assert!(outcome.applied(), "{outcome:?}");
 
     let after = capture(&spec, table).await;
-    assert_eq!(after.editable, Editability::Editable, "{:?}", after.editable);
+    assert_eq!(
+        after.editable,
+        Editability::Editable,
+        "{:?}",
+        after.editable
+    );
     let t = &after.table;
     assert_eq!(t.comment.as_deref(), Some("Round trip"));
     let names: Vec<&str> = t.columns.iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(names, ["id", "email", "full_name", "score", "nick", "total"]);
+    assert_eq!(
+        names,
+        ["id", "email", "full_name", "score", "nick", "total"]
+    );
     assert_eq!(column(t, "id").identity, Identity::Always);
-    assert_eq!(column(t, "full_name").comment.as_deref(), Some("Display name"));
+    assert_eq!(
+        column(t, "full_name").comment.as_deref(),
+        Some("Display name")
+    );
     assert_eq!(column(t, "score").data_type, "bigint");
     assert!(!column(t, "score").nullable);
     assert_eq!(column(t, "nick").data_type, "character varying(20)");
-    assert!(column(t, "total").generated.as_ref().is_some_and(|g| g.stored));
+    assert!(column(t, "total")
+        .generated
+        .as_ref()
+        .is_some_and(|g| g.stored));
     assert_eq!(t.uniques[0].name.as_deref(), Some("round_trip_email_uq"));
     assert_eq!(t.checks.len(), 1);
     assert_eq!(t.checks[0].name.as_deref(), Some("round_trip_check"));
     let indexes: Vec<&str> = t.indexes.iter().map(|i| i.name.as_str()).collect();
     assert!(indexes.contains(&"round_trip_full_name_idx"), "{indexes:?}");
-    assert!(indexes.contains(&"round_trip_lower_email_idx"), "{indexes:?}");
+    assert!(
+        indexes.contains(&"round_trip_lower_email_idx"),
+        "{indexes:?}"
+    );
 
     // The fresh capture is its own fixed point.
     let untouched = SchemaDraft::from_baseline(&after);
@@ -201,7 +222,11 @@ async fn a_table_changed_after_capture_is_refused_unchanged() {
     let table = "drifted";
     fresh(&spec, table).await;
     let baseline = capture(&spec, table).await;
-    run_sql(&spec, &format!("ALTER TABLE {SCHEMA}.{table} ADD COLUMN sneaky int")).await;
+    run_sql(
+        &spec,
+        &format!("ALTER TABLE {SCHEMA}.{table} ADD COLUMN sneaky int"),
+    )
+    .await;
     let mut draft = SchemaDraft::from_baseline(&baseline);
     draft.add_column("nick", "text");
     assert_eq!(
@@ -276,6 +301,10 @@ async fn a_held_lock_times_out_without_dispatch() {
             reason: SchemaEditFailure::LockTimeout
         }
     );
-    holder.client.batch_execute("ROLLBACK").await.expect("release");
+    holder
+        .client
+        .batch_execute("ROLLBACK")
+        .await
+        .expect("release");
     holder.close().await;
 }
