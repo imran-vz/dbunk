@@ -431,21 +431,60 @@ fn discard_and_rebase() {
     model
         .set_input(Target::Table, Input::Comment, "people")
         .unwrap();
+    model
+        .set_input(Target::Column(existing(3)), Input::DataType, "integer")
+        .unwrap();
     assert!(model.has_changes());
-    // Same table, new drift token: the draft carries over.
+    // Same table, new drift token: the draft carries over as is.
     let mut fresh = users(PG);
     fresh.drift = DriftToken("moved".into());
     assert!(model.rebase(fresh));
     assert!(model.has_changes());
-    // The table changed on the server: the draft restarts.
+    assert!(model.conflicts().is_empty());
+    // The server changed the comment too and added a column: the draft is
+    // re-based, the server's column shows through and the comment both
+    // sides changed keeps the draft's value as a conflict.
     let mut changed = users(PG);
-    changed.table.columns.pop();
+    changed.table.comment = Some("server".into());
+    changed
+        .table
+        .columns
+        .push(col(5, "created_at", "timestamptz"));
     assert!(!model.rebase(changed));
-    assert!(!model.has_changes());
+    assert_eq!(model.conflicts().len(), 1);
+    assert_eq!(model.input_value(Target::Table, Input::Comment), "people");
+    assert_eq!(
+        model.input_value(Target::Column(existing(3)), Input::DataType),
+        "integer"
+    );
+    let added = Target::Column(existing(5));
+    assert!(model.in_draft(added));
+    assert_eq!(model.row(added).state, RowState::Unchanged);
     model.add_column();
     model.discard();
     assert!(!model.has_changes());
+    assert!(model.conflicts().is_empty());
     assert_eq!(model.draft().table, model.baseline().table);
+}
+
+#[test]
+fn a_saved_draft_is_rebased_onto_a_changed_table() {
+    let mut model = model(PG);
+    model
+        .set_input(Target::Column(existing(3)), Input::Name, "full_name")
+        .unwrap();
+    let mut changed = users(PG);
+    changed.table.comment = Some("server".into());
+    let rebased = SchemaEditModel::rebased(
+        model.request().clone(),
+        model.baseline(),
+        changed,
+        model.draft(),
+    );
+    assert!(rebased.conflicts().is_empty());
+    assert_eq!(rebased.label(Target::Column(existing(3))), "full_name");
+    assert_eq!(rebased.input_value(Target::Table, Input::Comment), "server");
+    assert_eq!(rebased.review_count(), 1);
 }
 
 #[test]
@@ -848,15 +887,16 @@ fn journal_keeps_only_changed_drafts_and_never_overwrites_unknown() {
         DraftSave::Saved
     );
     assert_eq!(
-        recovery.restorable(model.request(), model.baseline()),
-        Some(model.draft().clone())
+        recovery.restorable(model.request(), PG),
+        Some((model.baseline(), model.draft()))
     );
-    // A changed table never restores a draft edited against the old one.
-    let mut changed = users(PG);
-    changed.table.comment = Some("server".into());
-    assert_eq!(recovery.restorable(model.request(), &changed), None);
+    // Another table or engine never restores this draft.
     let other = SchemaEditRequest::new("public", "orgs");
-    assert_eq!(recovery.restorable(&other, model.baseline()), None);
+    assert_eq!(recovery.restorable(&other, PG), None);
+    assert_eq!(
+        recovery.restorable(model.request(), SchemaEngine::MySql),
+        None
+    );
 
     let (record, _) = attempt_record(&model, WorkspaceApplyState::OutcomeUnknown);
     let mut recovery = Recovery::new(Some(record));

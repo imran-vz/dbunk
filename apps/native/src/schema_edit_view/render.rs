@@ -1207,6 +1207,46 @@ impl SchemaEditView {
                     .into_any_element(),
             );
         }
+        if let Some(model) = &self.model
+            && !model.conflicts().is_empty()
+        {
+            let lines: Vec<String> = model
+                .conflicts()
+                .iter()
+                .map(|conflict| conflict.message.clone())
+                .collect();
+            let count = lines.len();
+            let heading = format!(
+                "The table changed on the server. {count} change{} made on both sides kept the draft's value:",
+                if count == 1 { "" } else { "s" }
+            );
+            out.push(
+                div()
+                    .id("schema-edit-conflicts")
+                    .role(Role::Status)
+                    .aria_label(SharedString::from(format!(
+                        "{heading} {}",
+                        lines.join(". ")
+                    )))
+                    .flex_none()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .px(px(INSET))
+                    .py(px(4.))
+                    .bg(style::warn_fill())
+                    .border_b_1()
+                    .border_color(style::line_soft())
+                    .text_color(style::warn())
+                    .child(heading)
+                    .children(
+                        lines
+                            .into_iter()
+                            .map(|line| div().pl(px(12.)).child(clip(&line))),
+                    )
+                    .into_any_element(),
+            );
+        }
         if self.memory_only {
             out.push(
                 note(

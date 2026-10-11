@@ -20,7 +20,10 @@ use crate::{
 use dbunk_lib::backend::schema_edit::{
     ChangeGroup, SchemaEditRequest, SchemaEditSource, SchemaEditTarget, WorkspaceSchemaEdit,
 };
-use gpui::{Context, Entity, EventEmitter, FocusHandle, Focusable, Subscription, Task, Window};
+use gpui::{
+    AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, Subscription, Task,
+    Window,
+};
 use std::{cell::Cell, rc::Rc, sync::Arc};
 
 mod render;
@@ -402,32 +405,31 @@ impl SchemaEditView {
         }
         let editable = baseline.editable.is_editable();
         let mut note = None;
-        match &mut self.model {
-            Some(model) => {
-                let had_changes = model.has_changes();
-                if !model.rebase(baseline) && had_changes {
-                    note = Some(
-                        "The table changed on the server; the draft restarted from the new structure",
-                    );
+        if let Some(model) = self.model.as_mut() {
+            let had_changes = model.has_changes();
+            if !model.rebase(baseline) && had_changes {
+                note = Some(if model.conflicts().is_empty() {
+                    "The table changed on the server; the draft was re-based onto the new structure"
+                } else {
+                    "The table changed on the server; the draft was re-based. Check the conflicts"
+                });
+            }
+        } else {
+            let request = self.request.clone();
+            let model = match self.recovery.restorable(&self.request, baseline.engine) {
+                Some((old, draft)) if old.table == baseline.table => {
+                    note = Some("Restored the saved draft");
+                    SchemaEditModel::restore(request, baseline, draft.clone())
                 }
-            }
-            None => {
-                let model = match self.recovery.restorable(&self.request, &baseline) {
-                    Some(draft) => {
-                        note = Some("Restored the saved draft");
-                        SchemaEditModel::restore(self.request.clone(), baseline, draft)
-                    }
-                    None => {
-                        if self.recovery.record().is_some() && !self.recovery.unknown() {
-                            note = Some(
-                                "The table changed since the draft was saved; the draft was not restored",
-                            );
-                        }
-                        SchemaEditModel::new(self.request.clone(), baseline)
-                    }
-                };
-                self.model = Some(model);
-            }
+                Some((old, draft)) => {
+                    note = Some(
+                        "The table changed since the draft was saved; the draft was re-based onto it",
+                    );
+                    SchemaEditModel::rebased(request, old, baseline, draft)
+                }
+                None => SchemaEditModel::new(request, baseline),
+            };
+            self.model = Some(model);
         }
         self.target = editable.then_some(target);
         if !self
@@ -697,7 +699,10 @@ impl SchemaEditView {
         if !self.can_edit() {
             return;
         }
-        if let (Target::Column(origin), Some(model)) = (target, &mut self.model)
+        let Target::Column(origin) = target else {
+            return;
+        };
+        if let Some(model) = &mut self.model
             && model.move_column(origin, up)
         {
             self.edited(cx);
