@@ -24,7 +24,7 @@ Retire the Tauri/React app now instead of after full parity:
 - Engine code for MySQL, SQLite, ClickHouse and Redis stays in the backend for
   the native app to adopt; until then those engines are unavailable to users.
 - A new compact design replaces the previous native layout (see
-  `plans/mocks/native-redesign/`).
+  [`plans/mocks/native-redesign/`](https://github.com/imran-vz/dbunk/tree/40f5b86ad687c078e0832e5228411601216f81b8/plans/mocks/native-redesign)).
 
 ## Consequences
 

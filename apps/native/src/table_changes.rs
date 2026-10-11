@@ -166,6 +166,12 @@ enum Token {
     #[cfg(test)]
     Test,
 }
+// Zed's editor keymap binds ⌘↵ and Tab, and bindings dispatch before key
+// listeners, so the cell editors take these keys through their own actions.
+gpui::actions!(
+    table_changes,
+    [SaveCellPopover, CellEditorNext, CellEditorPrevious]
+);
 mod array_view;
 mod batch_edit;
 mod cell_editor;

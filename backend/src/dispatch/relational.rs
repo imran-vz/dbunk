@@ -48,7 +48,7 @@ pub(crate) fn engine_name(engine: &DatabaseEngine) -> &'static str {
 fn not_implemented_yet(engine: &DatabaseEngine, operation: &str) -> String {
     format!(
         "{operation} is not yet implemented for {} (PostgreSQL only). \
-         Per-engine coverage is tracked in designs/.",
+         Per-engine coverage is tracked in ROADMAP.md.",
         engine_name(engine)
     )
 }

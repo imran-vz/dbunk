@@ -332,8 +332,16 @@ impl TableChanges {
             .child(save);
 
         let panel = popover::panel("cell-popover-editor", Role::Dialog, format!("Edit {title}"))
+            .key_context("CellPopover")
             .w(px(480.))
             .gap(px(6.))
+            .on_action(cx.listener(|this, _: &SaveCellPopover, window, cx| {
+                if this.composition_active(window, cx) {
+                    cx.propagate();
+                } else {
+                    this.activate(Action::Stage, window, cx);
+                }
+            }))
             // Modal-like: outside clicks never discard or stage the draft.
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 let keystroke = &event.keystroke;

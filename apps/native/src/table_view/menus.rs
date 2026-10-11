@@ -355,6 +355,25 @@ pub(super) fn point_anchor(position: gpui::Point<Pixels>) -> Bounds<Pixels> {
 }
 
 impl TableView {
+    /// Moves focus into a just-opened header or cell menu so arrows, Home/End
+    /// and Enter reach it instead of the grid underneath.
+    pub(super) fn focus_open_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(
+            self.popover,
+            Some(Popover::Header { .. } | Popover::Cell { .. })
+        ) {
+            window.focus(&self.menu_focus, cx);
+        }
+    }
+
+    /// After a menu closes, hands focus back to the grid unless the chosen
+    /// action already moved it (an editor, a dialog).
+    pub(super) fn release_menu_focus(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.popover.is_none() && self.menu_focus.is_focused(window) {
+            window.focus(&self.grid.focus_handle(cx), cx);
+        }
+    }
+
     pub(super) fn close_popover(&mut self, cx: &mut Context<Self>) {
         if self.popover.take().is_some() {
             cx.notify();
@@ -998,9 +1017,11 @@ impl TableView {
         anchor: Bounds<Pixels>,
         cx: &mut Context<Self>,
     ) -> impl Fn(&MouseDownEvent, &mut Window, &mut gpui::App) + 'static {
-        cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
             if !anchor.contains(&event.position) {
                 this.close_popover(cx);
+                // The press may land on something that takes no focus.
+                this.release_menu_focus(window, cx);
             }
         })
     }
@@ -1020,6 +1041,7 @@ impl TableView {
             .map(Popover::anchor)
             .unwrap_or_default();
         let mut panel = popover::panel(id, Role::Menu, label)
+            .track_focus(&self.menu_focus)
             .min_w(px(170.))
             .max_h(px(420.))
             .overflow_y_scroll()
@@ -1051,6 +1073,7 @@ impl TableView {
                     if enabled {
                         this.close_popover(cx);
                         click(this, item, window, cx);
+                        this.release_menu_focus(window, cx);
                         this.sync_grid(cx);
                         cx.notify();
                     }
@@ -1062,6 +1085,7 @@ impl TableView {
                             let _ = weak.update(cx, |this, cx| {
                                 this.close_popover(cx);
                                 a11y(this, item, window, cx);
+                                this.release_menu_focus(window, cx);
                                 this.sync_grid(cx);
                                 cx.notify();
                             });

@@ -79,5 +79,6 @@ when a real Redis (or similar) integration is in scope, not before.
 - Adding a non-SQL engine (Redis, document stores, etc.) requires a
   follow-up ADR **before** implementation begins, because it changes the
   shape of the `Connection` model itself rather than slotting under it.
-- Coverage stays tracked per-feature in `designs/FOLLOWUPS.md` and, for
-  larger arcs, in `designs/CLICKHOUSE_PLAN.md`-shaped phased docs.
+- Coverage stays tracked per-feature in `ROADMAP.md` and, for larger arcs,
+  in phased plan docs. (Originally `designs/FOLLOWUPS.md` and
+  `designs/CLICKHOUSE_PLAN.md`; retired, see git history at `40f5b86`.)

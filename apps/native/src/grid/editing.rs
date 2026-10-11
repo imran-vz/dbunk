@@ -96,7 +96,7 @@ pub(super) fn staged_text(value: &OverlayValue) -> (String, StagedKind) {
             if value.truncated || shown.len() < text.len() {
                 shown.push('…');
             }
-            (shown, StagedKind::Text)
+            (crate::results::one_line(&shown), StagedKind::Text)
         }
     }
 }
@@ -583,6 +583,11 @@ mod tests {
         );
         assert_eq!(staged_text(&value(Some("NULL"), false)).1, StagedKind::Text);
         assert_eq!(staged_text(&value(Some("ab"), true)).0, "ab…");
+        // A staged multiline value (formatted JSON) stays on one row.
+        assert_eq!(
+            staged_text(&value(Some("{\n  \"a\": 1\n}"), false)).0,
+            "{↵  \"a\": 1↵}"
+        );
         let long = "é".repeat(STAGED_DISPLAY_CHARS + 3);
         let (shown, _) = staged_text(&value(Some(&long), false));
         assert_eq!(shown.chars().count(), STAGED_DISPLAY_CHARS + 1);

@@ -37,7 +37,7 @@ just fmt-native && just lint-native && just test-native  # native app
 - `backend/` – the Rust backend library: engines, storage, credentials, query sessions and services.
 - `tools/native/` – packaging, fixtures and verification helpers.
 - `infrastructure/test-db/` – disposable database containers for tests.
-- `docs/`, `plans/` – architecture decisions, plans and evidence.
+- `docs/` – architecture decisions and design notes.
 
 ## Contributing
 

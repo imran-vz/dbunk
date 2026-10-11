@@ -289,7 +289,7 @@ ADR-0009 for the writes-by-default posture.
 - **Shell regions** — **Activity rail**, **Navigator**, **Object tab
   strip**, **Results pane** (with its **status strip**), **Dock**,
   **Status bar**, **Sash**, and **Panel** are the redesigned shell's
-  regions, defined canonically in `designs/DESIGN-SYSTEM.md` §3. Use
+  regions, defined canonically in [`designs/DESIGN-SYSTEM.md` §3](https://github.com/imran-vz/dbunk/blob/40f5b86ad687c078e0832e5228411601216f81b8/designs/DESIGN-SYSTEM.md). Use
   those names verbatim; the definitions live there, not here.
 - **Workspace Shell** — the contents of the main area when a connection is
   active. Forks on the active connection's storage class (ADR-0008): the

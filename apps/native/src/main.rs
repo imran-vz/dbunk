@@ -2,6 +2,7 @@
 mod accessible_editor;
 mod admin_model;
 mod admin_view;
+mod app_assets;
 mod apply_flow;
 mod bounded_field;
 mod browse_controls;
@@ -174,6 +175,22 @@ fn init_editor(cx: &mut App) -> anyhow::Result<()> {
         KeyBinding::new("cmd-enter", RunStatement, Some("Editor")),
         KeyBinding::new("cmd-shift-enter", RunScript, Some("Editor")),
         KeyBinding::new("cmd-.", StopQuery, Some("Editor")),
+        // After the generic Editor overrides so these win inside table cells.
+        KeyBinding::new(
+            "cmd-enter",
+            table_changes::SaveCellPopover,
+            Some("CellPopover > Editor"),
+        ),
+        KeyBinding::new(
+            "tab",
+            table_changes::CellEditorNext,
+            Some("CellEditor > Editor"),
+        ),
+        KeyBinding::new(
+            "shift-tab",
+            table_changes::CellEditorPrevious,
+            Some("CellEditor > Editor"),
+        ),
         KeyBinding::new("cmd-enter", RunStatement, Some("Workbench")),
         KeyBinding::new("cmd-shift-enter", RunScript, Some("Workbench")),
         KeyBinding::new("cmd-shift-f", FormatSql, Some("Workbench && Editor")),
@@ -532,7 +549,7 @@ fn run() -> anyhow::Result<()> {
     let application_host = host.clone();
     let quit_host = host.clone();
     gpui_platform::application()
-        .with_assets(assets::Assets)
+        .with_assets(app_assets::AppAssets)
         .run(move |cx: &mut App| {
             init_editor(cx).expect("native editor initialization");
             reduce_motion::install(cx);
@@ -648,10 +665,11 @@ fn run() -> anyhow::Result<()> {
             // makes this immediate.
             cx.on_app_quit(move |_| {
                 let host = quit_host.clone();
-                match host
-                    .runtime
-                    .block_on(tokio::time::timeout(QUIT_HOST_SHUTDOWN, host.shutdown()))
-                {
+                // Build the timeout inside the runtime: its timer needs a
+                // current reactor, which the main thread does not have.
+                match host.runtime.block_on(async {
+                    tokio::time::timeout(QUIT_HOST_SHUTDOWN, host.shutdown()).await
+                }) {
                     Ok(Ok(())) => {}
                     Ok(Err(error)) => log::error!("Native host shutdown on quit: {error}"),
                     Err(_) => log::error!("Native host shutdown on quit timed out"),

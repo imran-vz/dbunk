@@ -210,6 +210,9 @@ pub struct TableView {
     _grid_events: Subscription,
     /// The one open header menu, cell menu or toolbar popover.
     popover: Option<Popover>,
+    /// Focus for an open header or cell menu. The grid's arrow bindings fire
+    /// before this view's key listener, so the menu takes focus while open.
+    menu_focus: FocusHandle,
     anchors: Anchors,
     /// Grid patches (width, auto-fit, pin, hide, move) made while the tab was
     /// busy, saved in order once it is idle (§3.5).
@@ -333,13 +336,17 @@ impl TableView {
                     }
                 }
                 GridEvent::HeaderMenu { source, anchor } => {
-                    this.open_header_menu(*source, *anchor, cx)
+                    this.open_header_menu(*source, *anchor, cx);
+                    this.focus_open_menu(window, cx);
                 }
                 GridEvent::ContextMenu {
                     cell,
                     source,
                     position,
-                } => this.open_cell_menu(*cell, *source, *position, cx),
+                } => {
+                    this.open_cell_menu(*cell, *source, *position, cx);
+                    this.focus_open_menu(window, cx);
+                }
                 GridEvent::Sort { .. } if this.changes.read(cx).navigation_blocked() => {
                     this.status = "Finish or resolve the pending apply before sorting".into();
                 }
@@ -441,6 +448,7 @@ impl TableView {
             previous_focus: None,
             _grid_events: events,
             popover: None,
+            menu_focus: cx.focus_handle(),
             anchors: Anchors::new(),
             pending_grid: VecDeque::new(),
         }
@@ -2071,6 +2079,8 @@ impl Render for TableView {
                         _ => this.menu_key(key, window, cx),
                     };
                     if handled {
+                        // A closed menu leaves its focus handle unrendered.
+                        this.release_menu_focus(window, cx);
                         this.sync_grid(cx);
                         cx.stop_propagation();
                         return;

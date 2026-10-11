@@ -1,12 +1,12 @@
 # dbunk design
 
 The single design reference for the native app (`apps/native`). It starts from
-the [native redesign mock](plans/mocks/native-redesign/index.html) (Plan 031)
+the [native redesign mock](https://github.com/imran-vz/dbunk/blob/40f5b86ad687c078e0832e5228411601216f81b8/plans/mocks/native-redesign/index.html) (Plan 031)
 and covers every surface: the workspace shell, documents, tools, and full-window
 pages such as credential setup, the connection form and managed servers.
 
-Older documents in `designs/` describe the removed Tauri/React UI and are kept
-for history only.
+The older Tauri/React design documents were removed; they remain in git
+history at `40f5b86` under `designs/`.
 
 Code is the source of truth for values: tokens live in
 [`apps/native/src/style.rs`](apps/native/src/style.rs) and shared components in

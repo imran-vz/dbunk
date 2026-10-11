@@ -96,11 +96,29 @@ impl Focusable for CellEditor {
         self.editor.focus_handle(cx)
     }
 }
+impl CellEditor {
+    /// Tab and Shift-Tab arrive as actions (see `CellEditorNext`); IME
+    /// composition keeps them until it commits.
+    fn tab_commit(&mut self, advance: Advance, window: &mut Window, cx: &mut Context<Self>) {
+        if self.composing(window, cx) {
+            cx.propagate();
+        } else {
+            cx.emit(CellEditorEvent::Commit(advance));
+        }
+    }
+}
+
 impl Render for CellEditor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("cell-editor")
             .key_context("CellEditor")
+            .on_action(cx.listener(|this, _: &CellEditorNext, window, cx| {
+                this.tab_commit(Advance::Right, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &CellEditorPrevious, window, cx| {
+                this.tab_commit(Advance::Left, window, cx)
+            }))
             .size_full()
             .flex()
             .items_center()

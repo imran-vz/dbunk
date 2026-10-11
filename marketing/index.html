@@ -663,6 +663,11 @@
         font: 500 9px/1 var(--mono);
         color: #0c0d0f;
       }
+      .engine-logo {
+        width: 18px;
+        height: 18px;
+        object-fit: contain;
+      }
       .engine .note {
         font: 400 10px/1 var(--mono);
         color: var(--muted);
@@ -1174,13 +1179,13 @@
             </div>
             <div class="engines">
               <article class="engine flag">
-                <div class="top"><span class="badge" style="background: #6c9bd2">PG</span><span class="note">flagship</span></div>
+                <div class="top"><img class="engine-logo" src="images/logos/postgres.svg" alt="" width="18" height="18" /><span class="note">flagship</span></div>
                 <h3>PostgreSQL</h3>
                 <p>Everything on this page.</p>
                 <ul><li>Staged edits and review</li><li>DDL, grants, RLS</li><li>Backups, CSV, compare</li></ul>
               </article>
               <article class="engine">
-                <div class="top"><span class="badge" style="background: #e6a23c">MY</span></div>
+                <div class="top"><a href="https://www.mysql.com" aria-label="MySQL website"><img class="engine-logo" src="images/logos/mysql.svg" alt="" width="18" height="18" /></a></div>
                 <h3>MySQL</h3>
                 <p>Databases, tables, views, routines, events and triggers.</p>
                 <ul><li>Query, data, structure</li><li>KILL QUERY on stop</li></ul>
@@ -1192,13 +1197,13 @@
                 <ul><li>Query, data, structure</li><li>Read-only opens read-only</li></ul>
               </article>
               <article class="engine">
-                <div class="top"><span class="badge" style="background: #f4d03f">CH</span></div>
+                <div class="top"><img class="engine-logo" src="images/logos/clickhouse.svg" alt="" width="18" height="18" /></div>
                 <h3>ClickHouse</h3>
                 <p>Tables, views, materialized views and dictionaries.</p>
                 <ul><li>Bounded, streamed reads</li><li>Query, data, structure</li></ul>
               </article>
               <article class="engine">
-                <div class="top"><span class="badge" style="background: #e5534b">RD</span></div>
+                <div class="top"><img class="engine-logo" src="images/logos/redis.svg" alt="" width="18" height="18" /></div>
                 <h3>Redis</h3>
                 <p>A console with a sampled keyspace, grouped by type.</p>
                 <ul><li>Guards on destructive commands</li><li>Key inspector tabs</li></ul>
@@ -1271,6 +1276,7 @@
             <div class="about">
               <a class="logo" href="#top"><img src="images/favicon.webp" alt="" width="24" height="24" />dbunk</a>
               <p class="fine">A native database client for macOS. The app is GPL-3.0-or-later; the backend library is MIT.</p>
+              <p class="fine">PostgreSQL®, MySQL®, ClickHouse® and Redis® are registered trademarks of their respective owners: Postgres, PostgreSQL and the Slonik Logo are trademarks or registered trademarks of the PostgreSQL Community Association of Canada; MySQL is a registered trademark of Oracle and/or its affiliates; ClickHouse is a registered trademark of ClickHouse, Inc. (<a href="https://clickhouse.com">clickhouse.com</a>); Redis is a registered trademark of Redis Ltd. Any rights therein are reserved to Redis Ltd. dbunk is an independent project and is not affiliated with, endorsed, supported or certified by any of them.</p>
             </div>
             <div>
               <h4>Product</h4>

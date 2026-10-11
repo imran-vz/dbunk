@@ -2328,10 +2328,11 @@ impl Workspace {
             self.submit(cx);
         }
         self.closing = true;
-        let flushed = self.host.runtime.block_on(tokio::time::timeout(
-            Duration::from_secs(3),
-            writer.shutdown(),
-        ));
+        // The timeout must be built inside `block_on`: its timer registers with
+        // the current runtime, and the GPUI main thread has none.
+        let flushed = self.host.runtime.block_on(async {
+            tokio::time::timeout(Duration::from_secs(3), writer.shutdown()).await
+        });
         match flushed {
             Ok(Ok(())) => self.drafts_durable = true,
             Ok(Err(error)) => log::error!("Draft flush on quit failed: {error}"),

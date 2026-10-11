@@ -24,7 +24,7 @@ import workspace_launch
 ROOT = fixture.ROOT
 PROBE = ROOT / "tools/native/.state/workspace-performance"
 MEASURE = ROOT / "tools/measure/.build/release/measure"
-BASELINE = ROOT / "plans/evidence/026/final-verification/performance-summary.json"
+BASELINE = ROOT / "tools/native/baselines/workspace-performance.json"
 
 
 def write_json(path, value):

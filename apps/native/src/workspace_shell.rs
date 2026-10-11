@@ -8,7 +8,7 @@ use dbunk_lib::backend::DevelopmentEnvironment;
 use editor::Editor;
 use gpui::{
     AnimationExt, AnyElement, KeyDownEvent, MouseButton, Pixels, Point, SpringAnimation,
-    SpringConfig, WindowControlArea, anchored, svg,
+    SpringConfig, WindowControlArea, anchored, img, svg,
 };
 
 /// Width of the tab bar's left inset when the sidebar is hidden: room for
@@ -236,6 +236,16 @@ fn timestamp_secs(stored: &str) -> Option<i64> {
     let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
     let days = era * 146_097 + day_of_era - 719_468;
     Some(days * 86_400 + hour * 3600 + minute * 60 + second - offset)
+}
+
+/// Sidebar row detail: the database name, or only the file name for a
+/// file-backed connection, whose full path would crowd out the row's name.
+fn row_detail(database: &str) -> &str {
+    database
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(database)
 }
 
 /// Sidebar tooltip for a connection's last activity, relative to `now`
@@ -979,7 +989,7 @@ impl Workspace {
                 let (badge, badge_color) = style::engine_badge(&connection.engine);
                 let database = connection
                     .endpoint()
-                    .map(|endpoint| endpoint.database)
+                    .map(|endpoint| row_detail(&endpoint.database).to_owned())
                     .unwrap_or_default();
                 let activity = connection
                     .last_activity_at
@@ -1039,8 +1049,9 @@ impl Workspace {
                             )
                         },
                     )
-                    .child(
-                        div()
+                    .child(match style::engine_logo(&connection.engine) {
+                        Some(logo) => img(logo).size(px(14.)).flex_none().into_any_element(),
+                        None => div()
                             .size(px(14.))
                             .flex_none()
                             .rounded(px(3.))
@@ -1052,8 +1063,9 @@ impl Workspace {
                             .font_weight(gpui::FontWeight::BOLD)
                             .text_color(style::bg())
                             .bg(style::with_alpha(badge_color, 0xff))
-                            .child(badge),
-                    )
+                            .child(badge)
+                            .into_any_element(),
+                    })
                     .child(
                         div()
                             .flex_1()
@@ -1072,6 +1084,12 @@ impl Workspace {
                     )
                     .child(
                         div()
+                            // Bounded so a long detail never hides the name
+                            // or pushes the row's buttons out of the sidebar.
+                            .flex_shrink(1.)
+                            .min_w_0()
+                            .max_w(px(96.))
+                            .truncate()
                             .text_size(px(style::FONT_SMALL))
                             .text_color(match phase {
                                 ConnectionPhase::Failed(_) => style::bad(),
@@ -1922,6 +1940,18 @@ impl Workspace {
 mod tests {
     use super::*;
     use dbunk_lib::backend::DevelopmentConnectionOrganization;
+
+    #[test]
+    fn row_detail_shows_the_file_name_for_file_backed_connections() {
+        assert_eq!(
+            row_detail("/private/tmp/scratch/demo.sqlite"),
+            "demo.sqlite"
+        );
+        assert_eq!(row_detail("C:\\data\\app.db"), "app.db");
+        assert_eq!(row_detail("dbunk_demo"), "dbunk_demo");
+        assert_eq!(row_detail("0"), "0");
+        assert_eq!(row_detail(""), "");
+    }
 
     fn connection(
         name: &str,

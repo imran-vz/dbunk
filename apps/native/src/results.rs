@@ -295,9 +295,18 @@ pub fn cell_text(value: &Option<String>) -> &str {
 pub fn display_text(value: &Option<String>) -> String {
     let text = cell_text(value);
     match text.char_indices().nth(DISPLAY_CHARS) {
-        Some((end, _)) => format!("{}…", &text[..end]),
-        None => text.to_owned(),
+        Some((end, _)) => format!("{}…", one_line(&text[..end])),
+        None => one_line(text),
     }
+}
+
+/// Grid rows are one line tall and text layout honours explicit breaks, so
+/// on screen each line break shows as `↵`. AX and copy keep the exact value.
+pub fn one_line(text: &str) -> String {
+    if !text.contains(['\n', '\r']) {
+        return text.to_owned();
+    }
+    text.replace("\r\n", "↵").replace(['\n', '\r'], "↵")
 }
 
 #[cfg(test)]
@@ -465,6 +474,13 @@ mod tests {
         assert_eq!(completion.error.unwrap().position, Some(9));
         assert_eq!(completion.truncation_reasons, ["cellBytes"]);
         assert_eq!(completion.omitted_result_sets, 2);
+    }
+
+    #[test]
+    fn display_text_keeps_multiline_values_on_one_line() {
+        let value = Some("line one\nline two\r\nthree\rfour".to_owned());
+        assert_eq!(display_text(&value), "line one↵line two↵three↵four");
+        assert_eq!(cell_text(&value), "line one\nline two\r\nthree\rfour");
     }
 
     #[test]

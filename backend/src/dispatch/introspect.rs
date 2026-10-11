@@ -11,7 +11,7 @@
 //! the same as being able to edit its rows, and the per-engine catch-up
 //! for cell edits / inserts / deletes hasn't happened yet (ADR-0001).
 
-use sqlx::{Any, AnyConnection};
+use sqlx::{any::AnyRow, Any, AnyConnection, Row};
 
 use crate::{
     ColumnInfo, ConstraintInfo, DatabaseEngine, ForeignKeyInfo, IndexInfo, StoredConnection,
@@ -46,7 +46,27 @@ async fn fetch(
         .fetch_all(conn)
         .await
         .map_err(|error| error.to_string())?;
-    Ok(rows.iter().map(row_to_strings).collect())
+    Ok(rows.iter().map(catalog_row_to_strings).collect())
+}
+
+/// Catalog values are always text. MySQL 8.4 sends `TEXT` metadata such as
+/// `column_type` and `column_default` (even after `CAST(.. AS CHAR)`) as a
+/// BLOB, which the generic result decoder renders as hex, so bytes are read
+/// back as UTF-8 here. Numbers and NULL keep the generic rendering.
+fn catalog_row_to_strings(row: &AnyRow) -> Vec<String> {
+    let generic = row_to_strings(row);
+    generic
+        .into_iter()
+        .enumerate()
+        .map(
+            |(index, value)| match row.try_get::<Option<Vec<u8>>, _>(index) {
+                Ok(Some(bytes)) if row.try_get::<Option<String>, _>(index).is_err() => {
+                    String::from_utf8_lossy(&bytes).into_owned()
+                }
+                _ => value,
+            },
+        )
+        .collect()
 }
 
 pub(super) async fn fetch_table_structure(

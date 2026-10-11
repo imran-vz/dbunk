@@ -124,7 +124,7 @@ Have: CSV / XLSX import wizard with column mapping.
 ## Queued work
 
 Feature-scope items not covered by the gap sections above (absorbed from the
-retired `docs/PENDING_TASKS.md`; deep detail lives in `designs/FOLLOWUPS.md`
+retired `docs/PENDING_TASKS.md`; deep detail lived in [`designs/FOLLOWUPS.md`](https://github.com/imran-vz/dbunk/blob/40f5b86ad687c078e0832e5228411601216f81b8/designs/FOLLOWUPS.md)
 and the ADRs cited). Treat each bullet as the seed for its own design pass.
 
 ### Postgres / relational
@@ -166,6 +166,30 @@ and the ADRs cited). Treat each bullet as the seed for its own design pass.
   auto-reconnect) and parts of `keyvalue-workspace.ts` (watched keys,
   per-session DB switcher) are documented placeholders awaiting their
   features.
+
+### Native window acceptance follow-ups
+
+Found during the Plan 031 Step 5 / Plan 032 window run on 2026-10-11 and left
+open; the blocking defects from that run were fixed with it.
+
+- **Keyboard: forms** — Tab moves focus to controls below the fold without
+  scrolling them into view (connection form, Test/Save). Enter in a field does
+  not submit single-purpose forms (Open table, Unlock credentials). Setup gate
+  Tab order visits the password fields before the storage options above them.
+- **Table grid polish (Plan 032)** — hiding a column in the Columns popover
+  moves it to the bottom of the list, so the item under the pointer changes.
+  The outcome-unknown strip says "refresh, then Mark resolved" but Mark
+  resolved is enabled before a refresh (safe: it forces new analysis and
+  review, and the UPDATE is guarded). The inline cell editor shows IME
+  composition without the marked-text underline.
+- **Engine surfaces (Plan 031)** — MySQL: the default database is not expanded
+  on connect; the tree has no Shift-Enter for structure; Stop on `SLEEP()`
+  kills the query server-side but the result shows as an ordinary success.
+  ClickHouse: header-click sort shows no sort indicator, and numbers are left
+  aligned unlike the PostgreSQL grid. Sidebar: the empty project picker label
+  is clipped.
+- **Not exercised in that run** — VoiceOver (deferred), Reduce motion, SSH
+  tunnels, ClickHouse/MySQL TLS, real ClickHouse cancel (`KILL QUERY`).
 
 ## Phased implementation
 

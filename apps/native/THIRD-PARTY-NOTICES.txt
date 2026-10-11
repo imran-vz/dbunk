@@ -1,3 +1,15 @@
+Native additions: database engine logos
+
+The PostgreSQL, MySQL, ClickHouse and Redis logos in the repository's logos/
+directory are embedded to identify connection engines. They are not covered by
+this project's licenses. Postgres, PostgreSQL and the Slonik Logo are
+trademarks or registered trademarks of the PostgreSQL Community Association of
+Canada. MySQL is a registered trademark of Oracle and/or its affiliates.
+ClickHouse is a registered trademark of ClickHouse, Inc. (https://clickhouse.com).
+Redis is a registered trademark of Redis Ltd. Any rights therein are reserved
+to Redis Ltd. dbunk is an independent project and is not affiliated with,
+endorsed, supported or certified by any of them.
+
 Native additions: SQL keyword vocabulary
 
 The keyword vocabulary in src/sql_format/keyword_vocabulary.rs is derived from

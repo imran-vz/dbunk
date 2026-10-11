@@ -29,9 +29,8 @@ This repo uses a single-context domain docs layout. See `docs/agents/domain.md`.
 
 ### Status and plans
 
-- Plan status: `plans/README.md`, the single source of truth for plan state.
-- Parity gap inventory: `plans/parity-gap-register.md`.
-- Feature roadmap and queued work: `ROADMAP.md`.
+- Feature roadmap, gaps and queued work: `ROADMAP.md`.
+- Retired plans, evidence and the parity gap register are in git history (last tree: `40f5b86`).
 
 ### Core priorities
 

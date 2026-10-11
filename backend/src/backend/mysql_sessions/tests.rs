@@ -715,6 +715,20 @@ async fn live_session_tree_documents_cancel_and_failures() {
         .unwrap();
     assert_eq!(structure.primary_key, ["id"]);
     assert_eq!(structure.columns.len(), 6);
+    // MySQL 8.4 sends TEXT catalog values as BLOBs; they must read as text,
+    // not hex.
+    let total = structure
+        .columns
+        .iter()
+        .find(|column| column.name == "total")
+        .unwrap();
+    assert_eq!(total.data_type, "decimal(10,2)");
+    let note = structure
+        .columns
+        .iter()
+        .find(|column| column.name == "note")
+        .unwrap();
+    assert_eq!(note.data_type, "varchar(20)");
     let view = session
         .definition(
             "dbunk_live".into(),
