@@ -410,7 +410,10 @@ mod tests {
 
     #[test]
     fn expressions_compare_modulo_quoting_case_and_spacing() {
-        assert!(same_expression("length(email)>3", "length( \"EMAIL\" ) > 3"));
+        assert!(same_expression(
+            "length(email)>3",
+            "length( \"EMAIL\" ) > 3"
+        ));
         assert!(!same_expression("x = 'A'", "x = 'a'"));
         assert!(!same_expression("x > 1", "x >= 1"));
     }

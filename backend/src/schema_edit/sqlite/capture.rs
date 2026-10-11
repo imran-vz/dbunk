@@ -14,8 +14,8 @@ use super::{
 use crate::schema_edit::{
     CheckModel, ColumnExtra, ColumnModel, DefaultValue, Dependent, DriftToken, Editability,
     ForeignKeyModel, Identity, InboundReference, IndexMember, IndexModel, IndexTarget, KeyModel,
-    Origin, ReferentialAction, SchemaBaseline, SchemaEngine, ServerFacts, ServerFlavor,
-    TableModel, TableOptions, MAX_SCHEMA_EDIT_COLUMNS, MAX_SCHEMA_EDIT_OBJECTS,
+    Origin, ReferentialAction, SchemaBaseline, SchemaEngine, ServerFacts, ServerFlavor, TableModel,
+    TableOptions, MAX_SCHEMA_EDIT_COLUMNS, MAX_SCHEMA_EDIT_OBJECTS,
 };
 use sqlx::{Row, SqliteConnection};
 use std::collections::BTreeSet;
@@ -95,11 +95,10 @@ pub(super) async fn drift_token(
     connection: &mut SqliteConnection,
     schema: &str,
 ) -> Result<DriftToken, sqlx::Error> {
-    let version =
-        sqlx::query_scalar::<_, i64>(&format!("PRAGMA {}.schema_version", quote(schema)))
-            .persistent(false)
-            .fetch_one(&mut *connection)
-            .await?;
+    let version = sqlx::query_scalar::<_, i64>(&format!("PRAGMA {}.schema_version", quote(schema)))
+        .persistent(false)
+        .fetch_one(&mut *connection)
+        .await?;
     Ok(DriftToken(format!("schema_version:{version}")))
 }
 
@@ -507,7 +506,10 @@ async fn read_inbound(
             )),
         }
     }
-    Ok(inbound.into_iter().map(|(_, _, reference)| reference).collect())
+    Ok(inbound
+        .into_iter()
+        .map(|(_, _, reference)| reference)
+        .collect())
 }
 
 async fn count_rows(
@@ -646,14 +648,18 @@ fn build_model(
             Some(_) => 2,
         };
         if row.hidden != expected_hidden {
-            return Err(mismatch(format!("the generated expression of {label} differs")));
+            return Err(mismatch(format!(
+                "the generated expression of {label} differs"
+            )));
         }
         let expected_pk = primary
             .as_ref()
             .and_then(|(_, members)| members.iter().position(|member| *member == index))
             .map_or(0, |position| position as i64 + 1);
         if row.pk != expected_pk {
-            return Err(mismatch(format!("primary key membership of {label} differs")));
+            return Err(mismatch(format!(
+                "primary key membership of {label} differs"
+            )));
         }
     }
     let origin_of = |index: usize| column_origin(catalog.columns[index].cid);
@@ -705,13 +711,7 @@ fn build_model(
         let names: Vec<String> = index
             .columns
             .iter()
-            .map(|column| {
-                column
-                    .name
-                    .as_deref()
-                    .unwrap_or("")
-                    .to_ascii_lowercase()
-            })
+            .map(|column| column.name.as_deref().unwrap_or("").to_ascii_lowercase())
             .collect();
         if index.origin == "pk" {
             let declared: Option<Vec<String>> = primary
@@ -984,7 +984,9 @@ fn index_model(
                     .iter()
                     .position(|column| column.name.eq_ignore_ascii_case(name))
                 else {
-                    return Err(mismatch(format!("index {label} names unknown column {name}")));
+                    return Err(mismatch(format!(
+                        "index {label} names unknown column {name}"
+                    )));
                 };
                 if catalog.columns[position].cid != row.cid {
                     return Err(mismatch(format!("index {label} differs")));
@@ -1044,8 +1046,11 @@ fn catalog_model(
         .iter()
         .filter(|row| row.hidden != 1)
         .map(|row| {
-            let mut column =
-                ColumnModel::new(column_origin(row.cid), row.name.clone(), row.data_type.clone());
+            let mut column = ColumnModel::new(
+                column_origin(row.cid),
+                row.name.clone(),
+                row.data_type.clone(),
+            );
             column.nullable = !row.not_null;
             column.default = row
                 .default
@@ -1106,7 +1111,14 @@ fn catalog_model(
 mod tests {
     use super::*;
 
-    fn row(cid: i64, name: &str, data_type: &str, not_null: bool, default: Option<&str>, pk: i64) -> CatalogColumn {
+    fn row(
+        cid: i64,
+        name: &str,
+        data_type: &str,
+        not_null: bool,
+        default: Option<&str>,
+        pk: i64,
+    ) -> CatalogColumn {
         CatalogColumn {
             cid,
             name: name.into(),

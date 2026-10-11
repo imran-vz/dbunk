@@ -23,6 +23,7 @@ use crate::schema_edit::{
     Editability, SchemaBaseline, SchemaDraft, SchemaEditFailure, SchemaEditOutcome,
     SchemaEditPreview,
 };
+use futures_util::future::BoxFuture;
 use sqlx::{Row, SqliteConnection};
 use std::time::Instant;
 
@@ -65,8 +66,17 @@ fn database_message(error: &sqlx::Error) -> String {
     }
 }
 
-async fn run(connection: &mut SqliteConnection, sql: &str) -> Result<(), sqlx::Error> {
-    sqlx::raw_sql(sql).execute(&mut *connection).await.map(|_| ())
+/// Boxed: `raw_sql` futures are only `Send` for one concrete lifetime, which
+/// the session worker's spawned future cannot express otherwise.
+fn run<'a>(
+    connection: &'a mut SqliteConnection,
+    sql: &'a str,
+) -> BoxFuture<'a, Result<(), sqlx::Error>> {
+    Box::pin(async move {
+        sqlx::Executor::execute(&mut *connection, sql)
+            .await
+            .map(|_| ())
+    })
 }
 
 async fn pragma_flag(connection: &mut SqliteConnection, name: &str) -> Result<bool, sqlx::Error> {
@@ -352,12 +362,18 @@ async fn verify(
         quote(schema)
     ))
     .persistent(false)
-    .bind(format!("{}{}", super::planner::REBUILD_PREFIX, baseline.table.name))
+    .bind(format!(
+        "{}{}",
+        super::planner::REBUILD_PREFIX,
+        baseline.table.name
+    ))
     .fetch_one(&mut *connection)
     .await
     .map_err(read_failure)?;
     if leftover != 0 {
-        return Err(verification("the rebuild's temporary table is still present"));
+        return Err(verification(
+            "the rebuild's temporary table is still present",
+        ));
     }
     Ok(())
 }

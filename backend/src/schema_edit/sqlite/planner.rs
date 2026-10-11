@@ -8,9 +8,9 @@ use super::lexer::{
 };
 use super::{qualified, quote, quote_literal};
 use crate::schema_edit::{
-    normalize_type, plan_steps, ColumnExtra, ColumnModel, DefaultValue, Deferrable, Dependent, EngineNote,
-    EnginePlan, ForeignKeyModel, Identity, IndexModel, IndexTarget, KeyModel, NoteKind, Origin,
-    PlanError, PlanStep, PreviewGroup, PreviewStatement, ReferentialAction, SchemaBaseline,
+    normalize_type, plan_steps, ColumnExtra, ColumnModel, DefaultValue, Deferrable, Dependent,
+    EngineNote, EnginePlan, ForeignKeyModel, Identity, IndexModel, IndexTarget, KeyModel, NoteKind,
+    Origin, PlanError, PlanStep, PreviewGroup, PreviewStatement, ReferentialAction, SchemaBaseline,
     SchemaDraft, SchemaObject, SqlFragment, TableModel,
 };
 
@@ -35,7 +35,10 @@ fn statement(sql: String, summary: impl Into<String>, destructive: bool) -> Prev
     }
 }
 
-pub(super) fn plan(baseline: &SchemaBaseline, draft: &SchemaDraft) -> Result<EnginePlan, PlanError> {
+pub(super) fn plan(
+    baseline: &SchemaBaseline,
+    draft: &SchemaDraft,
+) -> Result<EnginePlan, PlanError> {
     refuse_unsupported(draft)?;
     let expected = expected_table(baseline, draft);
     let steps = plan_steps(baseline, draft);
@@ -70,7 +73,9 @@ fn refuse_unsupported(draft: &SchemaDraft) -> Result<(), PlanError> {
         .get(..7)
         .is_some_and(|prefix| prefix.eq_ignore_ascii_case("sqlite_"))
     {
-        return Err(unsupported("Table names starting with sqlite_ are reserved"));
+        return Err(unsupported(
+            "Table names starting with sqlite_ are reserved",
+        ));
     }
     let options = &table.options;
     if options.engine.is_some()
@@ -164,7 +169,10 @@ fn rename_references(text: &str, renames: &[(String, String)]) -> String {
             continue;
         }
         let name = dequote(token.text(text));
-        if let Some((_, new)) = renames.iter().find(|(old, _)| old.eq_ignore_ascii_case(&name)) {
+        if let Some((_, new)) = renames
+            .iter()
+            .find(|(old, _)| old.eq_ignore_ascii_case(&name))
+        {
             out.push_str(&text[copied..token.start]);
             out.push_str(&quote(new));
             copied = token.end;
@@ -245,7 +253,9 @@ pub(super) fn expected_table(baseline: &SchemaBaseline, draft: &SchemaDraft) -> 
         }
         if key.referenced_columns == before.referenced_columns {
             for column in &mut key.referenced_columns {
-                if let Some((_, new)) = renames.iter().find(|(old, _)| old.eq_ignore_ascii_case(column))
+                if let Some((_, new)) = renames
+                    .iter()
+                    .find(|(old, _)| old.eq_ignore_ascii_case(column))
                 {
                     *column = new.clone();
                 }
@@ -272,7 +282,9 @@ fn is_simple_term(text: &str) -> bool {
         (Some(first), Some(last)) => {
             bare(&text[..first.start])
                 && bare(&text[last.end..])
-                && tokens.windows(2).all(|pair| bare(&text[pair[0].end..pair[1].start]))
+                && tokens
+                    .windows(2)
+                    .all(|pair| bare(&text[pair[0].end..pair[1].start]))
         }
         _ => false,
     };
@@ -412,7 +424,11 @@ pub(super) fn create_table_sql(schema: &str, name: &str, table: &TableModel) -> 
             column_sql(column, key)
         })
         .collect();
-    if let Some(key) = table.primary_key.as_ref().filter(|key| key.columns.len() > 1) {
+    if let Some(key) = table
+        .primary_key
+        .as_ref()
+        .filter(|key| key.columns.len() > 1)
+    {
         items.push(format!(
             "{}PRIMARY KEY ({})",
             constraint_prefix(&key.name),
@@ -573,7 +589,11 @@ fn add_column_ok(column: &ColumnModel, table: &TableModel) -> bool {
 /// expression, index expression, trigger or view.
 fn drop_column_ok(baseline: &SchemaBaseline, table: &TableModel, column: &ColumnModel) -> bool {
     let old = &baseline.table;
-    if old.primary_key.iter().chain(old.uniques.iter()).any(|key| key.columns.contains(&column.origin))
+    if old
+        .primary_key
+        .iter()
+        .chain(old.uniques.iter())
+        .any(|key| key.columns.contains(&column.origin))
         || old
             .foreign_keys
             .iter()
@@ -595,16 +615,21 @@ fn drop_column_ok(baseline: &SchemaBaseline, table: &TableModel, column: &Column
                 .filter_map(|c| c.generated.as_ref())
                 .map(|g| g.expression.as_str()),
         )
-        .chain(old.indexes.iter().chain(table.indexes.iter()).flat_map(|index| {
-            index
-                .members
+        .chain(
+            old.indexes
                 .iter()
-                .filter_map(|member| match &member.target {
-                    IndexTarget::Expression(sql) => Some(sql.as_str()),
-                    IndexTarget::Column(_) => None,
-                })
-                .chain(index.predicate.iter().map(SqlFragment::as_str))
-        }))
+                .chain(table.indexes.iter())
+                .flat_map(|index| {
+                    index
+                        .members
+                        .iter()
+                        .filter_map(|member| match &member.target {
+                            IndexTarget::Expression(sql) => Some(sql.as_str()),
+                            IndexTarget::Column(_) => None,
+                        })
+                        .chain(index.predicate.iter().map(SqlFragment::as_str))
+                }),
+        )
         .collect::<Vec<_>>();
     if expressions.into_iter().any(mentions) {
         return false;
@@ -892,14 +917,16 @@ fn rebuild(baseline: &SchemaBaseline, table: &TableModel) -> Result<EnginePlan, 
         if column.generated.is_some() {
             continue;
         }
-        if let Some(before) = old.column(column.origin).filter(|_| !column.origin.is_new()) {
+        if let Some(before) = old
+            .column(column.origin)
+            .filter(|_| !column.origin.is_new())
+        {
             targets.push(quote(&column.name));
             sources.push(quote(&before.name));
         }
     }
     let rowid_name = ["rowid", "_rowid_", "oid"].into_iter().find(|keyword| {
-        !old
-            .columns
+        !old.columns
             .iter()
             .chain(table.columns.iter())
             .any(|column| column.name.eq_ignore_ascii_case(keyword))
@@ -952,8 +979,11 @@ fn rebuild(baseline: &SchemaBaseline, table: &TableModel) -> Result<EnginePlan, 
             true,
         ),
     ];
-    let autoincrement =
-        |t: &TableModel| t.columns.iter().any(|c| c.identity == Identity::AutoIncrement);
+    let autoincrement = |t: &TableModel| {
+        t.columns
+            .iter()
+            .any(|c| c.identity == Identity::AutoIncrement)
+    };
     if autoincrement(old) && autoincrement(table) {
         // Keep AUTOINCREMENT's high-water mark, so deleted ids are never
         // reused after the rebuild.

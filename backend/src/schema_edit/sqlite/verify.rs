@@ -116,7 +116,8 @@ pub(super) fn compare_tables(expected: &TableModel, actual: &TableModel) -> Resu
         let generated_match = match (&want.generated, &have.generated) {
             (None, None) => true,
             (Some(a), Some(b)) => {
-                a.stored == b.stored && same_expression(a.expression.as_str(), b.expression.as_str())
+                a.stored == b.stored
+                    && same_expression(a.expression.as_str(), b.expression.as_str())
             }
             _ => false,
         };
@@ -162,7 +163,12 @@ pub(super) fn compare_tables(expected: &TableModel, actual: &TableModel) -> Resu
         let mut out: Vec<(Option<String>, Vec<String>)> = table
             .checks
             .iter()
-            .map(|check| (check.name.clone(), expression_key(check.expression.as_str())))
+            .map(|check| {
+                (
+                    check.name.clone(),
+                    expression_key(check.expression.as_str()),
+                )
+            })
             .collect();
         out.sort();
         out

@@ -470,3 +470,29 @@ fn model_round_trips_through_serde() {
         baseline
     );
 }
+
+#[test]
+fn naming_an_unnamed_key_is_a_rename_and_clearing_a_name_is_refused() {
+    let (mut baseline, _) = draft(Sqlite);
+    baseline.table.primary_key.as_mut().unwrap().name = None;
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.primary_key.as_mut().unwrap().name = Some("users_pk".into());
+    let changes = diff(&baseline, &draft);
+    assert!(matches!(
+        changes.changes[0].kind,
+        ChangeKind::Renamed { .. }
+    ));
+    assert_eq!(
+        plan_steps(&baseline, &draft),
+        vec![PlanStep::RenameConstraint {
+            object: SchemaObject::PrimaryKey,
+            id: BaselineId(100)
+        }]
+    );
+
+    let (baseline, mut draft) = super::tests::draft(Postgres);
+    draft.table.checks[0].name = None;
+    assert!(validate(&baseline, &draft)
+        .iter()
+        .any(|issue| issue.message.contains("keep a name")));
+}
