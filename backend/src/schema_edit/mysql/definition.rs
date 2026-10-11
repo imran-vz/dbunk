@@ -134,6 +134,9 @@ struct Token {
     end: usize,
 }
 
+/// Name, local columns, referenced table, referenced columns.
+type ForeignShape = (Option<String>, Vec<String>, String, Vec<String>);
+
 /// Versioned comments (`/*!80023 INVISIBLE */`) are read as their content,
 /// as the server does; other comments are skipped.
 fn tokenize(text: &str) -> Result<Vec<Token>, String> {
@@ -172,7 +175,9 @@ fn tokenize(text: &str) -> Result<Vec<Token>, String> {
                 && bytes.get(i + 1) == Some(&b'-')
                 && bytes.get(i + 2).is_none_or(|c| c.is_ascii_whitespace()))
         {
-            i = text[i..].find('\n').map_or(bytes.len(), |offset| i + offset);
+            i = text[i..]
+                .find('\n')
+                .map_or(bytes.len(), |offset| i + offset);
             continue;
         }
         let start = i;
@@ -476,14 +481,14 @@ pub(super) fn parse(text: &str) -> Result<Definition, String> {
         at += 3;
     }
     let mut definition = Definition {
-        name: source
-            .name(at)
-            .ok_or("the definition has no table name")?,
+        name: source.name(at).ok_or("the definition has no table name")?,
         ..Definition::default()
     };
     at += 1;
     if source.is_punct(at, '.') {
-        definition.name = source.name(at + 1).ok_or("the definition has no table name")?;
+        definition.name = source
+            .name(at + 1)
+            .ok_or("the definition has no table name")?;
         at += 2;
     }
     if !source.is_punct(at, '(') {
@@ -632,8 +637,10 @@ fn column(source: &Source, from: usize, to: usize, out: &mut Definition) -> DefC
         index
     };
     let unsupported = |out: &mut Definition, what: String| {
-        out.unsupported
-            .push(format!("Column {} uses {what}, which is not supported", column_name(source, from)));
+        out.unsupported.push(format!(
+            "Column {} uses {what}, which is not supported",
+            column_name(source, from)
+        ));
     };
     while at < to {
         let word = source.word(at).unwrap_or_default();
@@ -824,13 +831,15 @@ fn key(
             Some("VISIBLE") => next += 1,
             Some("NOT") if source.is_word(next + 1, "IGNORED") => next += 2,
             Some("COMMENT") => {
-                out.unsupported
-                    .push(format!("Index {label} has a comment, which is not supported"));
+                out.unsupported.push(format!(
+                    "Index {label} has a comment, which is not supported"
+                ));
                 next += 2;
             }
             Some("INVISIBLE" | "IGNORED") => {
-                out.unsupported
-                    .push(format!("Index {label} is invisible, which is not supported"));
+                out.unsupported.push(format!(
+                    "Index {label} is invisible, which is not supported"
+                ));
                 next += 1;
             }
             _ => {
@@ -869,7 +878,10 @@ fn key_part(source: &Source, from: usize, to: usize, out: &mut Definition) -> De
         part.column = source.name(at);
         at += 1;
         if source.is_punct(at, '(') {
-            match (source.tokens.get(at + 1).map(|t| &t.tok), source.is_punct(at + 2, ')')) {
+            match (
+                source.tokens.get(at + 1).map(|t| &t.tok),
+                source.is_punct(at + 2, ')'),
+            ) {
                 (Some(Tok::Num(length)), true) => {
                     part.prefix = length.parse().ok();
                     at += 3;
@@ -911,7 +923,11 @@ fn name_list(source: &Source, open: usize, to: usize) -> Result<(Vec<String>, us
         if end != from + 1 {
             return Err("a foreign key column could not be read".into());
         }
-        names.push(source.name(from).ok_or("a foreign key column has no name")?);
+        names.push(
+            source
+                .name(from)
+                .ok_or("a foreign key column has no name")?,
+        );
     }
     Ok((names, close + 1))
 }
@@ -1090,7 +1106,11 @@ pub(super) fn cross_check(text: &str, definition: &Definition) -> Vec<String> {
     if last_name(&create.name) != definition.name {
         differ("table name".into());
     }
-    let parsed: Vec<String> = create.columns.iter().map(|c| c.name.value.clone()).collect();
+    let parsed: Vec<String> = create
+        .columns
+        .iter()
+        .map(|c| c.name.value.clone())
+        .collect();
     let ours: Vec<String> = definition.columns.iter().map(|c| c.name.clone()).collect();
     if parsed != ours {
         differ("column names or order".into());
@@ -1126,11 +1146,15 @@ pub(super) fn cross_check(text: &str, definition: &Definition) -> Vec<String> {
             if generated != ours.generated.as_ref().map(|(_, stored)| *stored) {
                 differ(format!("generation of {}", ours.name));
             }
-            let has_default = options.iter().any(|o| matches!(o, ColumnOption::Default(_)));
+            let has_default = options
+                .iter()
+                .any(|o| matches!(o, ColumnOption::Default(_)));
             if has_default != ours.default.is_some() {
                 differ(format!("default of {}", ours.name));
             }
-            let has_comment = options.iter().any(|o| matches!(o, ColumnOption::Comment(_)));
+            let has_comment = options
+                .iter()
+                .any(|o| matches!(o, ColumnOption::Comment(_)));
             if has_comment != ours.comment.is_some() {
                 differ(format!("comment of {}", ours.name));
             }
@@ -1138,7 +1162,7 @@ pub(super) fn cross_check(text: &str, definition: &Definition) -> Vec<String> {
     }
     let mut primary = None;
     let mut keys: Vec<(KeyKind, Option<String>, usize)> = Vec::new();
-    let mut foreign: Vec<(Option<String>, Vec<String>, String, Vec<String>)> = Vec::new();
+    let mut foreign: Vec<ForeignShape> = Vec::new();
     let mut checks: Vec<(Option<String>, bool)> = Vec::new();
     for constraint in &create.constraints {
         match constraint {
@@ -1189,7 +1213,7 @@ pub(super) fn cross_check(text: &str, definition: &Definition) -> Vec<String> {
     if keys != ours {
         differ("keys or indexes".into());
     }
-    let ours: Vec<(Option<String>, Vec<String>, String, Vec<String>)> = definition
+    let ours: Vec<ForeignShape> = definition
         .foreign_keys
         .iter()
         .map(|k| {

@@ -4,7 +4,9 @@
 //! fixture rows.
 use super::sql::qualified;
 use super::version::Version;
-use crate::schema_edit::{MAX_SCHEMA_EDIT_COLUMNS, MAX_SCHEMA_EDIT_MEMBERS, MAX_SCHEMA_EDIT_OBJECTS};
+use crate::schema_edit::{
+    MAX_SCHEMA_EDIT_COLUMNS, MAX_SCHEMA_EDIT_MEMBERS, MAX_SCHEMA_EDIT_OBJECTS,
+};
 use sqlx::mysql::{MySqlConnection, MySqlRow};
 use sqlx::{Executor, Row};
 

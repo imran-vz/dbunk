@@ -47,7 +47,10 @@ fn add_column_is_one_statement() {
             .collect::<Vec<_>>(),
         vec!["ALTER TABLE `app`.`users` ADD COLUMN `age` int NULL"]
     );
-    assert_eq!(preview.groups, vec![PreviewGroup::Standalone { statement: 0 }]);
+    assert_eq!(
+        preview.groups,
+        vec![PreviewGroup::Standalone { statement: 0 }]
+    );
     assert!(!preview.statements[0].destructive);
     assert_eq!(kinds(&preview), vec![NoteKind::Lock]);
 }
