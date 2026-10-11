@@ -46,6 +46,32 @@ pub(crate) struct NewColumnSpec {
     /// non-nullable and carry no default. Absent in older payloads.
     #[serde(default)]
     pub identity: Option<PgIdentity>,
+    /// `GENERATED ALWAYS AS (expression) STORED|VIRTUAL`; excludes a default
+    /// and an identity. Absent in older payloads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generated: Option<PgGeneratedColumn>,
+    /// `COLLATE "name"`, rendered right after the type. Absent in older
+    /// payloads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collation: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PgGeneratedColumn {
+    pub expression: String,
+    /// `STORED`; otherwise `VIRTUAL` (PostgreSQL 18+).
+    pub stored: bool,
+}
+
+impl PgGeneratedColumn {
+    pub(super) fn sql(&self) -> String {
+        format!(
+            "GENERATED ALWAYS AS ({}) {}",
+            self.expression,
+            if self.stored { "STORED" } else { "VIRTUAL" }
+        )
+    }
 }
 
 pub(super) fn validate_column_spec(
@@ -61,6 +87,24 @@ pub(super) fn validate_column_spec(
             sql,
             FragmentContext::Embedded,
         )?;
+    }
+    require_optional_name(op_index, "collation", &column.collation)?;
+    if let Some(generated) = &column.generated {
+        validate_fragment(
+            op_index,
+            "generated expression",
+            &generated.expression,
+            FragmentContext::Embedded,
+        )?;
+        if column.default.is_some() || column.identity.is_some() {
+            return invalid(
+                op_index,
+                format!(
+                    "generated column {} cannot have a default or an identity",
+                    column.name
+                ),
+            );
+        }
     }
     if column.identity.is_some() {
         if column.nullable {
@@ -86,6 +130,9 @@ pub(super) fn column_fragments(column: &NewColumnSpec) -> Vec<&str> {
     if let Some(PgDefaultValue::Expression { sql }) = &column.default {
         values.push(sql);
     }
+    if let Some(generated) = &column.generated {
+        values.push(&generated.expression);
+    }
     values
 }
 
@@ -98,6 +145,10 @@ pub(super) fn render_default(default: &PgDefaultValue) -> String {
 
 pub(super) fn render_column_definition(column: &NewColumnSpec) -> String {
     let mut definition = format!("{} {}", quote_double(&column.name), column.data_type);
+    if let Some(collation) = &column.collation {
+        definition.push_str(" COLLATE ");
+        definition.push_str(&quote_double(collation));
+    }
     if !column.nullable {
         definition.push_str(" NOT NULL");
     }
@@ -108,6 +159,10 @@ pub(super) fn render_column_definition(column: &NewColumnSpec) -> String {
     if let Some(identity) = column.identity {
         definition.push(' ');
         definition.push_str(identity.sql());
+    }
+    if let Some(generated) = &column.generated {
+        definition.push(' ');
+        definition.push_str(&generated.sql());
     }
     definition
 }

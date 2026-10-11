@@ -45,6 +45,8 @@ fn renders_column_operations_and_tagged_defaults() {
                     value: "'quoted'".into(),
                 }),
                 identity: None,
+                generated: None,
+                collation: None,
             },
         }),
         PgObjectOp::DropColumn(DropColumnOp {
@@ -89,6 +91,8 @@ fn add_column_renders_identity() {
             nullable: false,
             default: None,
             identity: Some(PgIdentity::ByDefault),
+            generated: None,
+            collation: None,
         },
     });
     let preview = generate_object_ddl(&[op]).expect("identity column");

@@ -146,6 +146,8 @@ fn embedded_fragments_cannot_escape_typed_operations() {
                 nullable: true,
                 default: None,
                 identity: None,
+                generated: None,
+                collation: None,
             },
         }),
         PgObjectOp::AddColumn(AddColumnOp {
@@ -157,6 +159,8 @@ fn embedded_fragments_cannot_escape_typed_operations() {
                 nullable: true,
                 default: None,
                 identity: None,
+                generated: None,
+                collation: None,
             },
         }),
         PgObjectOp::CreateSequence(CreateSequenceOp {
@@ -179,6 +183,8 @@ fn embedded_fragments_cannot_escape_typed_operations() {
                 nullable: true,
                 default: None,
                 identity: None,
+                generated: None,
+                collation: None,
             },
         }),
         PgObjectOp::AddColumn(AddColumnOp {
@@ -192,6 +198,8 @@ fn embedded_fragments_cannot_escape_typed_operations() {
                     sql: "0, DROP COLUMN amount".into(),
                 }),
                 identity: None,
+                generated: None,
+                collation: None,
             },
         }),
         PgObjectOp::AlterColumnType(AlterColumnTypeOp {
@@ -235,6 +243,8 @@ fn embedded_fragments_cannot_escape_typed_operations() {
                 nullable: true,
                 default: None,
                 identity: None,
+                generated: None,
+                collation: None,
             },
         }),
         PgObjectOp::AddColumn(AddColumnOp {
@@ -246,6 +256,8 @@ fn embedded_fragments_cannot_escape_typed_operations() {
                 nullable: true,
                 default: None,
                 identity: None,
+                generated: None,
+                collation: None,
             },
         }),
         PgObjectOp::AddColumn(AddColumnOp {
@@ -257,6 +269,8 @@ fn embedded_fragments_cannot_escape_typed_operations() {
                 nullable: true,
                 default: None,
                 identity: None,
+                generated: None,
+                collation: None,
             },
         }),
         PgObjectOp::AddColumn(AddColumnOp {
@@ -268,6 +282,8 @@ fn embedded_fragments_cannot_escape_typed_operations() {
                 nullable: true,
                 default: None,
                 identity: None,
+                generated: None,
+                collation: None,
             },
         }),
         PgObjectOp::CreateSequence(CreateSequenceOp {
@@ -292,6 +308,8 @@ fn embedded_fragments_cannot_escape_typed_operations() {
                     sql: "ARRAY[1, 2]".into(),
                 }),
                 identity: None,
+                generated: None,
+                collation: None,
             },
         }),
         PgObjectOp::AlterColumnType(AlterColumnTypeOp {
@@ -332,6 +350,8 @@ fn embedded_fragments_cannot_escape_typed_operations() {
                 sql: "0 NOT NULL".into(),
             }),
             identity: None,
+            generated: None,
+            collation: None,
         },
     })])
     .expect("expression default remains inside its renderer-owned boundary");

@@ -14,6 +14,8 @@ fn create_table_renders_columns_and_table_constraints_in_one_statement() {
                 nullable: false,
                 default: None,
                 identity: Some(PgIdentity::Always),
+                generated: None,
+                collation: None,
             },
             NewColumnSpec {
                 name: "status".into(),
@@ -23,6 +25,8 @@ fn create_table_renders_columns_and_table_constraints_in_one_statement() {
                     value: "new".into(),
                 }),
                 identity: None,
+                generated: None,
+                collation: None,
             },
             NewColumnSpec {
                 name: "created_at".into(),
@@ -32,6 +36,8 @@ fn create_table_renders_columns_and_table_constraints_in_one_statement() {
                     sql: "now()".into(),
                 }),
                 identity: None,
+                generated: None,
+                collation: None,
             },
             column("order_id", "integer"),
         ],

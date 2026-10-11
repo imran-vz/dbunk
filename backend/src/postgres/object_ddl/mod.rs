@@ -7,6 +7,7 @@
 //! [`generate_object_ddl`], which regenerates from operations at the trust
 //! boundary and never accepts statement text from the frontend.
 
+mod alter;
 mod column;
 mod common;
 mod constraint;
@@ -34,9 +35,14 @@ use fragment::fragment_is_destructive;
 // The operation vocabulary is re-exported here so callers never reach into a
 // domain module; most of it is consumed only by command tests and IPC decoding.
 #[allow(unused_imports)]
+pub(crate) use alter::{
+    AlterColumnCollationOp, PgIdentityChange, RenameConstraintOp, RenameIndexOp,
+    SetColumnExpressionOp, SetColumnIdentityOp, ValidateConstraintOp,
+};
+#[allow(unused_imports)]
 pub(crate) use column::{
-    AddColumnOp, AlterColumnTypeOp, DropColumnOp, NewColumnSpec, PgDefaultValue, PgIdentity,
-    RenameColumnOp, SetColumnDefaultOp, SetColumnNullableOp,
+    AddColumnOp, AlterColumnTypeOp, DropColumnOp, NewColumnSpec, PgDefaultValue,
+    PgGeneratedColumn, PgIdentity, RenameColumnOp, SetColumnDefaultOp, SetColumnNullableOp,
 };
 #[allow(unused_imports)]
 pub(crate) use common::PgGrantee;
@@ -123,6 +129,16 @@ pub(crate) enum PgObjectOp {
     DropPolicy(DropPolicyOp),
     GrantPrivileges(GrantPrivilegesOp),
     RevokePrivileges(RevokePrivilegesOp),
+    /// Schema editor (Plan 033): `ADD/SET GENERATED … IDENTITY`, `DROP
+    /// IDENTITY`.
+    SetColumnIdentity(SetColumnIdentityOp),
+    /// `SET EXPRESSION AS (…)` (PG17+) or `DROP EXPRESSION` (PG13+).
+    SetColumnExpression(SetColumnExpressionOp),
+    /// `ALTER COLUMN … TYPE … COLLATE`.
+    AlterColumnCollation(AlterColumnCollationOp),
+    RenameConstraint(RenameConstraintOp),
+    RenameIndex(RenameIndexOp),
+    ValidateConstraint(ValidateConstraintOp),
 }
 
 impl PgObjectOp {
@@ -166,6 +182,12 @@ impl PgObjectOp {
             Self::DropPolicy(op) => op,
             Self::GrantPrivileges(op) => op,
             Self::RevokePrivileges(op) => op,
+            Self::SetColumnIdentity(op) => op,
+            Self::SetColumnExpression(op) => op,
+            Self::AlterColumnCollation(op) => op,
+            Self::RenameConstraint(op) => op,
+            Self::RenameIndex(op) => op,
+            Self::ValidateConstraint(op) => op,
         }
     }
 }
