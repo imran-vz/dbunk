@@ -901,7 +901,7 @@ pub enum DevelopmentSafetyLevel {
 
 /// What applying staged row changes on a connection requires, from the same
 /// rules the result-mutation apply enforces. Clients use it to choose their
-/// confirmation UI; the apply still refuses on its own (ADR-0024).
+/// confirmation UI; the apply still refuses on its own (ADR-0004).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DevelopmentRowWritePolicy {
     pub level: DevelopmentSafetyLevel,

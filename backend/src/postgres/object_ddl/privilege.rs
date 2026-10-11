@@ -1,4 +1,4 @@
-//! GRANT and REVOKE over a closed privilege vocabulary (ADR-0027).
+//! GRANT and REVOKE over a closed privilege vocabulary (ADR-0011).
 
 use serde::{Deserialize, Serialize};
 

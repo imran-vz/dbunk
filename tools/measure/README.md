@@ -35,7 +35,7 @@ VoiceOver check. Its bare-PID mode targeted the Plan 024 GPUI spike
 running app. `summarize.py <tauri-dir> <native-dir>` prints the comparison
 table. `fixtures/` holds the shared document and the PostgreSQL views. The
 `tauri/` setup for the Tauri baseline was deleted with the Tauri app
-(ADR-0033) and remains in git history.
+(ADR-0001) and remains in git history.
 
 ## Before running it
 

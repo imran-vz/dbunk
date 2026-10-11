@@ -171,7 +171,8 @@ impl CompareManager {
     /// the main document; provisional starts and same-document navigation do not.
     /// Finished can also report a failed/cancelled navigation with the old document
     /// still alive, so it must never retire replies or rotate its token.
-    /// See ADR 0030 for the platform contracts; recheck them when upgrading Wry.
+    /// See the original ADR-0030 (git history at 40f5b86) for the platform
+    /// contracts; recheck them when upgrading Wry.
     /// The WebView host maps its page-load events onto `DocumentLoad`.
     pub(crate) fn transport_document_load(&self, window: &str, event: DocumentLoad) {
         if event != DocumentLoad::Started {

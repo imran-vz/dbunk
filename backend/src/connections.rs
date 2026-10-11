@@ -17,7 +17,7 @@ pub(crate) async fn save(
 ) -> Result<Vec<StoredConnection>, String> {
     let mode = current_credential_mode(state).await?;
     tunnel::validate_connection_tunnel(&connection)?;
-    // ADR-0025: the legacy `ssl` mirror follows `tls_options.mode`.
+    // ADR-0006: the legacy `ssl` mirror follows `tls_options.mode`.
     if let StoredConnection::PostgreSQL(pg) = &mut connection {
         pg.normalize_tls();
     }

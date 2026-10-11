@@ -1,7 +1,7 @@
 //! Relational-class dispatch (PG / MySQL / SQLite / CH).
 //!
 //! Was the entirety of `dispatch.rs` before the StorageClass fork
-//! (ADR-0008). The public-facing dispatcher in `dispatch.rs` now
+//! (ADR-0002). The public-facing dispatcher in `dispatch.rs` now
 //! routes by `engine.storage_class()` and calls into this module
 //! when the active engine is relational.
 //!
@@ -172,7 +172,7 @@ fn sqlx_dsn(connection: &StoredConnection) -> Result<String, String> {
                 return Err("PostgreSQL host and user are required".to_string());
             }
             let port = c.effective_port();
-            // ADR-0025: the DSN carries the same resolved TLS mode and
+            // ADR-0006: the DSN carries the same resolved TLS mode and
             // certificate paths as every other PG connect site. The
             // canonical PG sqlx path is `postgres::pool` which builds
             // `PgConnectOptions` directly; this string only serves the
@@ -677,7 +677,7 @@ async fn fetch_table_structure_columns_only(
 /// Connect + `SELECT 1` to verify the connection is live and measure
 /// latency. Routes ClickHouse through HTTP, PostgreSQL through its
 /// pooled native driver (so the probe exercises the same TLS decision
-/// as every metadata query — ADR-0025), and MySQL / SQLite through
+/// as every metadata query — ADR-0006), and MySQL / SQLite through
 /// sqlx-Any.
 pub async fn ping_connection(connection: &StoredConnection) -> Result<ConnectResult, String> {
     match connection.engine() {

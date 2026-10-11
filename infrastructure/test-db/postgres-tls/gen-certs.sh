@@ -1,6 +1,6 @@
 #!/bin/sh
 # Generate the TLS fixture material for the `postgres-tls` service
-# (ADR-0025 / Plan 011): a throwaway CA, a CA-signed server certificate for
+# (ADR-0006 / Plan 011): a throwaway CA, a CA-signed server certificate for
 # localhost / 127.0.0.1, a client certificate whose CN is the `dbunk_cert`
 # role, and a passphrase-protected copy of the client key for the
 # refusal test. Output lands in ./certs (gitignored). Idempotent.

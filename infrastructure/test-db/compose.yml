@@ -36,7 +36,7 @@ services:
       - /var/lib/postgresql/data
     volumes:
       # The image's sourced init script enables TLS, then runs the shared
-      # SQL fixture from this side mount (ADR-0025).
+      # SQL fixture from this side mount (ADR-0006).
       - ./postgres:/fixture-sql:ro
       - ./postgres-tls/certs:/certs:ro
     healthcheck:

@@ -1,4 +1,4 @@
-//! Table Seeding value generation (ADR-0020).
+//! Table Seeding value generation (ADR-0014).
 //!
 //! Pure and engine-agnostic: everything here is deterministic under a
 //! seed and never touches a database. Engine modules build a

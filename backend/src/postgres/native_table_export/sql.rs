@@ -3,7 +3,7 @@ use std::fmt::Write;
 const MAX_SQL_BYTES: usize = 512 * 1024;
 /// The always-NULL whole-row expression preserves the actual FROM row type
 /// without returning or detoasting a composite payload. OFFSET 0 keeps canonical
-/// type output stable between the guard and returned fields (ADR-0029).
+/// type output stable between the guard and returned fields (ADR-0012).
 pub(super) fn capture(
     request: &TableExportRequest,
     columns: &[TableExportColumn],

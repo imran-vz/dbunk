@@ -1,7 +1,7 @@
 //! Plan 032 write-safety rules for the table grid. The safe-mode level and
 //! whether apply needs confirmation come from the backend's own resolution
 //! (`row_write_policy`) and only choose the review dialog; the backend stays
-//! the enforcement boundary (ADR-0024) and its refusal always wins.
+//! the enforcement boundary (ADR-0004) and its refusal always wins.
 use dbunk_lib::backend::{
     DevelopmentConnection, DevelopmentEnvironment, DevelopmentSafeMode, DevelopmentSafetyLevel,
     row_write_policy,
@@ -73,7 +73,7 @@ impl TablePolicy {
 
     /// The policy for the connection `id` among `records`. A missing record,
     /// a non-PostgreSQL record or an unbound tab gets the strictest `UNKNOWN`
-    /// policy; the backend stays authoritative either way (ADR-0024).
+    /// policy; the backend stays authoritative either way (ADR-0004).
     pub fn for_connection(records: &[DevelopmentConnection], id: Option<&str>) -> Self {
         id.and_then(|id| records.iter().find(|record| record.id == id))
             .map_or(Self::UNKNOWN, Self::from_connection)

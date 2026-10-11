@@ -1,6 +1,6 @@
 //! Connection-credential storage backed by the OS keychain.
 //!
-//! ## Shape (ADR-0005, retained as a backend by ADR-0007)
+//! ## Shape (ADR-0003, retained as a backend by ADR-0003)
 //!
 //! All connection passwords live in **one** keychain entry — service `"dbunk"`,
 //! account `"connection-credentials"` — whose value is a serialized JSON map
@@ -13,7 +13,7 @@
 //! ## Failure policy
 //!
 //! The legacy store logs read failures and treats them as an empty map,
-//! preserving ADR-0005. Strict stores distinguish a missing entry from denial,
+//! preserving ADR-0003. Strict stores distinguish a missing entry from denial,
 //! corruption and other OS errors, and never cache a failed read. Write/delete
 //! failures leave the previous cache intact in both policies.
 //!

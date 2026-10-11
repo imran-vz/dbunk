@@ -45,7 +45,7 @@ pub(super) fn rewrite_connection_endpoint(
             return Ok(routed);
         }
     }
-    // ADR-0025: the tunnel replaces `host` with the loopback endpoint, so
+    // ADR-0006: the tunnel replaces `host` with the loopback endpoint, so
     // carry the real host name forward as the TLS server name on this
     // resolved copy (never persisted). A user-supplied name wins, and a
     // legacy row keeps its `ssl`-derived mode.

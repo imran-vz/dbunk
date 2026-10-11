@@ -1,5 +1,5 @@
 //! Function and procedure operations. Signatures are validated fragments;
-//! bodies are opaque and sealed in a body-derived dollar quote (ADR-0027).
+//! bodies are opaque and sealed in a body-derived dollar quote (ADR-0011).
 
 use serde::{Deserialize, Serialize};
 

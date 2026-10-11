@@ -4,12 +4,12 @@
 //! PostgreSQL and ClickHouse each own their catalog queries in their
 //! engine modules; MySQL and SQLite share one because they share one
 //! driver path. Both report columns, primary key, foreign keys and
-//! indexes — enough for constraint-aware Table Seeding (ADR-0020) to
+//! indexes — enough for constraint-aware Table Seeding (ADR-0014) to
 //! know what it must satisfy.
 //!
 //! Mutation capabilities stay `false`: reading a table's shape is not
 //! the same as being able to edit its rows, and the per-engine catch-up
-//! for cell edits / inserts / deletes hasn't happened yet (ADR-0001).
+//! for cell edits / inserts / deletes hasn't happened yet (ADR-0002).
 
 use sqlx::{any::AnyRow, Any, AnyConnection, Row};
 

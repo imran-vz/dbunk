@@ -4,7 +4,7 @@
 //! label of the window that owns the session. `open`, `execute` and
 //! `refresh_transaction_state` resolve the stored connection themselves, so
 //! the safety policy and the audit always come from the hydrated record and
-//! never from the caller (ADR-0024).
+//! never from the caller (ADR-0004).
 
 use super::protocol::*;
 use super::{ExecutionRequest, ExecutionSafety};

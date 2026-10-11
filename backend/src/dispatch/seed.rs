@@ -1,4 +1,4 @@
-//! Table Seeding for the sqlx-Any engines (MySQL, SQLite) — ADR-0020.
+//! Table Seeding for the sqlx-Any engines (MySQL, SQLite) — ADR-0014.
 //!
 //! Same shape as `postgres::seed`: build a plan from the introspected
 //! structure, sample foreign-key parents and unique-integer maxima from
@@ -542,7 +542,7 @@ mod sqlite_live_tests {
     async fn a_rejected_batch_rolls_the_whole_run_back() {
         let (_file, connection) = fixture().await;
         // A CHECK the generator cannot satisfy — `attempt`, not
-        // `guarantee`, per ADR-0020. The run must leave nothing behind.
+        // `guarantee`, per ADR-0014. The run must leave nothing behind.
         exec(
             &connection,
             "CREATE TABLE strict_ages (

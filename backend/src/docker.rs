@@ -1,4 +1,4 @@
-//! Thin async wrapper around the Docker CLI (ADR-0019).
+//! Thin async wrapper around the Docker CLI (ADR-0015).
 //!
 //! Managed Servers shell out to `docker` rather than speaking the
 //! Engine API: dbunk owns orchestration only, and the CLI keeps the
@@ -99,7 +99,7 @@ pub async fn remove_volume(name: &str) -> Result<(), String> {
 }
 
 /// Create and start the container (pulling the image if needed).
-/// Restart policy is deliberately `no` (ADR-0019): nothing dbunk-made
+/// Restart policy is deliberately `no` (ADR-0015): nothing dbunk-made
 /// auto-starts at boot.
 pub struct RunContainerSpec<'a> {
     pub name: &'a str,

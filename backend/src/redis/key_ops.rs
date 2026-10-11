@@ -9,7 +9,7 @@ use crate::redis::connection;
 use crate::RedisStoredConnection;
 
 /// Reject writes against a Redis instance reporting `role=replica` —
-/// see ADR-0009 auto-read-only.
+/// see ADR-0005 auto-read-only.
 ///
 /// The replica role only flips on a failover, which is rare enough
 /// that a session-scoped cache (`connection::cache_replica_role`)
@@ -42,7 +42,7 @@ async fn assert_writable(connection_arg: &RedisStoredConnection) -> Result<(), S
 }
 
 fn replica_write_error() -> String {
-    "This Redis server reports role=replica. Writes are disabled (ADR-0009 auto-read-only)."
+    "This Redis server reports role=replica. Writes are disabled (ADR-0005 auto-read-only)."
         .to_string()
 }
 

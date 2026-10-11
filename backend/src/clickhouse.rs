@@ -756,7 +756,7 @@ pub async fn insert_row(
 }
 
 // ---------------------------------------------------------------------------
-// Table Seeding (ADR-0020)
+// Table Seeding (ADR-0014)
 // ---------------------------------------------------------------------------
 
 /// ClickHouse writes one INSERT as a single atomic block, so the whole
@@ -1020,7 +1020,7 @@ pub async fn delete_rows(
 }
 
 // ---------------------------------------------------------------------------
-// DDL — per-statement (no transaction wrapper, per ADR-0006)
+// DDL — per-statement (no transaction wrapper, per ADR-0005)
 // ---------------------------------------------------------------------------
 
 /// Split a multi-statement DDL string on `;`, preserving non-empty

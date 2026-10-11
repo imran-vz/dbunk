@@ -1,7 +1,7 @@
 //! Redis-specific backend code.
 //!
 //! Scoped to the `StorageClass::KeyValue` half of the dispatch split
-//! (ADR-0008). The relational engine modules (`postgres`, `clickhouse`)
+//! (ADR-0002). The relational engine modules (`postgres`, `clickhouse`)
 //! live alongside this one; the dispatcher in `dispatch/keyvalue.rs`
 //! calls into here.
 //!

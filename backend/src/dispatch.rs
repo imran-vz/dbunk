@@ -4,8 +4,8 @@
 //! Top-level routing happens here: every public function matches
 //! `engine.storage_class()` first and delegates to either
 //! `dispatch::relational::*` or `dispatch::keyvalue::*`. Per-engine
-//! match statements live inside those submodules. See ADR-0008 for
-//! the storage-class fork and ADR-0001 for the per-feature catch-up
+//! match statements live inside those submodules. See ADR-0002 for
+//! the storage-class fork and ADR-0002 for the per-feature catch-up
 //! policy.
 //!
 //! ## Two error shapes

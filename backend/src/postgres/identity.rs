@@ -23,7 +23,7 @@ pub(crate) struct ResolvedIdentity {
 
 /// Resolve the authoritative PostgreSQL row identity shared by browse and
 /// result mutation. Unique-index candidates are ordered here so callers cannot
-/// accidentally drift from ADR-0022's smallest-index, then name tie-break.
+/// accidentally drift from ADR-0009's smallest-index, then name tie-break.
 pub(crate) fn resolve_identity(
     relkind: char,
     primary_key: &[String],

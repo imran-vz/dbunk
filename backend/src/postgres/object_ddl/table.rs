@@ -1,5 +1,5 @@
 //! `CREATE TABLE` as one statement; comments and indexes are separate
-//! operations a designer appends (ADR-0027).
+//! operations a designer appends (ADR-0011).
 
 use serde::{Deserialize, Serialize};
 

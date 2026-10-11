@@ -15,10 +15,10 @@ pub(crate) struct ResolvedPostgresConnectSpec {
     pub database: String,
     pub user: String,
     pub password: String,
-    /// One TLS decision shared by every driver (ADR-0025).
+    /// One TLS decision shared by every driver (ADR-0006).
     pub tls: ResolvedTls,
     pub connect_timeout: Option<Duration>,
-    /// TCP keepalive idle time (ADR-0013 `keepalive_seconds`). Applied on
+    /// TCP keepalive idle time (ADR-0006 `keepalive_seconds`). Applied on
     /// the dedicated driver; the SQLx pool cannot set it.
     pub keepalive: Option<Duration>,
     pub driver_options: PgDriverOptions,

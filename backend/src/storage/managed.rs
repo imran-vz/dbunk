@@ -1,4 +1,4 @@
-//! Persistence for Managed Server records (ADR-0019).
+//! Persistence for Managed Server records (ADR-0015).
 
 use std::str::FromStr;
 

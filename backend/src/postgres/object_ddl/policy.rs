@@ -1,4 +1,4 @@
-//! Row-level security and policy operations (ADR-0027).
+//! Row-level security and policy operations (ADR-0011).
 
 use serde::{Deserialize, Serialize};
 

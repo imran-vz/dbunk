@@ -1,4 +1,4 @@
-//! One TLS resolver for every PostgreSQL connect site (ADR-0025).
+//! One TLS resolver for every PostgreSQL connect site (ADR-0006).
 //!
 //! Four places open PostgreSQL sockets — the dedicated tokio-postgres
 //! driver, the SQLx metadata pool, the SQLx-Any DSN fallback, and the
@@ -90,7 +90,7 @@ impl ResolvedTls {
         Self::with_mode(host, PgTlsMode::Disable)
     }
 
-    /// `prefer` with no material; the pre-ADR-0025 behaviour of `ssl: true`.
+    /// `prefer` with no material; the pre-ADR-0006 behaviour of `ssl: true`.
     #[cfg(test)]
     pub(crate) fn prefer(host: &str) -> Self {
         Self::with_mode(host, PgTlsMode::Prefer)
@@ -241,7 +241,7 @@ fn config_from_parts(
         }
     } else {
         // `prefer` / `require`: encrypt without authenticating the peer —
-        // libpq semantics, and the policy every pre-ADR-0025 `ssl: true`
+        // libpq semantics, and the policy every pre-ADR-0006 `ssl: true`
         // connection already had.
         Arc::new(NoVerification)
     };
@@ -513,7 +513,7 @@ pub(crate) fn pool_hostname_verification(
 }
 
 /// SQLx has no `hostaddr`, so a tunneled `verify-full` can only verify the
-/// CA chain on the SQLx paths (ADR-0025 §5). Each renderer that downgrades
+/// CA chain on the SQLx paths (ADR-0006 §5). Each renderer that downgrades
 /// discloses it here, with the same wording.
 pub(crate) fn log_sqlx_verify_full_downgrade(
     tls: &ResolvedTls,

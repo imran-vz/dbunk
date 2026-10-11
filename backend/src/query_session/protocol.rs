@@ -73,7 +73,7 @@ pub enum QuerySessionError {
     #[allow(dead_code)]
     TransactionObserverUnavailable,
     ConnectionLost,
-    /// TLS material or handshake failure while opening the socket (ADR-0025).
+    /// TLS material or handshake failure while opening the socket (ADR-0006).
     TlsFailed {
         tls_kind: crate::TlsFailureKind,
         message: String,

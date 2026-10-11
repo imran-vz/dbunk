@@ -1,4 +1,4 @@
-//! Named parameters and execution shapes for Query Session SQL (ADR-0031):
+//! Named parameters and execution shapes for Query Session SQL (ADR-0008):
 //! the `:name` scan, the `$k` rewrite with its position map, the binding
 //! limits, and the pure planner that picks a shape before anything is sent.
 

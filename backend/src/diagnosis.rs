@@ -1,4 +1,4 @@
-//! Staged connection diagnosis (ADR-0025, Plan 011).
+//! Staged connection diagnosis (ADR-0006, Plan 011).
 //!
 //! The legacy `test_connection` command (removed by Plan 012) returned one
 //! string from a driver the query editor does not use. This runs the

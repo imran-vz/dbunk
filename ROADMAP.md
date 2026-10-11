@@ -22,7 +22,7 @@ What already works:
 | Schema relationship map (auto-layout, table nodes, FK edges) | ✅ Phase 2 | `src/components/schema-relationship-map.tsx`, `lib/schema-graph.ts` |
 | Data export — CSV, JSON, SQL, HTML, Markdown, TXT, XLSX | ✅ | `src/lib/export.ts`, `src/components/data-grid.tsx` (whole-table + selection, gzip, encoding picker, NULL token, saved tasks) |
 | Connection-level sub-tabs (Tables/Schemas/Query History/Details/Settings) | ✅ Phase 1 | `src/components/workspace-overview/{tables,schemas,query-history,details,settings}-tab.tsx` |
-| Connection-level settings page | 🟡 | Sidebar gear-icon view + driver options end-to-end (ADR-0013); TLS modes, keepalive, and staged Test Connection on the form (ADR-0025) — the Settings tab is still a read-only mirror, see § 1 below |
+| Connection-level settings page | 🟡 | Sidebar gear-icon view + driver options end-to-end (ADR-0006); TLS modes, keepalive, and staged Test Connection on the form (ADR-0006) — the Settings tab is still a read-only mirror, see § 1 below |
 
 ---
 
@@ -35,7 +35,7 @@ Grouped by area. ❌ = absent, 🟡 = partial, ✅ = parity.
 - ✅ "Schemas" tab — per-schema table/view/matview counts + size (PG-only)
 - ✅ "Query History" tab — current-connection-scoped view with search + status filters; cap raised to 2000 entries
 - ✅ "Details" tab — server version, encoding, locale, timezone, `pg_settings` catalogue with modified-only filter, installed extensions (PG-only)
-- 🟡 "Settings" tab — read-only mirror of the connection's configured fields (including the driver knobs) + Edit dialog launcher. Driver options are complete end-to-end (ADR-0013): `PgDriverOptions` on the connection record, the Advanced-expander form in `<ConnectionForm>`, SET-statement plumbing for `statement_timeout`, `idle_in_transaction_session_timeout`, `search_path`, `ROLE`, and a bounded initial handshake for `connect_timeout_ms`. SSH tunnel shipped separately (ADR-0018). TCP keepalive has a control and is applied on the dedicated driver — query sessions, table browse, result mutation (ADR-0025); the pooled metadata/admin driver (SQLx) has no keepalive option, and the form says so next to the field. Transport security is on the form too: libpq TLS modes with certificate paths, and Test Connection as a per-stage diagnosis (tunnel → DNS → TCP → TLS → authentication → database) available in edit mode.
+- 🟡 "Settings" tab — read-only mirror of the connection's configured fields (including the driver knobs) + Edit dialog launcher. Driver options are complete end-to-end (ADR-0006): `PgDriverOptions` on the connection record, the Advanced-expander form in `<ConnectionForm>`, SET-statement plumbing for `statement_timeout`, `idle_in_transaction_session_timeout`, `search_path`, `ROLE`, and a bounded initial handshake for `connect_timeout_ms`. SSH tunnel shipped separately (ADR-0006). TCP keepalive has a control and is applied on the dedicated driver — query sessions, table browse, result mutation (ADR-0006); the pooled metadata/admin driver (SQLx) has no keepalive option, and the form says so next to the field. Transport security is on the form too: libpq TLS modes with certificate paths, and Test Connection as a per-stage diagnosis (tunnel → DNS → TCP → TLS → authentication → database) available in edit mode.
 
 ### 2. Schema relationship map
 - ✅ Cardinality notation (Crow's Foot)
@@ -136,10 +136,13 @@ and the ADRs cited). Treat each bullet as the seed for its own design pass.
   `src/lib/ddl/shared.ts`.
 - **Connection Settings tab expansion** — `settings-tab.tsx` is a read-only
   mirror; expand it to edit the driver/session knobs the connection form
-  already exposes (ADR-0013, ADR-0025).
-- **PL/pgSQL debugger** (ADR-0016, unbuilt), **visual query builder**
-  (ADR-0015, unbuilt), **Parquet export / XML import-export** (ADR-0017,
-  unbuilt) — see the ❌ rows in the gap sections above.
+  already exposes (ADR-0006).
+- **PL/pgSQL debugger**, **visual query builder**, **Parquet export / XML
+  import-export** — unbuilt; see the ❌ rows in the gap sections above. Their
+  retired proposals (old ADR-0015/0016/0017, git history at `40f5b86`) hold
+  the rejected options: no SQL round-tripping for the builder, `pldbgapi`
+  detection before any debug command (absent on managed PostgreSQL), and no
+  DuckDB or parquetjs for Parquet.
 
 ### Redis Tier 2 + cross-cutting
 

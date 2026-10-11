@@ -137,7 +137,7 @@ pub(crate) async fn find_connection(
 
 /// Run `op` against a connection and bump its `lastActivityAt` on success.
 ///
-/// Owns the contract from ADR-0004: every successful operation against a
+/// Owns the contract from ADR-0003: every successful operation against a
 /// connection counts as activity. By making the bump a property of the
 /// helper rather than each command, new commands inherit the behaviour for
 /// free and can't quietly drift out of policy.

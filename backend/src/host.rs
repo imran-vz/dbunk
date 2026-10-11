@@ -3,7 +3,7 @@
 //! Nothing in the backend names a UI framework. A host supplies a
 //! Tokio runtime handle to each manager's monitor, an event sink per stream,
 //! and lifecycle inputs (window identity, focus, document replacement and
-//! teardown) through the managers' own methods. See ADR-0032.
+//! teardown) through the managers' own methods. See ADR-0001.
 
 use std::sync::Arc;
 

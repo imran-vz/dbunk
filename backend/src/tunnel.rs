@@ -1,4 +1,4 @@
-//! SSH tunnel runtime for ADR-0018.
+//! SSH tunnel runtime for ADR-0006.
 //!
 //! The rest of the engine code should not know how SSH works. It asks
 //! this module to resolve a `StoredConnection` into the endpoint it

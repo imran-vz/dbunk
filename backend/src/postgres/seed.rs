@@ -1,4 +1,4 @@
-//! Table Seeding orchestration for PostgreSQL (ADR-0020).
+//! Table Seeding orchestration for PostgreSQL (ADR-0014).
 //!
 //! Builds a [`SeedPlan`](crate::seed::SeedPlan) from introspected table
 //! structure plus sampling queries (FK parent pools, unique-integer

@@ -5,14 +5,14 @@ running SQL, and managing connections across PostgreSQL, MySQL, SQLite,
 ClickHouse, and Redis. This file is the canonical domain glossary. New work
 should reuse these terms rather than coining synonyms.
 
-The Tauri/React app was retired (ADR-0033). Entries below that name React
+The Tauri/React app was retired (ADR-0001). Entries below that name React
 components, `src/` files or Tauri commands describe that retired host and are
 kept until the native equivalents are documented.
 
 ## Top-level entities
 
 - **Connection** — a saved database endpoint. A **per-engine tagged
-  union** (ADR-0011) — `PgConnection | MySqlConnection |
+  union** (ADR-0002) — `PgConnection | MySqlConnection |
   SqliteConnection | ClickHouseConnection | RedisConnection` — each
   variant discriminated by `engine`. Common fields (`id`, `name`,
   `host`, `port`, `user`, `password`, `database`, `role`,
@@ -22,12 +22,12 @@ kept until the native equivalents are documented.
   local SQLite database (`~/.config/dbunk/dbunk.sqlite`). Database
   credential storage is app-wide: encrypted SQLite is recommended, OS
   keychain is available, unencrypted SQLite is available with warning
-  (ADR-0007).
+  (ADR-0003).
   Engine-class-specific fields live on their variants and **only
   their variants** — TypeScript narrows on `connection.engine` to
   reach them. `ssl: boolean` lives on `PgConnection` /
   `MySqlConnection` (TLS upgrade on the wire protocol). On
-  `PgConnection` it is the legacy mirror of `tlsOptions` (ADR-0025):
+  `PgConnection` it is the legacy mirror of `tlsOptions` (ADR-0006):
   `mode` in libpq vocabulary — `disable | prefer | require |
   verify-ca | verify-full` — plus optional `rootCertPath`,
   `clientCertPath`, `clientKeyPath` (paths, never contents) and
@@ -43,7 +43,7 @@ kept until the native equivalents are documented.
   the Rust side (`#[serde(tag = "engine")]` over
   `PgStoredConnection` / `MySqlStoredConnection` /
   `SqliteStoredConnection` / `ClickHouseStoredConnection` /
-  `RedisStoredConnection`; ADR-0010); the wire JSON is flat
+  `RedisStoredConnection`; ADR-0002); the wire JSON is flat
   (variant fields next to the `engine` tag). The Rust backend
   hydrates credentials internally before DB operations; stored
   passwords are not returned to the frontend.
@@ -77,14 +77,14 @@ kept until the native equivalents are documented.
   database credential on a Connection.
 - **Driver Options** — per-Connection driver/session knobs the
   backend replays on every connect, distinct from the credentials
-  that identify the endpoint. PostgreSQL-only today (ADR-0013);
+  that identify the endpoint. PostgreSQL-only today (ADR-0006);
   persisted as one JSON blob on the Connection record so a new knob
   is a struct field rather than a schema migration. Covers
   `statementTimeoutMs`, `idleInTransactionTimeoutMs`,
   `connectTimeoutMs`, `defaultSearchPath`, `defaultRole`, and
   `keepaliveSeconds` (applied on the dedicated driver only — query
   sessions, table browse, result mutation; the SQLx metadata pool has
-  no keepalive option, ADR-0025). Every field is
+  no keepalive option, ADR-0006). Every field is
   optional and absent means "use the server default" — the whole blob
   is omitted rather than stored as all-empty. Note that **Driver
   Options** `defaultRole` is a Postgres `SET ROLE` target and is a
@@ -126,11 +126,11 @@ kept until the native equivalents are documented.
   overrides relational read-only.
 - **Engine** — `PostgreSQL`, `MySQL`, `SQLite`, `ClickHouse`, or `Redis`.
   PostgreSQL is the reference implementation for the relational class (see
-  ADR-0001); other relational engines have selective coverage and may return
+  ADR-0002); other relational engines have selective coverage and may return
   "not supported on \<engine\>" placeholders. Redis is the first keyvalue
-  engine (see ADR-0008).
+  engine (see ADR-0002).
 - **Storage Class** — `Relational` or `KeyValue`. Engines fork at this layer
-  above `DatabaseEngine` (ADR-0008): relational engines share schemas/tables/
+  above `DatabaseEngine` (ADR-0002): relational engines share schemas/tables/
   rows/SQL; keyvalue engines share a keyspace of typed keys, no schemas, no
   rows. The class is **derived** from the engine via
   `DatabaseEngine::storage_class()` (Rust) and `enginePolicy(engine).storageClass`
@@ -205,7 +205,7 @@ identity; see the **Keyspace model** section below.
 - **Table Structure** — columns, primary key, foreign keys, indexes, and
   constraints for one table. On PostgreSQL it also carries the table's user
   triggers (with their four-way enabled state), row-level-security policies,
-  explicit privileges, and row-security flags (ADR-0027). Includes a
+  explicit privileges, and row-security flags (ADR-0011). Includes a
   **capabilities** flag that tells the frontend which fields are populated for
   the active engine. Relational-only; Redis uses **Key Metadata** instead.
 - **Routine Source** — the `arguments`, `returns`, `body`, `language`, and
@@ -246,8 +246,8 @@ identity; see the **Keyspace model** section below.
 ## Keyspace model (keyvalue class only)
 
 The following entities apply only to engines whose `storage_class()` is
-`KeyValue` (Redis today). See ADR-0008 for the storage-class fork and
-ADR-0009 for the writes-by-default posture.
+`KeyValue` (Redis today). See ADR-0002 for the storage-class fork and
+ADR-0005 for the writes-by-default posture.
 
 - **Database (Redis)** — a numbered keyspace, 0–15 on standalone. Selected
   per connection record (`dbNumber` field); the per-session DB switcher is
@@ -292,7 +292,7 @@ ADR-0009 for the writes-by-default posture.
   regions, defined canonically in [`designs/DESIGN-SYSTEM.md` §3](https://github.com/imran-vz/dbunk/blob/40f5b86ad687c078e0832e5228411601216f81b8/designs/DESIGN-SYSTEM.md). Use
   those names verbatim; the definitions live there, not here.
 - **Workspace Shell** — the contents of the main area when a connection is
-  active. Forks on the active connection's storage class (ADR-0008): the
+  active. Forks on the active connection's storage class (ADR-0002): the
   **Relational Workspace** renders the object navigator +
   `table`/`query`/`object`/`table-designer` tab kinds; the **KeyValue Workspace** renders the keyspace browser +
   `key`/`cli`/`pubsub`/`server` tab kinds. The app shell (top bar,
@@ -357,7 +357,7 @@ ADR-0009 for the writes-by-default posture.
   remains a copy-to-clipboard preview tool, not the engine. All four
   relational engines seed; ClickHouse, having no transactions, gets
   all-or-nothing from a single atomic INSERT block and caps a run
-  accordingly (ADR-0020).
+  accordingly (ADR-0014).
 - **Seed Spec** — the user-authored input to one Table Seeding run:
   row count, an optional random seed (auto-picked and displayed when
   omitted, so every run is reproducible), and per-column settings —
@@ -405,7 +405,7 @@ ADR-0009 for the writes-by-default posture.
   backend validates and renders those operations; neither preview nor apply
   accepts arbitrary generated statement text from the frontend. Routine
   bodies are the one opaque field: they are sealed in a renderer-chosen
-  dollar quote rather than validated as SQL (ADR-0027). The renderer, not the
+  dollar quote rather than validated as SQL (ADR-0011). The renderer, not the
   statement classifier, decides that revokes, disabled triggers, disabled
   row security, and dropped policies are destructive.
 - **DDL Preview** — the exact, display-only statements generated from a DDL
@@ -484,9 +484,9 @@ ADR-0009 for the writes-by-default posture.
 ## Live state
 
 - **Health Check** — a `SELECT 1` ping that verifies a connection is alive.
-  Fired every 30 seconds by a foreground tick (ADR-0002).
+  Fired every 30 seconds by a foreground tick (ADR-0007).
 - **Connection Diagnosis** — what the **Test Connection** button runs
-  (`diagnose_connection`, ADR-0025): the connect ladder stepwise —
+  (`diagnose_connection`, ADR-0006): the connect ladder stepwise —
   tunnel → DNS → TCP → TLS → authentication → database — each stage
   passed with detail, failed with a typed kind and message, or skipped
   with a reason, plus the server's own encryption state from
@@ -495,9 +495,9 @@ ADR-0009 for the writes-by-default posture.
   Available in edit mode: a blank password makes the backend hydrate
   the saved credential, so the secret never crosses IPC.
 - **Last Activity** — ISO-8601 timestamp on the connection record. Bumped
-  whenever a query or connect succeeds (ADR-0004).
+  whenever a query or connect succeeds (ADR-0003).
 - **Database Overview** — the storage-class-shaped landing payload for an
-  active connection. Per ADR-0008 it is a **tagged union**:
+  active connection. Per ADR-0002 it is a **tagged union**:
   - **Relational Overview Stats** (`kind: "relational"`) — aggregate counts
     (tables, schemas, rows, indexes, connections) plus byte sizes (database
     / table / index). Fetched in a single round trip per connection. Row
@@ -513,9 +513,10 @@ ADR-0009 for the writes-by-default posture.
 
 ## Persistence layout
 
-Everything lives under `~/.config/dbunk/`: the `dbunk.sqlite` database
-(schema and credential-storage modes are ADR-0007; ADR-0005's single-blob
-keychain shape applies only when keychain mode is active) plus a lazily
+Everything lives in the profile directory (by default
+`~/Library/Application Support/dbunk Native`): the `dbunk.sqlite` database
+(schema and credential-storage modes, including the single-blob keychain
+entry used only in keychain mode, are ADR-0003) plus a lazily
 created `pubsub-captures/` directory of raw JSONL streams from pub/sub
 tabs with **Record to file** on (never auto-pruned; users manage them
 manually). For the current table list, read the migrations in
@@ -538,7 +539,7 @@ explicit profile directory instead (`just run-native` uses
   `apps/native`. It supplies a Tokio runtime handle, an **Event Sink** per
   stream and lifecycle inputs (window label, focus, document replacement,
   teardown) and calls the **Backend facade**. Nothing in `backend/` names a
-  UI framework (ADR-0032; `backend/src/host.rs`).
+  UI framework (ADR-0001; `backend/src/host.rs`).
 - **Event Sink** — how the backend delivers one stream's typed events to the
   **Host** (the `EventSink` trait in `backend/src/host.rs`; any
   `Fn(T) -> Result<(), SinkClosed>` closure is one). Synchronous and
@@ -555,12 +556,12 @@ explicit profile directory instead (`just run-native` uses
   match on `engine.storage_class()`, then delegate to either
   `dispatch::relational::*` (PG/MySQL/SQLite/CH; module
   `dispatch/relational.rs`) or `dispatch::keyvalue::*` (Redis; module
-  `dispatch/keyvalue.rs`) — see ADR-0008. Within each class, dispatch
+  `dispatch/keyvalue.rs`) — see ADR-0002. Within each class, dispatch
   matches exhaustively over the `DatabaseEngine` variants of that class —
   no wildcards — so adding an engine forces every operation to make an
   explicit choice. Cross-class operations return one of two error shapes
   at the routing layer: `not_implemented_yet` (in scope for this engine
-  but not built yet — see ADR-0001) or `not_applicable` (the operation
+  but not built yet — see ADR-0002) or `not_applicable` (the operation
   does not exist on this engine's class; e.g. `fetch_table_structure`
   returns this for Redis). Relational-only operations live entirely
   under `dispatch::relational::*`; keyvalue-only operations (`scan_keys`,
@@ -570,7 +571,7 @@ explicit profile directory instead (`just run-native` uses
   equivalent is documented yet) — the frontend mirror to Engine Dispatch
   (`src/lib/engine-policy.ts`). A pure `Record<DatabaseEngine,
   EnginePolicy>` where `EnginePolicy` is a discriminated union on
-  `storageClass` (ADR-0008): shared base `{ engine, connectionForm }`
+  `storageClass` (ADR-0002): shared base `{ engine, connectionForm }`
   plus either a `RelationalEnginePolicy` arm (structure-view labels —
   "Primary key" vs "Sorting key", "Indexes" vs "Skip indices" — plus
   `rowCountKind` exact/estimate, `hasForeignKeys`, `foreignKeysUnsupportedCopy`,
@@ -579,7 +580,7 @@ explicit profile directory instead (`just run-native` uses
   `transactionsSupported`, `destructiveCommands` — the last a hand-kept
   mirror of the Rust list in `backend/src/redis/destructive_commands.rs`).
   **Connection-form policy** (`ConnectionFormPolicy`) is itself a
-  tagged union on `kind` (ADR-0012): `host-auth` (PG/MySQL — carries
+  tagged union on `kind` (ADR-0002): `host-auth` (PG/MySQL — carries
   `defaultPort`, `showSslToggle`), `clickhouse-http` (CH —
   `defaultPortHttp`, `defaultPortHttps`), `redis` (`defaultPort`,
   `defaultDbNumber`, `maxDbNumber`), `file` (SQLite). The `kind`
@@ -597,7 +598,7 @@ explicit profile directory instead (`just run-native` uses
   decisions stay on `TableStructure.capabilities` plus `pickRowIdentity`
   (relational); per-key write gating is computed at the editor render
   site from the connection's auto-read-only state plus the value type
-  (keyvalue; see ADR-0009).
+  (keyvalue; see ADR-0005).
 - **Credential Backend** — the `CredentialBackend` enum in
   `backend/src/credentials.rs` is the single point of dispatch over
   the three storage modes (`Keychain`, `PlainSqlite`,
@@ -636,7 +637,7 @@ explicit profile directory instead (`just run-native` uses
   bind parameters require the extended query protocol.
 - **Query Execution** — one admitted run of SQL text in a Query Session. Its
   shape is chosen before anything is sent and never changes afterwards
-  (ADR-0031): a Script is one simple-query request and may hold many
+  (ADR-0008): a Script is one simple-query request and may hold many
   statements; a Cursor read is one statement declared as a server-side cursor,
   with bound parameters, a row limit, or both; a Bound command is one
   parameterized statement that returns no rows. The cursor and bound shapes
@@ -669,7 +670,7 @@ tunnel/pool invalidation. Backup publishes a complete non-overwriting archive.
 Restore is authorized before admission and audited only after success. Plan 019
 activates these jobs through global and table-context workspaces; table Restore
 reviews the database target. Plan 019 is complete at `ab33968`.
-See ADR-0028.
+See ADR-0012.
 
 ## PostgreSQL Transfer Job
 
@@ -680,7 +681,7 @@ column indices and appends in one transaction; export publishes a complete new
 file without replacement. The table Transfer sub-tab owns setup, while the
 native manager and app observer retain running jobs after the tab closes.
 Lost COMMIT acknowledgement is an unknown outcome requiring target inspection.
-Plan 020 is complete at `7745946`; see ADR-0029.
+Plan 020 is complete at `7745946`; see ADR-0012.
 
 
 ## PostgreSQL Schema Comparison
@@ -701,4 +702,4 @@ against owned disposable PG16.15, PG16.14, PG17.11 and TLS fixtures. Plan 022
 activates it in the workbench as the Object inspector: a PostgreSQL-only
 Schema compare rail destination with explicit endpoints, an application-owned
 job observer and a bounded, epoch-fenced result reader. WebView-side process
-memory for the activated view was measured on macOS on 2026-10-01. See ADR-0030.
+memory for the activated view was measured on macOS on 2026-10-01. See ADR-0013.

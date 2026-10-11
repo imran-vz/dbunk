@@ -106,6 +106,6 @@ pub(crate) fn bytes_to_hex(bytes: &[u8]) -> String {
 }
 
 /// tokio-postgres logs bound parameter values at Debug. Query Session
-/// parameter values must never reach a log (ADR-0031), so this stays at Warn
+/// parameter values must never reach a log (ADR-0008), so this stays at Warn
 /// or stricter whatever the crate's own level is.
 pub(crate) const TOKIO_POSTGRES_LOG_LEVEL: log::LevelFilter = log::LevelFilter::Warn;

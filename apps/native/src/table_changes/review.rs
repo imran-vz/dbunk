@@ -1,7 +1,7 @@
 //! Review dialog (plan 032 §3.3): a per-change diff, the exact SQL with bound
 //! values, and an environment-aware apply gate. The dialog only collects
 //! intent. The backend NeedsConfirmation token stays the enforcement boundary
-//! (ADR-0024): the UI confirms automatically at most once per apply, and only
+//! (ADR-0004): the UI confirms automatically at most once per apply, and only
 //! when the user's click already acknowledged that confirmation.
 use super::*;
 use crate::{

@@ -1,6 +1,6 @@
 //! App-wide credential storage.
 //!
-//! Per ADR-0007 dbunk supports three credential storage modes:
+//! Per ADR-0003 dbunk supports three credential storage modes:
 //!
 //! - **Keychain** — OS keychain, one shared blob (see `keychain.rs`).
 //! - **Encrypted SQLite** — `~/.config/dbunk/dbunk.sqlite::credentials`,
@@ -301,7 +301,7 @@ impl CredentialBackend {
 }
 
 /// OS-keychain credential storage. Backend-wrapper over `keychain.rs`'s
-/// single-blob shape (ADR-0005, retained as a backend by ADR-0007).
+/// single-blob shape (ADR-0003, retained as a backend by ADR-0003).
 pub(crate) struct KeychainBackend {
     store: Arc<keychain::Store>,
 }
@@ -906,7 +906,7 @@ mod tests {
     }
 
     /// Seed `connections` rows for the database credential IDs we'll
-    /// write. The credentials table is generic after ADR-0018, but
+    /// write. The credentials table is generic after ADR-0006, but
     /// keeping realistic parent records catches connection-storage
     /// regressions in these tests too.
     async fn seed_connections(pool: &SqlitePool, ids: &[&str]) {

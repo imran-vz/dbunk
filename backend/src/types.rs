@@ -113,7 +113,7 @@ pub(crate) struct ConnectionPolicy {
 /// Top-level engine class — `Relational` engines share schemas/tables/
 /// rows/SQL; `KeyValue` engines share a keyspace of typed keys. The
 /// class is derived from `DatabaseEngine::storage_class()`; never
-/// stored. See ADR-0008.
+/// stored. See ADR-0002.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum StorageClass {
@@ -431,7 +431,7 @@ pub(crate) struct TestBastionResult {
 
 /// `StoredConnection` is a per-engine tagged union — the backend's
 /// counterpart to the frontend's `Connection` discriminated union
-/// (see ADR-0010). Each variant carries exactly the fields its engine
+/// (see ADR-0002). Each variant carries exactly the fields its engine
 /// uses: `ssl` on PG/MySQL, `useHttps`/`urlPath` on ClickHouse,
 /// `dbNumber`/`useTls`/`verifyTlsCert` on Redis, nothing extra on
 /// SQLite.
@@ -497,7 +497,7 @@ pub(crate) struct PgStoredConnection {
     #[serde(default, flatten)]
     pub organization: ConnectionOrganization,
     /// Legacy TLS on/off mirror. `tls_options.mode` is authoritative when
-    /// present (ADR-0025); storage normalizes this flag to
+    /// present (ADR-0006); storage normalizes this flag to
     /// `mode != disable` on every save so the two can never disagree on
     /// disk. Read TLS decisions through [`PgStoredConnection::resolved_tls_mode`],
     /// never through this field. Distinct concept from ClickHouse's
@@ -505,11 +505,11 @@ pub(crate) struct PgStoredConnection {
     #[serde(default = "default_true")]
     pub ssl: bool,
     /// TLS verification mode and certificate material (paths). `None`
-    /// on legacy rows, which resolve through `ssl`. See ADR-0025.
+    /// on legacy rows, which resolve through `ssl`. See ADR-0006.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tls_options: Option<PgTlsOptions>,
     /// Optional driver/session knobs applied after every connect.
-    /// See ADR-0013. Missing or empty fields fall back to PG defaults.
+    /// See ADR-0006. Missing or empty fields fall back to PG defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub driver_options: Option<PgDriverOptions>,
     #[serde(default, skip_serializing_if = "SshTunnelConfig::is_default")]
@@ -520,7 +520,7 @@ impl PgStoredConnection {
     /// The single source of truth for "which TLS mode does this
     /// connection use". `tls_options` wins when present; legacy rows
     /// without it map `ssl` to `prefer` / `disable`, which is exactly
-    /// the behaviour those rows had before ADR-0025.
+    /// the behaviour those rows had before ADR-0006.
     pub(crate) fn resolved_tls_mode(&self) -> PgTlsMode {
         match &self.tls_options {
             Some(options) => options.mode,
@@ -556,7 +556,7 @@ impl PgStoredConnection {
 
 /// libpq's `sslmode` vocabulary, persisted and sent over the wire in the
 /// same spelling so URIs, `PGSSLMODE`, and the form share one set of
-/// strings. See ADR-0025.
+/// strings. See ADR-0006.
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum PgTlsMode {
@@ -591,7 +591,7 @@ impl PgTlsMode {
 }
 
 /// Why a TLS-protected connect failed, as a typed wire value shared by
-/// the actor error unions and the diagnosis report (ADR-0025).
+/// the actor error unions and the diagnosis report (ADR-0006).
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum TlsFailureKind {
@@ -661,7 +661,7 @@ pub(crate) struct PgTlsOptions {
 /// Per-connection driver/session knobs persisted on the Postgres
 /// connection record. Reads as a single JSON blob in SQLite so adding
 /// a new knob is a struct field, not a schema migration. See
-/// ADR-0013.
+/// ADR-0006.
 ///
 /// Every field is optional — `None` means "use the server default".
 /// Empty `default_search_path` is treated the same as `None`.
@@ -812,7 +812,7 @@ pub(crate) struct RedisStoredConnection {
     /// Belt-and-braces safety toggle: when `true`, the backend
     /// rejects every write (`assert_writable`) for this connection,
     /// independent of the replica-role check. Defaults to `false`.
-    /// See ADR-0009.
+    /// See ADR-0005.
     #[serde(default)]
     pub read_only: bool,
     #[serde(default, skip_serializing_if = "SshTunnelConfig::is_default")]
@@ -1112,7 +1112,7 @@ pub(crate) struct RedisCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_version: Option<String>,
     /// `role` from `INFO replication` — `"master"` or `"replica"`.
-    /// Drives auto-read-only (ADR-0009).
+    /// Drives auto-read-only (ADR-0005).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
     /// `connected_slaves` from `INFO replication`. Drives the soft
@@ -1438,7 +1438,7 @@ pub(crate) struct LoadTableStructurePayload {
 }
 
 // ---------------------------------------------------------------------------
-// Managed Servers (ADR-0019)
+// Managed Servers (ADR-0015)
 // ---------------------------------------------------------------------------
 
 /// A local database server dbunk provisioned and owns: a Docker
@@ -1518,7 +1518,7 @@ pub(crate) struct ManagedServerPayload {
 }
 
 // ---------------------------------------------------------------------------
-// Table Seeding (ADR-0020)
+// Table Seeding (ADR-0014)
 // ---------------------------------------------------------------------------
 
 /// Per-column entry of a Seed Spec. Source precedence:

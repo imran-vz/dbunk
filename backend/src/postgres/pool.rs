@@ -26,7 +26,7 @@ const MAX_POOL_SIZE: u32 = 5;
 /// Idle timeout before a pooled connection is closed.
 const IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
-/// Build `PgConnectOptions` from the shared connect spec (ADR-0025).
+/// Build `PgConnectOptions` from the shared connect spec (ADR-0006).
 ///
 /// Two knobs the dedicated driver honours are *not* applied here because
 /// SQLx 0.8 has no setter for them: TCP keepalive (`keepalive_seconds`)
@@ -126,7 +126,7 @@ pub(crate) async fn connect(
 /// Await a connect future under the connection's deadline, mapping both
 /// the timeout and the driver error to the user-facing message.
 ///
-/// ADR-0013 `connect_timeout_ms`. `PgConnectOptions` has no connect
+/// ADR-0006 `connect_timeout_ms`. `PgConnectOptions` has no connect
 /// deadline of its own, so the bound is a wrapper around the initial
 /// handshake — which is the hang users actually hit (an unreachable
 /// host otherwise waits on the OS TCP timeout, minutes on some
@@ -164,7 +164,7 @@ pub fn drop_pool(connection_id: &str) {
     }
 }
 
-/// ADR-0013: apply the post-connect SET statements that mirror the
+/// ADR-0006: apply the post-connect SET statements that mirror the
 /// driver knobs. Returns `sqlx::Error` for use inside the pool's
 /// `after_connect` callback.
 async fn apply_driver_options_raw(

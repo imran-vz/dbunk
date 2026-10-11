@@ -2,7 +2,7 @@
 //! apply cannot reach the worker until the workspace acknowledges its journal.
 //! Plan 032: edits open in the grid (inline) or in an anchored popover, and
 //! every save goes through an environment-aware review dialog. The backend
-//! NeedsConfirmation token remains the enforcement boundary (ADR-0024).
+//! NeedsConfirmation token remains the enforcement boundary (ADR-0004).
 use crate::{
     accessible_editor::AccessibleEditor,
     cell_value::{self, Kind},

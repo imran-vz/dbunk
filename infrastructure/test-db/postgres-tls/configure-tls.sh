@@ -1,5 +1,5 @@
 #!/bin/sh
-# Sourced by the postgres entrypoint during initdb (ADR-0025 fixture).
+# Sourced by the postgres entrypoint during initdb (ADR-0006 fixture).
 # Installs the host-generated material (see gen-certs.sh, mounted at
 # /certs), requires a client certificate for the `dbunk_cert` role, then
 # runs the shared SQL fixture from /fixture-sql. The password rule for

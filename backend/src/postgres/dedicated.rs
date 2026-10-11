@@ -1,5 +1,5 @@
 //! Canonical dedicated tokio-postgres socket used by Query Session, Table
-//! Browse, and Result Mutation. TLS comes from `super::tls` (ADR-0025).
+//! Browse, and Result Mutation. TLS comes from `super::tls` (ADR-0006).
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};

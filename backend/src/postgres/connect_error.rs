@@ -1,4 +1,4 @@
-//! Attribute a tokio-postgres connect failure to a stage (ADR-0025).
+//! Attribute a tokio-postgres connect failure to a stage (ADR-0006).
 //!
 //! `tokio_postgres::Error` has no public constructors, so the
 //! classification runs over a small extracted [`ConnectErrorView`] that

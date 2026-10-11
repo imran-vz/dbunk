@@ -1,4 +1,4 @@
-//! Managed Server orchestration (ADR-0019).
+//! Managed Server orchestration (ADR-0015).
 //!
 //! dbunk provisions local dev databases as Docker containers it
 //! orchestrates but never supervises: the data directory lives on a
@@ -27,7 +27,7 @@ use crate::{
 pub const SUPPORTED_POSTGRES_VERSIONS: &[&str] = &["18", "17", "16", "15", "14"];
 pub const SUPPORTED_MYSQL_VERSIONS: &[&str] = &["9", "8.4", "8.0"];
 
-/// Non-default port bases (ADR-0019): never contend with a Homebrew
+/// Non-default port bases (ADR-0015): never contend with a Homebrew
 /// Postgres on 5432 / system MySQL on 3306.
 const PG_PORT_BASE: u16 = 5433;
 const MYSQL_PORT_BASE: u16 = 3307;
@@ -489,7 +489,7 @@ pub async fn stop(pool: &SqlitePool, id: &str) -> Result<(), String> {
     docker::stop_container(&server.container_name).await
 }
 
-/// The one deliberately destructive action (ADR-0019): removes the
+/// The one deliberately destructive action (ADR-0015): removes the
 /// container AND the data volume, then forgets the record. The linked
 /// Connection is left in place — deleting it stays a separate,
 /// non-destructive act.

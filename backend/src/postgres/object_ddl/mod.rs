@@ -1,4 +1,4 @@
-//! Backend-owned PostgreSQL object DDL (ADR-0026, ADR-0027).
+//! Backend-owned PostgreSQL object DDL (ADR-0011).
 //!
 //! `PgObjectOp` is the serde dispatcher that crosses IPC. Each variant wraps a
 //! payload struct owned by its domain module, and every payload implements

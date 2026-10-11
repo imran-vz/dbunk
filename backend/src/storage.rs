@@ -1,6 +1,6 @@
 //! SQLite persistence for dbunk's local app state.
 //!
-//! ADR-0007 makes `~/.config/dbunk/dbunk.sqlite` the primary local store.
+//! ADR-0003 makes `~/.config/dbunk/dbunk.sqlite` the primary local store.
 //! This module owns path resolution, pool setup, lightweight embedded
 //! migrations, and per-entity read/write helpers.
 
@@ -161,7 +161,7 @@ ALTER TABLE connections ADD COLUMN verify_tls_cert INTEGER NOT NULL DEFAULT 1;
         // previously-hidden form default; existing connections continue
         // to negotiate TLS the way they did before. The column lives on
         // the shared `connections` table because the SQLite schema stays
-        // flat (per ADR-0010); engines other than PG/MySQL simply ignore
+        // flat (per ADR-0002); engines other than PG/MySQL simply ignore
         // the column when their variant is constructed.
         r#"
 ALTER TABLE connections ADD COLUMN ssl INTEGER NOT NULL DEFAULT 1;
@@ -195,7 +195,7 @@ CREATE TABLE schema_map_prefs (
     ),
     (
         5,
-        // ADR-0013: optional Postgres driver/session knobs serialised
+        // ADR-0006: optional Postgres driver/session knobs serialised
         // as one JSON blob. Adding a new knob is a struct field, not
         // a schema migration. Engines other than PG ignore the
         // column (it stays NULL on their rows).
@@ -224,7 +224,7 @@ CREATE INDEX idx_redis_cli_history_connection_submitted_at
     ),
     (
         7,
-        // Belt-and-braces Redis read-only toggle (ADR-0009). Default
+        // Belt-and-braces Redis read-only toggle (ADR-0005). Default
         // 0 (not read-only). When 1, `assert_writable` rejects writes
         // without even consulting the replica-role cache.
         r#"
@@ -254,7 +254,7 @@ CREATE INDEX idx_saved_redis_commands_updated_at
     ),
     (
         9,
-        // ADR-0018: the credentials backend now stores database
+        // ADR-0006: the credentials backend now stores database
         // passwords and bastion secrets. Existing rows are database
         // password credentials keyed by connection id; moving to a
         // generic credential_id preserves them while removing the
@@ -278,7 +278,7 @@ ALTER TABLE credentials_new RENAME TO credentials;
     ),
     (
         10,
-        // ADR-0018 first slice: first-class bastion servers plus
+        // ADR-0006 first slice: first-class bastion servers plus
         // per-connection SSH tunnel config on network-backed engines.
         // SQLite ignores these shared-table columns because it has no
         // network transport and no SshTunnelConfig field.
@@ -306,7 +306,7 @@ ALTER TABLE connections ADD COLUMN ssh_tunnel_local_port INTEGER;
     ),
     (
         11,
-        // ADR-0018 deferred polish: advanced per-Connection SSH
+        // ADR-0006 deferred polish: advanced per-Connection SSH
         // Tunnel options. Jump chains store Bastion Server IDs as JSON
         // so the first-class Bastion records and their separate secret
         // namespace remain the source of truth for every hop.
@@ -320,7 +320,7 @@ ALTER TABLE connections ADD COLUMN ssh_tunnel_proxy_command TEXT;
     ),
     (
         12,
-        // ADR-0019: Managed Servers — Docker-provisioned local
+        // ADR-0015: Managed Servers — Docker-provisioned local
         // databases. The Connection link is one-way (managed server →
         // connection_id); status is never stored, it is derived live
         // from Docker.
@@ -344,7 +344,7 @@ CREATE INDEX idx_managed_servers_name ON managed_servers(name COLLATE NOCASE);
     ),
     (
         13,
-        // ADR-0022: opaque per-table Grid Preferences JSON for Table Browse.
+        // ADR-0009: opaque per-table Grid Preferences JSON for Table Browse.
         r#"
 CREATE TABLE table_grid_prefs (
   connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
@@ -358,7 +358,7 @@ CREATE TABLE table_grid_prefs (
     ),
     (
         14,
-        // ADR-0023: user-selected ordered column sets for relations whose
+        // ADR-0010: user-selected ordered column sets for relations whose
         // catalog identity cannot safely identify the projected result.
         r#"
 CREATE TABLE virtual_keys (
@@ -373,7 +373,7 @@ CREATE TABLE virtual_keys (
     ),
     (
         15,
-        // ADR-0024: shared Connection policy fields plus the bounded,
+        // ADR-0004: shared Connection policy fields plus the bounded,
         // class-labels-only audit of deliberate safety overrides.
         r#"
 ALTER TABLE connections ADD COLUMN environment TEXT NOT NULL DEFAULT 'development';
@@ -419,7 +419,7 @@ ALTER TABLE connections ADD COLUMN color TEXT NOT NULL DEFAULT '';
     ),
     (
         18,
-        // ADR-0025 (Plan 011, PAR-006): PostgreSQL TLS mode and
+        // ADR-0006 (Plan 011, PAR-006): PostgreSQL TLS mode and
         // certificate paths as one JSON blob, mirroring migration 5.
         // NULL on legacy rows and on every non-PostgreSQL engine; legacy
         // rows keep resolving through `ssl`.
@@ -817,7 +817,7 @@ fn row_to_ssh_tunnel(
 /// Row → variant construction. The SQLite schema stays flat
 /// (one row per connection, engine-irrelevant columns simply
 /// unread per variant); we match on the `engine` column to
-/// pick which variant to build. ADR-0010 covers the design.
+/// pick which variant to build. ADR-0002 covers the design.
 fn row_to_connection(row: sqlx::sqlite::SqliteRow) -> Result<StoredConnection, String> {
     row_to_connection_with_logging(row, true)
 }
@@ -1136,7 +1136,7 @@ pub(crate) async fn upsert_connection_with<'e>(
     let is_favorite = bool_to_i64(connection.is_favorite());
     let color = connection.color().to_string();
     let project = connection.organization().project.clone();
-    // ADR-0025: `tls_options.mode` is authoritative; the legacy `ssl`
+    // ADR-0006: `tls_options.mode` is authoritative; the legacy `ssl`
     // flag is normalized to match it on every save so they can never
     // disagree on disk. Legacy rows (no blob) keep the flag as given.
     let ssl = match connection {
@@ -1170,7 +1170,7 @@ pub(crate) async fn upsert_connection_with<'e>(
         Some(serde_json::to_string(&tunnel.jump_chain).map_err(|error| error.to_string())?)
     };
     let ssh_tunnel_proxy_command = tunnel.proxy_command;
-    // ADR-0013: PG driver_options serialise to one JSON blob; other
+    // ADR-0006: PG driver_options serialise to one JSON blob; other
     // engines persist NULL so the column stays variant-aware without
     // adding per-engine columns.
     let driver_options: Option<String> = match connection {

@@ -205,9 +205,9 @@ retain statement/lock deadlines and revalidate eligibility; this fixture does
 not claim a server-heap or internal lock-footprint bound. Native transport and
 retention caps are separate from PostgreSQL's internal metadata work.
 
-See [ADR-0030](../../../docs/adr/0030-postgres-schema-comparison-foundation.md)
-for the accepted foundation, allocation ownership and IPC acknowledgement
-contract. The Step 2 native fixtures test UTF-8 chunks, byte/row/result caps,
+See [ADR-0013](../../../docs/adr/0013-bounded-schema-comparison.md)
+for the accepted foundation; the original ADR-0030 (git history at
+`40f5b86`) holds the allocation ownership and IPC acknowledgement contract. The Step 2 native fixtures test UTF-8 chunks, byte/row/result caps,
 worst-case JSON escaping, the actual Tauri JavaScript serializer dependency,
 concurrent serializer admission, TTL and immutable value identity. Native
 command wiring and runtime RSS remain later gates.
@@ -306,7 +306,7 @@ NULLS NOT DISTINCT, FK delete-column subsets, an invalid concurrent index, and
 the memory/limit profile at 10/100/300 realistic tables, 1,000 and 1,001
 one-column tables and exactly 50,000 and 50,011 facts. The measured table and
 the transport page change it motivated are recorded in the plan's Step 6
-record and ADR-0030. All eight native tests and the profile passed on
+record and ADR-0013. All eight native tests and the profile passed on
 2026-09-14; the owned containers were removed.
 
 
@@ -314,6 +314,6 @@ record and ADR-0030. All eight native tests and the profile passed on
 
 Plan 022 drove the removed Tauri desktop app through a `webview-driver/`
 harness in this directory. The harness was deleted with the Tauri/React app
-(ADR-0033) and remains in git history.
+(ADR-0001) and remains in git history.
 
 Results are recorded in [Plan 022's execution record](https://github.com/imran-vz/dbunk/blob/db2dae24c504248d62f15f772bf82e4c8d1f5ff2/plans/022-postgres-schema-comparison-activation.md).

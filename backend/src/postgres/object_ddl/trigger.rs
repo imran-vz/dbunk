@@ -1,5 +1,5 @@
 //! Trigger operations. Triggers are addressed by table and name, not by an
-//! Object Ref (ADR-0027).
+//! Object Ref (ADR-0011).
 
 use serde::{Deserialize, Serialize};
 

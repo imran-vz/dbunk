@@ -3,7 +3,7 @@
 //! Fired right after a successful `PING`, this builds the
 //! [`RedisCapabilities`] payload that:
 //!  - drives the post-test-connection banner in the new-connection form
-//!  - feeds the server-signal auto-read-only gate (ADR-0009) via the
+//!  - feeds the server-signal auto-read-only gate (ADR-0005) via the
 //!    `role` field
 //!  - tells the Key Inspector whether `OBJECT FREQ` is meaningful
 //!    (LFU eviction policies only)

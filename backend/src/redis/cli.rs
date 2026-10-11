@@ -2,7 +2,7 @@
 //!
 //! `run_command` issues an arbitrary Redis command (caller
 //! pre-tokenised) and returns the serialised result.
-//! Destructive-command guard from ADR-0009 is enforced here: any
+//! Destructive-command guard from ADR-0005 is enforced here: any
 //! command on the hard or soft list is rejected unless
 //! `confirmed: true` is set on the payload. Pub/Sub commands are
 //! redirected to the Pub/Sub tab.
@@ -124,7 +124,7 @@ pub enum RunCommandResult {
 }
 
 /// The CLI's refusal rules, shared with the native console: empty input,
-/// Pub/Sub commands, and the ADR-0009 destructive list without
+/// Pub/Sub commands, and the ADR-0005 destructive list without
 /// confirmation. `None` means the command may run.
 pub fn guard(tokens: &[String], confirmed: bool) -> Option<RunCommandResult> {
     if tokens.is_empty() {

@@ -1,6 +1,6 @@
 //! The policy gate as command-level callers apply it: resolve the policy from
 //! the hydrated connection record, refuse before dispatch, and record a
-//! confirmed override only after the operation succeeds (ADR-0024).
+//! confirmed override only after the operation succeeds (ADR-0004).
 
 use sqlx::SqlitePool;
 
