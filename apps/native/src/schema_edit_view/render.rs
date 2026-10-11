@@ -205,9 +205,10 @@ impl SchemaEditView {
                         parts.push(format!("{label} {value}"));
                     }
                 }
-                let options_changed = row.deltas.iter().any(|delta| {
-                    !matches!(delta.attr, Attr::Name | Attr::Field(Field::Comment))
-                });
+                let options_changed = row
+                    .deltas
+                    .iter()
+                    .any(|delta| !matches!(delta.attr, Attr::Name | Attr::Field(Field::Comment)));
                 vec![
                     Cell::delta(table.name.clone(), row, Attr::Name),
                     Cell::delta(
@@ -318,8 +319,16 @@ impl SchemaEditView {
                         field(Field::Columns),
                     ),
                     Cell::delta(reference, row, field(Field::Reference)),
-                    Cell::delta(action_label(key.on_update), row, field(Field::OnUpdateAction)),
-                    Cell::delta(action_label(key.on_delete), row, field(Field::OnDeleteAction)),
+                    Cell::delta(
+                        action_label(key.on_update),
+                        row,
+                        field(Field::OnUpdateAction),
+                    ),
+                    Cell::delta(
+                        action_label(key.on_delete),
+                        row,
+                        field(Field::OnDeleteAction),
+                    ),
                 ]
             }
             Target::Check(origin) => {
@@ -487,7 +496,9 @@ impl SchemaEditView {
                     })
                     .child(add("schema-edit-add-unique", "Unique", false))
             }
-            ChangeGroup::ForeignKeys => title.child(add("schema-edit-add-fk", "Foreign key", false)),
+            ChangeGroup::ForeignKeys => {
+                title.child(add("schema-edit-add-fk", "Foreign key", false))
+            }
             ChangeGroup::Checks => title.child(add("schema-edit-add-check", "Check", false)),
             ChangeGroup::Indexes => title.child(add("schema-edit-add-index", "Index", false)),
             ChangeGroup::Table => title,
@@ -530,9 +541,9 @@ impl SchemaEditView {
                     .aria_label(SharedString::from(label))
                     .aria_selected(selected)
                     .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.select(target, window, cx)
-                    }))
+                    .on_click(
+                        cx.listener(move |this, _, window, cx| this.select(target, window, cx)),
+                    )
                     .child(
                         table::card(false, index + 1 == count)
                             .text_color(style::text())
@@ -580,7 +591,13 @@ impl SchemaEditView {
 
     /// The per-field Undo, shown only while the field differs from the
     /// baseline. `slot` keeps ids unique when several inputs share an attr.
-    fn undo_button(&self, slot: usize, target: Target, attr: Attr, cx: &Context<Self>) -> Option<AnyElement> {
+    fn undo_button(
+        &self,
+        slot: usize,
+        target: Target,
+        attr: Attr,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
         let model = self.model.as_ref()?;
         if !model.changed(target, attr) {
             return None;
@@ -629,7 +646,11 @@ impl SchemaEditView {
                     .px(px(4.))
                     .h(px(22.))
                     .rounded(px(4.))
-                    .text_color(if enabled { style::text() } else { style::faint() })
+                    .text_color(if enabled {
+                        style::text()
+                    } else {
+                        style::faint()
+                    })
                     .when(enabled, |row| {
                         row.cursor_pointer()
                             .hover(|s| s.bg(style::hover()))
@@ -724,50 +745,62 @@ impl SchemaEditView {
                     cx,
                 ));
                 let kind = model.default_kind(origin);
-                out.push(self.chips(
-                    "schema-edit-default-kind",
-                    "Default",
-                    [
-                        (DefaultKind::None, "None"),
-                        (DefaultKind::Literal, "Literal"),
-                        (DefaultKind::Expression, "Expression"),
-                    ]
-                    .into_iter()
-                    .map(|(value, text)| (text.into(), value == kind, Choice::DefaultKind(value)))
-                    .collect(),
-                    cx,
-                ));
+                out.push(
+                    self.chips(
+                        "schema-edit-default-kind",
+                        "Default",
+                        [
+                            (DefaultKind::None, "None"),
+                            (DefaultKind::Literal, "Literal"),
+                            (DefaultKind::Expression, "Expression"),
+                        ]
+                        .into_iter()
+                        .map(|(value, text)| {
+                            (text.into(), value == kind, Choice::DefaultKind(value))
+                        })
+                        .collect(),
+                        cx,
+                    ),
+                );
                 let generated = model.generated_kind(origin);
-                out.push(self.chips(
-                    "schema-edit-generated-kind",
-                    "Generated",
-                    [
-                        (GeneratedKind::None, "No"),
-                        (GeneratedKind::Virtual, "Virtual"),
-                        (GeneratedKind::Stored, "Stored"),
-                    ]
-                    .into_iter()
-                    .map(|(value, text)| {
-                        (text.into(), value == generated, Choice::GeneratedKind(value))
-                    })
-                    .collect(),
-                    cx,
-                ));
-                out.push(self.chips(
-                    "schema-edit-identity",
-                    "Identity",
-                    caps.identities()
-                        .iter()
-                        .map(|identity| {
+                out.push(
+                    self.chips(
+                        "schema-edit-generated-kind",
+                        "Generated",
+                        [
+                            (GeneratedKind::None, "No"),
+                            (GeneratedKind::Virtual, "Virtual"),
+                            (GeneratedKind::Stored, "Stored"),
+                        ]
+                        .into_iter()
+                        .map(|(value, text)| {
                             (
-                                identity_label(*identity).into(),
-                                *identity == column.identity,
-                                Choice::Identity(*identity),
+                                text.into(),
+                                value == generated,
+                                Choice::GeneratedKind(value),
                             )
                         })
                         .collect(),
-                    cx,
-                ));
+                        cx,
+                    ),
+                );
+                out.push(
+                    self.chips(
+                        "schema-edit-identity",
+                        "Identity",
+                        caps.identities()
+                            .iter()
+                            .map(|identity| {
+                                (
+                                    identity_label(*identity).into(),
+                                    *identity == column.identity,
+                                    Choice::Identity(*identity),
+                                )
+                            })
+                            .collect(),
+                        cx,
+                    ),
+                );
                 if caps.invisible {
                     out.push(self.check_row(
                         "schema-edit-invisible",
@@ -804,48 +837,58 @@ impl SchemaEditView {
                 let Some(key) = model.foreign_key(origin) else {
                     return out;
                 };
-                out.push(self.chips(
-                    "schema-edit-on-update",
-                    "On update",
-                    ACTIONS
-                        .iter()
-                        .map(|action| {
-                            (
-                                action_label(*action).into(),
-                                *action == key.on_update,
-                                Choice::OnUpdate(*action),
-                            )
-                        })
-                        .collect(),
-                    cx,
-                ));
-                out.push(self.chips(
-                    "schema-edit-on-delete",
-                    "On delete",
-                    ACTIONS
-                        .iter()
-                        .map(|action| {
-                            (
-                                action_label(*action).into(),
-                                *action == key.on_delete,
-                                Choice::OnDelete(*action),
-                            )
-                        })
-                        .collect(),
-                    cx,
-                ));
-                if caps.deferrable {
-                    out.push(self.chips(
-                        "schema-edit-deferrable",
-                        "Deferrable",
-                        DEFERRABLE
+                out.push(
+                    self.chips(
+                        "schema-edit-on-update",
+                        "On update",
+                        ACTIONS
                             .iter()
-                            .map(|(value, text)| {
-                                ((*text).into(), *value == key.deferrable, Choice::Deferrable(*value))
+                            .map(|action| {
+                                (
+                                    action_label(*action).into(),
+                                    *action == key.on_update,
+                                    Choice::OnUpdate(*action),
+                                )
                             })
                             .collect(),
                         cx,
-                    ));
+                    ),
+                );
+                out.push(
+                    self.chips(
+                        "schema-edit-on-delete",
+                        "On delete",
+                        ACTIONS
+                            .iter()
+                            .map(|action| {
+                                (
+                                    action_label(*action).into(),
+                                    *action == key.on_delete,
+                                    Choice::OnDelete(*action),
+                                )
+                            })
+                            .collect(),
+                        cx,
+                    ),
+                );
+                if caps.deferrable {
+                    out.push(
+                        self.chips(
+                            "schema-edit-deferrable",
+                            "Deferrable",
+                            DEFERRABLE
+                                .iter()
+                                .map(|(value, text)| {
+                                    (
+                                        (*text).into(),
+                                        *value == key.deferrable,
+                                        Choice::Deferrable(*value),
+                                    )
+                                })
+                                .collect(),
+                            cx,
+                        ),
+                    );
                 }
             }
             _ => {}
@@ -871,7 +914,11 @@ impl SchemaEditView {
             .bg(style::panel());
         let Some(model) = &self.model else {
             return panel
-                .child(div().text_color(style::faint()).child("Waiting for the structure…"))
+                .child(
+                    div()
+                        .text_color(style::faint())
+                        .child("Waiting for the structure…"),
+                )
                 .into_any_element();
         };
         let target = self.selected;
@@ -935,11 +982,16 @@ impl SchemaEditView {
                         .child("Removed from the draft. Restore it to edit."),
                 )
                 .child(
-                    ui::button("schema-edit-restore-selected", "Restore", ui::Variant::Secondary, self.can_edit())
-                        .tab_index(0)
-                        .when(self.can_edit(), |button| {
-                            button.on_click(cx.listener(move |this, _, _, cx| this.restore(target, cx)))
-                        }),
+                    ui::button(
+                        "schema-edit-restore-selected",
+                        "Restore",
+                        ui::Variant::Secondary,
+                        self.can_edit(),
+                    )
+                    .tab_index(0)
+                    .when(self.can_edit(), |button| {
+                        button.on_click(cx.listener(move |this, _, _, cx| this.restore(target, cx)))
+                    }),
                 )
                 .into_any_element();
         }
@@ -965,15 +1017,15 @@ impl SchemaEditView {
                     .flex()
                     .items_start()
                     .gap(px(4.))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .child(ui::labelled(input.input.label(), frame, note)),
-                    )
-                    .children(self.undo_button(slot, target, attr, cx).map(
-                        |button| div().pt(px(14.)).child(button).into_any_element(),
-                    )),
+                    .child(div().flex_1().min_w_0().child(ui::labelled(
+                        input.input.label(),
+                        frame,
+                        note,
+                    )))
+                    .children(
+                        self.undo_button(slot, target, attr, cx)
+                            .map(|button| div().pt(px(14.)).child(button).into_any_element()),
+                    ),
             );
         }
         panel.into_any_element()
@@ -987,9 +1039,7 @@ impl SchemaEditView {
         let block = self.review_block();
         let review_enabled = block.is_none();
         let discard_enabled = self.can_edit() && model.is_some_and(SchemaEditModel::has_changes);
-        let idle = self.observing.is_none()
-            && self.review.is_none()
-            && !self.has_pending();
+        let idle = self.observing.is_none() && self.review.is_none() && !self.has_pending();
         let review = ui::tool_button_accent(
             "schema-edit-review",
             format!("Review {count}"),
@@ -1028,7 +1078,9 @@ impl SchemaEditView {
                 self.request.table.clone(),
             ))
             .child(ui::badge("draft"))
-            .when_some(model, |bar, model| bar.child(ui::badge(model.baseline().engine.label())))
+            .when_some(model, |bar, model| {
+                bar.child(ui::badge(model.baseline().engine.label()))
+            })
             .child(ui::grow())
             .when(destructive > 0, |bar| {
                 bar.child(
@@ -1043,16 +1095,25 @@ impl SchemaEditView {
                     div()
                         .flex_none()
                         .text_color(style::bad_text())
-                        .child(format!("{issues} problem{}", if issues == 1 { "" } else { "s" })),
+                        .child(format!(
+                            "{issues} problem{}",
+                            if issues == 1 { "" } else { "s" }
+                        )),
                 )
             })
             .child(
-                ui::tool_button("schema-edit-discard", "Discard", None, discard_enabled, false)
-                    .aria_label("Discard the structure draft")
-                    .tab_index(0)
-                    .when(discard_enabled, |button| {
-                        button.on_click(cx.listener(|this, _, _, cx| this.discard(cx)))
-                    }),
+                ui::tool_button(
+                    "schema-edit-discard",
+                    "Discard",
+                    None,
+                    discard_enabled,
+                    false,
+                )
+                .aria_label("Discard the structure draft")
+                .tab_index(0)
+                .when(discard_enabled, |button| {
+                    button.on_click(cx.listener(|this, _, _, cx| this.discard(cx)))
+                }),
             )
             .child(review)
             .child(ui::separator())
@@ -1085,7 +1146,11 @@ impl SchemaEditView {
                 .flex_none()
                 .px(px(INSET))
                 .py(px(4.))
-                .bg(if warn { style::warn_fill() } else { style::panel() })
+                .bg(if warn {
+                    style::warn_fill()
+                } else {
+                    style::panel()
+                })
                 .border_b_1()
                 .border_color(style::line_soft())
                 .text_color(if warn { style::warn() } else { style::dim() })
@@ -1105,7 +1170,9 @@ impl SchemaEditView {
             );
         }
         if let Some(reason) = self.policy.read_only_reason() {
-            out.push(note("schema-edit-connection-read-only", reason.into(), true).into_any_element());
+            out.push(
+                note("schema-edit-connection-read-only", reason.into(), true).into_any_element(),
+            );
         }
         if self.recovery.unknown() {
             let attempt = self.recovery.attempt_id().unwrap_or("unknown");

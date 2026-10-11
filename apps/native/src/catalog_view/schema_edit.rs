@@ -221,7 +221,9 @@ impl CatalogView {
             recovery.request.table.clone(),
         );
         let text = if unknown {
-            format!("Structure change on {schema}.{table} has an unknown outcome; inspect and reconcile it")
+            format!(
+                "Structure change on {schema}.{table} has an unknown outcome; inspect and reconcile it"
+            )
         } else {
             format!("Saved structure draft for {schema}.{table}")
         };

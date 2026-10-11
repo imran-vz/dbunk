@@ -8,8 +8,8 @@ use crate::results::encoded_size;
 use dbunk_lib::backend::Backend;
 use dbunk_lib::backend::data::DataDocument;
 use dbunk_lib::backend::schema_edit::{
-    SchemaEditConfirmation, SchemaEditError, SchemaEditRequest, SchemaEditReview,
-    SchemaEditSource, SchemaEditSubmission, SchemaEditTarget,
+    SchemaEditConfirmation, SchemaEditError, SchemaEditRequest, SchemaEditReview, SchemaEditSource,
+    SchemaEditSubmission, SchemaEditTarget,
 };
 
 /// Reserved for a write reply: a confirmation carries the baseline, the
@@ -64,13 +64,15 @@ fn review_bytes(review: &SchemaEditReview) -> usize {
 }
 
 /// One facade call against `source`.
-pub async fn call(backend: &Backend, source: SchemaEditSource, call: SchemaEditCall) -> SchemaEditReply {
+pub async fn call(
+    backend: &Backend,
+    source: SchemaEditSource,
+    call: SchemaEditCall,
+) -> SchemaEditReply {
     match call {
-        SchemaEditCall::Observe(request) => SchemaEditReply::Observed(
-            backend
-                .observe_schema_edit(source, request)
-                .await
-                .and_then(|target| {
+        SchemaEditCall::Observe(request) => {
+            SchemaEditReply::Observed(backend.observe_schema_edit(source, request).await.and_then(
+                |target| {
                     if encoded_size(target.baseline()) > PAYLOAD_BYTES {
                         Err(SchemaEditError::Unavailable(
                             "The table structure is too large to edit here".into(),
@@ -78,10 +80,11 @@ pub async fn call(backend: &Backend, source: SchemaEditSource, call: SchemaEditC
                     } else {
                         Ok(Box::new(target))
                     }
-                }),
-        ),
-        SchemaEditCall::Apply(review) => SchemaEditReply::Applied(
-            if !review.target().source().same(&source) {
+                },
+            ))
+        }
+        SchemaEditCall::Apply(review) => {
+            SchemaEditReply::Applied(if !review.target().source().same(&source) {
                 Err(SchemaEditError::ForeignSource)
             } else if review_bytes(&review) > PAYLOAD_BYTES {
                 Err(SchemaEditError::Unavailable(
@@ -89,10 +92,10 @@ pub async fn call(backend: &Backend, source: SchemaEditSource, call: SchemaEditC
                 ))
             } else {
                 backend.apply_schema_edit(*review).await
-            },
-        ),
-        SchemaEditCall::Confirm(confirmation) => SchemaEditReply::Applied(
-            if !confirmation.review().target().source().same(&source) {
+            })
+        }
+        SchemaEditCall::Confirm(confirmation) => {
+            SchemaEditReply::Applied(if !confirmation.review().target().source().same(&source) {
                 Err(SchemaEditError::ForeignSource)
             } else if review_bytes(confirmation.review()) > PAYLOAD_BYTES {
                 Err(SchemaEditError::Unavailable(
@@ -100,14 +103,23 @@ pub async fn call(backend: &Backend, source: SchemaEditSource, call: SchemaEditC
                 ))
             } else {
                 backend.confirm_schema_edit(*confirmation).await
-            },
-        ),
+            })
+        }
     }
 }
 
 /// The Objects document worker's entry point (PostgreSQL).
-pub async fn request(backend: &Backend, document: &DataDocument, request: SchemaEditCall) -> SchemaEditReply {
-    call(backend, SchemaEditSource::Postgres(document.clone()), request).await
+pub async fn request(
+    backend: &Backend,
+    document: &DataDocument,
+    request: SchemaEditCall,
+) -> SchemaEditReply {
+    call(
+        backend,
+        SchemaEditSource::Postgres(document.clone()),
+        request,
+    )
+    .await
 }
 
 pub fn message_bytes(message: &TableMessage) -> usize {

@@ -13,9 +13,9 @@ use crate::{
         ConfirmStyle, ConfirmationStep, Preconfirmation, on_needs_confirmation, preconfirmation,
     },
     schema_edit_model::{
-        OutcomeText, PlanToggle, ReviewEscape, ReviewPhase, Settlement, apply_enabled,
-        apply_label, note_label, note_warns, outcome_text, plan_toggles, review_escape,
-        review_phase, sql_document, toggle, toggle_on,
+        OutcomeText, PlanToggle, ReviewEscape, ReviewPhase, Settlement, apply_enabled, apply_label,
+        note_label, note_warns, outcome_text, plan_toggles, review_escape, review_phase,
+        sql_document, toggle, toggle_on,
     },
     schema_edit_view::{SchemaEditEvent, SchemaEditView},
     style,
@@ -27,13 +27,14 @@ use crate::{
 };
 use dbunk_lib::backend::DevelopmentEnvironment;
 use dbunk_lib::backend::schema_edit::{
-    ChangeGroup, ChangeKind, Dependent, InboundReference, PlanOptions, ReviewRefusal,
-    SchemaChange, SchemaDraft, SchemaEditConfirmation, SchemaEditError, SchemaEditOutcome,
-    SchemaEditPreview, SchemaEditReceipt, SchemaEditReview, SchemaEditSubmission,
-    SchemaEditTarget,
+    ChangeGroup, ChangeKind, Dependent, InboundReference, PlanOptions, ReviewRefusal, SchemaChange,
+    SchemaDraft, SchemaEditConfirmation, SchemaEditError, SchemaEditOutcome, SchemaEditPreview,
+    SchemaEditReceipt, SchemaEditReview, SchemaEditSubmission, SchemaEditTarget,
 };
 use editor::Editor;
-use gpui::{AnyElement, Context, Entity, Role, SharedString, Subscription, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, Context, Entity, Role, SharedString, Subscription, Window, div, prelude::*, px,
+};
 
 pub mod runtime;
 
@@ -763,7 +764,11 @@ impl SchemaEditView {
                 .child(self.dialog_button(
                     "schema-review-apply",
                     label,
-                    if danger { Variant::Danger } else { Variant::Primary },
+                    if danger {
+                        Variant::Danger
+                    } else {
+                        Variant::Primary
+                    },
                     enabled,
                     cx,
                     |this, _, cx| this.apply_clicked(cx),
@@ -780,7 +785,12 @@ impl SchemaEditView {
         )
     }
 
-    fn options(&self, state: &ReviewState, phase: ReviewPhase, cx: &Context<Self>) -> Option<AnyElement> {
+    fn options(
+        &self,
+        state: &ReviewState,
+        phase: ReviewPhase,
+        cx: &Context<Self>,
+    ) -> Option<AnyElement> {
         let toggles = plan_toggles(state.preview.engine, &state.preview.changes);
         if toggles.is_empty() {
             return None;
@@ -806,7 +816,11 @@ impl SchemaEditView {
                     .h(px(22.))
                     .px(px(4.))
                     .rounded(px(4.))
-                    .text_color(if enabled { style::text() } else { style::faint() })
+                    .text_color(if enabled {
+                        style::text()
+                    } else {
+                        style::faint()
+                    })
                     .when(enabled, |row| {
                         row.cursor_pointer()
                             .hover(|s| s.bg(style::hover()))
@@ -901,7 +915,10 @@ fn change_line(index: usize, change: &SchemaChange) -> AnyElement {
     };
     let label = match &detail {
         Some((field, before, after)) => {
-            format!("{verb} {object} {}: {field} {before} to {after}", change.name)
+            format!(
+                "{verb} {object} {}: {field} {before} to {after}",
+                change.name
+            )
         }
         None => format!("{verb} {object} {}", change.name),
     };
@@ -995,7 +1012,11 @@ fn changes_list(preview: &SchemaEditPreview) -> AnyElement {
         if changes.is_empty() {
             continue;
         }
-        list = list.child(ui::section_label(format!("{} · {}", group.label(), changes.len())));
+        list = list.child(ui::section_label(format!(
+            "{} · {}",
+            group.label(),
+            changes.len()
+        )));
         for change in changes {
             list = list.child(change_line(index, change));
             index += 1;
@@ -1017,12 +1038,22 @@ fn impact_line(index: usize, tag: &'static str, warn: bool, text: String) -> Any
                 .flex_none()
                 .px(px(5.))
                 .rounded(px(3.))
-                .bg(if warn { style::warn_fill() } else { style::raised() })
+                .bg(if warn {
+                    style::warn_fill()
+                } else {
+                    style::raised()
+                })
                 .text_size(px(style::FONT_SMALL))
                 .text_color(if warn { style::warn() } else { style::dim() })
                 .child(tag),
         )
-        .child(div().flex_1().min_w_0().text_color(style::text()).child(text))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_color(style::text())
+                .child(text),
+        )
         .into_any_element()
 }
 
@@ -1034,12 +1065,21 @@ fn impact_list(state: &ReviewState) -> AnyElement {
             lines.push((
                 "Destructive",
                 true,
-                format!("{} {}: {}", change.object.label(), change.name, reason.label()),
+                format!(
+                    "{} {}: {}",
+                    change.object.label(),
+                    change.name,
+                    reason.label()
+                ),
             ));
         }
     }
     for note in &preview.notes {
-        lines.push((note_label(note.kind), note_warns(note.kind), note.text.clone()));
+        lines.push((
+            note_label(note.kind),
+            note_warns(note.kind),
+            note.text.clone(),
+        ));
     }
     for reference in &state.inbound {
         lines.push((

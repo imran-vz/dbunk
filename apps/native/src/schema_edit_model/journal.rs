@@ -65,7 +65,11 @@ impl Recovery {
 
     /// The journaled draft for this table, when it was edited against a
     /// baseline whose table equals `baseline`'s (the drift token may move).
-    pub fn restorable(&self, request: &SchemaEditRequest, baseline: &SchemaBaseline) -> Option<SchemaDraft> {
+    pub fn restorable(
+        &self,
+        request: &SchemaEditRequest,
+        baseline: &SchemaBaseline,
+    ) -> Option<SchemaDraft> {
         self.record
             .as_ref()
             .filter(|record| {
@@ -137,7 +141,11 @@ impl Recovery {
 
     /// Settles the journaled attempt from its receipt. A receipt for another
     /// attempt or table never settles anything: the record stays unknown.
-    pub fn settle(&mut self, receipt: &SchemaEditReceipt, request: &SchemaEditRequest) -> Settlement {
+    pub fn settle(
+        &mut self,
+        receipt: &SchemaEditReceipt,
+        request: &SchemaEditRequest,
+    ) -> Settlement {
         let matches = receipt.request == *request
             && self.record.as_ref().is_some_and(|record| {
                 record.request == *request

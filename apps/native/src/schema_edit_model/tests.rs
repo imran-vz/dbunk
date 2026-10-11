@@ -3,9 +3,9 @@ use crate::apply_flow::ApplyFlow;
 use crate::data_model::{ConfirmStyle, TablePolicy};
 use dbunk_lib::backend::schema_edit::{
     BaselineId, DriftToken, EngineNote, IndexMember, IndexTarget, NoteKind, PlanOptions,
-    PreviewGroup, PreviewStatement, SchemaEditAttemptId, SchemaEditFailure, SchemaEditOutcome,
-    SchemaEditError, SchemaEditPreview, SchemaEditReceipt, ServerFacts, ServerFeatures, ServerFlavor, TableModel,
-    TableOptions, WorkspaceSchemaEdit, WorkspaceSchemaEditAttempt,
+    PreviewGroup, PreviewStatement, SchemaEditAttemptId, SchemaEditError, SchemaEditFailure,
+    SchemaEditOutcome, SchemaEditPreview, SchemaEditReceipt, ServerFacts, ServerFeatures,
+    ServerFlavor, TableModel, TableOptions, WorkspaceSchemaEdit, WorkspaceSchemaEditAttempt,
 };
 use dbunk_lib::backend::{
     DevelopmentConnection, DevelopmentConnectionOrganization, DevelopmentEngineConnection,
@@ -62,7 +62,12 @@ fn users(engine: SchemaEngine) -> SchemaBaseline {
             schema: schema.into(),
             name: "users".into(),
             comment: None,
-            columns: vec![id, email, col(3, "name", "text"), col(4, "org_id", "bigint")],
+            columns: vec![
+                id,
+                email,
+                col(3, "name", "text"),
+                col(4, "org_id", "bigint"),
+            ],
             primary_key: Some(KeyModel {
                 origin: existing(100),
                 name: Some("users_pkey".into()),
@@ -122,7 +127,10 @@ fn a_fresh_draft_has_nothing_to_review() {
     let model = model(PG);
     assert!(!model.has_changes());
     assert_eq!(model.review_count(), 0);
-    assert_eq!(model.review_block().as_deref(), Some("No changes to review"));
+    assert_eq!(
+        model.review_block().as_deref(),
+        Some("No changes to review")
+    );
     assert!(model.issues().is_empty());
     for group in ChangeGroup::ALL {
         assert!(
@@ -143,7 +151,10 @@ fn renaming_a_column_is_one_changed_row_that_undo_reverts() {
     assert_eq!(row.state, RowState::Changed);
     assert_eq!(row.label, "full_name");
     let delta = row.delta(Attr::Name).unwrap();
-    assert_eq!((delta.before.as_str(), delta.after.as_str()), ("name", "full_name"));
+    assert_eq!(
+        (delta.before.as_str(), delta.after.as_str()),
+        ("name", "full_name")
+    );
     assert_eq!(model.review_count(), 1);
     assert_eq!(model.review_block(), None);
     // The index on the renamed column still lists it by origin.
@@ -163,7 +174,9 @@ fn per_field_undo_reverts_only_that_field() {
     let target = Target::Column(existing(3));
     model.set_input(target, Input::DataType, "integer").unwrap();
     model.set_choice(target, Choice::Nullable(false));
-    model.set_input(target, Input::Comment, "display name").unwrap();
+    model
+        .set_input(target, Input::Comment, "display name")
+        .unwrap();
     let row = model.row(target);
     assert_eq!(row.deltas.len(), 3);
     // Three field changes on one column still count once.
@@ -193,12 +206,16 @@ fn removed_objects_stay_visible_and_can_be_restored() {
     assert_eq!(removed.state, RowState::Removed);
     assert_eq!(removed.label, "name");
     assert_eq!(removed.destructive, Some(Destructive::DropColumn));
-    assert_eq!(columns.last().unwrap().target, column, "removed rows come last");
     assert_eq!(
-        model.rows(ChangeGroup::Indexes)[0].state,
-        RowState::Removed
+        columns.last().unwrap().target,
+        column,
+        "removed rows come last"
     );
-    assert!(model.inputs(column).is_empty(), "removed rows are not editable");
+    assert_eq!(model.rows(ChangeGroup::Indexes)[0].state, RowState::Removed);
+    assert!(
+        model.inputs(column).is_empty(),
+        "removed rows are not editable"
+    );
     assert!(model.set_input(column, Input::Name, "x").is_err());
 
     model.restore_object(column).unwrap();
@@ -227,10 +244,17 @@ fn new_objects_are_added_rows_and_undo_removes_them() {
 fn key_columns_parse_names_and_refuse_unknown_ones() {
     let mut model = model(PG);
     let key = Target::Unique(existing(200));
-    assert_eq!(model.set_input(key, Input::Columns, "email, \"name\""), Ok(true));
+    assert_eq!(
+        model.set_input(key, Input::Columns, "email, \"name\""),
+        Ok(true)
+    );
     assert_eq!(model.input_value(key, Input::Columns), "email, name");
     assert_eq!(
-        model.row(key).delta(Attr::Field(Field::Columns)).unwrap().destructive,
+        model
+            .row(key)
+            .delta(Attr::Field(Field::Columns))
+            .unwrap()
+            .destructive,
         Some(Destructive::Recreate)
     );
     let before = model.draft().clone();
@@ -238,7 +262,11 @@ fn key_columns_parse_names_and_refuse_unknown_ones() {
         model.set_input(key, Input::Columns, "email, missing"),
         Err("No column named missing".into())
     );
-    assert_eq!(model.draft(), &before, "a refused edit leaves the draft as it was");
+    assert_eq!(
+        model.draft(),
+        &before,
+        "a refused edit leaves the draft as it was"
+    );
     // PostgreSQL names are case sensitive; MySQL and SQLite are not.
     assert!(model.set_input(key, Input::Columns, "EMAIL").is_err());
     let mut mysql = super::tests::model(SchemaEngine::MySql);
@@ -279,7 +307,9 @@ fn index_members_round_trip_and_keep_collation() {
     let mut model = SchemaEditModel::new(SchemaEditRequest::new("public", "users"), baseline);
     model.set_input(index, Input::Members, "name, id").unwrap();
     assert_eq!(
-        model.index(existing(500)).unwrap().members[0].collation.as_deref(),
+        model.index(existing(500)).unwrap().members[0]
+            .collation
+            .as_deref(),
         Some("C")
     );
 }
@@ -303,12 +333,22 @@ fn capabilities_follow_the_engine() {
     assert!(!pg.caps().reorder && mysql.caps().reorder && !sqlite.caps().reorder);
     let column = Target::Column(existing(3));
     assert!(pg.inputs(column).contains(&Input::Comment));
-    assert!(!sqlite.inputs(column).contains(&Input::Comment), "SQLite has no comments");
+    assert!(
+        !sqlite.inputs(column).contains(&Input::Comment),
+        "SQLite has no comments"
+    );
     assert!(!sqlite.inputs(Target::Table).contains(&Input::Comment));
     assert!(mysql.inputs(column).contains(&Input::Charset));
     assert!(mysql.inputs(Target::Table).contains(&Input::Engine));
-    assert!(pg.inputs(Target::Index(existing(500))).contains(&Input::Include));
-    assert!(!mysql.inputs(Target::Index(existing(500))).contains(&Input::Predicate));
+    assert!(
+        pg.inputs(Target::Index(existing(500)))
+            .contains(&Input::Include)
+    );
+    assert!(
+        !mysql
+            .inputs(Target::Index(existing(500)))
+            .contains(&Input::Predicate)
+    );
     assert_eq!(
         pg.caps().identities(),
         &[Identity::None, Identity::Always, Identity::ByDefault]
@@ -355,7 +395,9 @@ fn choices_keep_typed_text_and_identity_implies_not_null() {
 
     assert!(model.set_input(target, Input::Generated, "x").is_err());
     assert!(model.set_choice(target, Choice::GeneratedKind(GeneratedKind::Stored)));
-    model.set_input(target, Input::Generated, "upper(email)").unwrap();
+    model
+        .set_input(target, Input::Generated, "upper(email)")
+        .unwrap();
     assert_eq!(model.generated_kind(existing(3)), GeneratedKind::Stored);
 
     let org = Target::Column(existing(4));
@@ -369,18 +411,26 @@ fn validation_issues_block_review_and_locate_the_row() {
     let target = Target::Column(existing(3));
     model.set_input(target, Input::Name, "").unwrap();
     assert_eq!(model.row(target).issues, 1);
-    assert_eq!(model.review_block().as_deref(), Some("Column name is empty"));
+    assert_eq!(
+        model.review_block().as_deref(),
+        Some("Column name is empty")
+    );
     model.set_input(target, Input::Name, "email").unwrap();
     assert!(model.review_block().unwrap().contains("used twice"));
     let check = model.add_check();
-    assert!(model.issues_for(check).count() > 0, "an empty check is an issue");
+    assert!(
+        model.issues_for(check).count() > 0,
+        "an empty check is an issue"
+    );
     assert!(model.review_block().unwrap().starts_with("Fix the"));
 }
 
 #[test]
 fn discard_and_rebase() {
     let mut model = model(PG);
-    model.set_input(Target::Table, Input::Comment, "people").unwrap();
+    model
+        .set_input(Target::Table, Input::Comment, "people")
+        .unwrap();
     assert!(model.has_changes());
     // Same table, new drift token: the draft carries over.
     let mut fresh = users(PG);
@@ -405,7 +455,11 @@ fn primary_keys_are_single_and_named_per_engine() {
     assert!(model.remove(Target::PrimaryKey(existing(100))));
     let added = model.add_primary_key().unwrap();
     assert_eq!(model.input_value(added, Input::Name), "users_pkey");
-    assert!(model.restore_object(Target::PrimaryKey(existing(100))).is_err());
+    assert!(
+        model
+            .restore_object(Target::PrimaryKey(existing(100)))
+            .is_err()
+    );
     let keys = model.rows(ChangeGroup::Keys);
     assert_eq!(keys[0].state, RowState::Added);
     assert_eq!(keys[1].state, RowState::Removed);
@@ -420,8 +474,12 @@ fn primary_keys_are_single_and_named_per_engine() {
 fn foreign_key_inputs_and_actions() {
     let mut model = model(PG);
     let key = Target::ForeignKey(existing(300));
-    model.set_input(key, Input::ReferencedTable, "teams").unwrap();
-    model.set_input(key, Input::ReferencedColumns, "id").unwrap();
+    model
+        .set_input(key, Input::ReferencedTable, "teams")
+        .unwrap();
+    model
+        .set_input(key, Input::ReferencedColumns, "id")
+        .unwrap();
     assert!(model.set_choice(key, Choice::OnDelete(ReferentialAction::SetNull)));
     let row = model.row(key);
     assert!(row.delta(Attr::Field(Field::Reference)).is_some());
@@ -439,7 +497,11 @@ fn foreign_key_inputs_and_actions() {
 fn oversized_input_is_refused() {
     let mut model = model(PG);
     let text = "x".repeat(INPUT_BYTES + 1);
-    assert!(model.set_input(Target::Table, Input::Comment, &text).is_err());
+    assert!(
+        model
+            .set_input(Target::Table, Input::Comment, &text)
+            .is_err()
+    );
     assert!(!model.has_changes());
 }
 
@@ -507,7 +569,10 @@ fn phase_and_escape_follow_the_apply_flow() {
     assert_eq!(review_phase(none, 0, true, true), ReviewPhase::Settled);
 
     let mut flow = ApplyFlow::new(1, "review");
-    assert_eq!(review_phase(Some(&flow), 0, false, false), ReviewPhase::Saving);
+    assert_eq!(
+        review_phase(Some(&flow), 0, false, false),
+        ReviewPhase::Saving
+    );
     assert_eq!(
         review_escape(ReviewPhase::Saving),
         ReviewEscape::CancelBeforeDispatch
@@ -517,13 +582,20 @@ fn phase_and_escape_follow_the_apply_flow() {
     assert_eq!(phase, ReviewPhase::Applying);
     assert_eq!(review_escape(phase), ReviewEscape::Ignore);
     flow.needs_confirmation("confirmation");
-    assert_eq!(review_phase(Some(&flow), 0, false, false), ReviewPhase::NeedsTyped);
+    assert_eq!(
+        review_phase(Some(&flow), 0, false, false),
+        ReviewPhase::NeedsTyped
+    );
     assert!(flow.confirm(2));
     assert_eq!(
         review_phase(Some(&flow), 1, false, false),
         ReviewPhase::AutoConfirming
     );
-    for phase in [ReviewPhase::Ready, ReviewPhase::Failed, ReviewPhase::Settled] {
+    for phase in [
+        ReviewPhase::Ready,
+        ReviewPhase::Failed,
+        ReviewPhase::Settled,
+    ] {
         assert_eq!(review_escape(phase), ReviewEscape::Close);
     }
 }
@@ -619,7 +691,11 @@ fn plan_toggles_match_engine_and_changes() {
         plan_toggles(PG, pg.changes()),
         vec![PlanToggle::ConcurrentIndexes]
     );
-    let options = toggle(&PlanOptions::default(), PlanToggle::ConcurrentIndexes, pg.changes());
+    let options = toggle(
+        &PlanOptions::default(),
+        PlanToggle::ConcurrentIndexes,
+        pg.changes(),
+    );
     assert_eq!(options.concurrent_indexes, vec![index.origin().unwrap()]);
     assert!(toggle_on(&options, PlanToggle::ConcurrentIndexes));
     let off = toggle(&options, PlanToggle::ConcurrentIndexes, pg.changes());
@@ -665,7 +741,10 @@ fn sql_document_heads_each_group() {
         "ALTER TABLE a ADD b int;\nCOMMENT ON TABLE a IS 'x';\n"
     );
     let mixed = preview(
-        &["ALTER TABLE a ADD b int", "CREATE INDEX CONCURRENTLY i ON a (b)"],
+        &[
+            "ALTER TABLE a ADD b int",
+            "CREATE INDEX CONCURRENTLY i ON a (b)",
+        ],
         vec![
             PreviewGroup::Atomic {
                 statements: vec![0],
@@ -716,7 +795,10 @@ fn outcomes_say_what_happened_to_the_table() {
 
 // -- Journal -----------------------------------------------------------------
 
-fn attempt_record(model: &SchemaEditModel, state: WorkspaceApplyState) -> (WorkspaceSchemaEdit, SchemaEditAttemptId) {
+fn attempt_record(
+    model: &SchemaEditModel,
+    state: WorkspaceApplyState,
+) -> (WorkspaceSchemaEdit, SchemaEditAttemptId) {
     let id = SchemaEditAttemptId::new();
     let record = WorkspaceSchemaEdit {
         engine: PG,
@@ -725,14 +807,21 @@ fn attempt_record(model: &SchemaEditModel, state: WorkspaceApplyState) -> (Works
         draft: model.draft().clone(),
         attempt: Some(WorkspaceSchemaEditAttempt {
             attempt_id: id.clone(),
-            preview: preview(&["SELECT 1"], vec![PreviewGroup::Standalone { statement: 0 }]),
+            preview: preview(
+                &["SELECT 1"],
+                vec![PreviewGroup::Standalone { statement: 0 }],
+            ),
             apply_state: state,
         }),
     };
     (record, id)
 }
 
-fn receipt(model: &SchemaEditModel, id: SchemaEditAttemptId, outcome: SchemaEditOutcome) -> SchemaEditReceipt {
+fn receipt(
+    model: &SchemaEditModel,
+    id: SchemaEditAttemptId,
+    outcome: SchemaEditOutcome,
+) -> SchemaEditReceipt {
     SchemaEditReceipt {
         attempt_id: id,
         engine: PG,
@@ -751,7 +840,9 @@ fn journal_keeps_only_changed_drafts_and_never_overwrites_unknown() {
         DraftSave::Cleared
     );
     assert!(recovery.record().is_none());
-    model.set_input(Target::Table, Input::Comment, "people").unwrap();
+    model
+        .set_input(Target::Table, Input::Comment, "people")
+        .unwrap();
     assert_eq!(
         recovery.save_draft(model.request(), model.baseline(), model.draft()),
         DraftSave::Saved
@@ -783,12 +874,17 @@ fn journal_keeps_only_changed_drafts_and_never_overwrites_unknown() {
 #[test]
 fn receipts_settle_only_their_own_attempt() {
     let mut model = model(PG);
-    model.set_input(Target::Table, Input::Comment, "people").unwrap();
+    model
+        .set_input(Target::Table, Input::Comment, "people")
+        .unwrap();
 
     let (record, id) = attempt_record(&model, WorkspaceApplyState::OutcomeUnknown);
     let mut recovery = Recovery::new(Some(record));
     let applied = receipt(&model, id, SchemaEditOutcome::Applied { runtime_ms: 1 });
-    assert_eq!(recovery.settle(&applied, model.request()), Settlement::Applied);
+    assert_eq!(
+        recovery.settle(&applied, model.request()),
+        Settlement::Applied
+    );
     assert!(recovery.record().is_none());
 
     let (record, id) = attempt_record(&model, WorkspaceApplyState::OutcomeUnknown);
@@ -800,7 +896,10 @@ fn receipts_settle_only_their_own_attempt() {
             reason: SchemaEditFailure::Timeout,
         },
     );
-    assert_eq!(recovery.settle(&rolled, model.request()), Settlement::Unchanged);
+    assert_eq!(
+        recovery.settle(&rolled, model.request()),
+        Settlement::Unchanged
+    );
     let kept = recovery.record().unwrap();
     assert!(kept.attempt.is_none(), "the draft is kept for editing");
     assert_eq!(kept.draft, *model.draft());
@@ -816,7 +915,10 @@ fn receipts_settle_only_their_own_attempt() {
             reason: SchemaEditFailure::LockTimeout,
         },
     );
-    assert_eq!(recovery.settle(&stopped, model.request()), Settlement::Partial);
+    assert_eq!(
+        recovery.settle(&stopped, model.request()),
+        Settlement::Partial
+    );
     assert!(recovery.record().is_none());
 
     // Another attempt's receipt leaves the journal unknown.
@@ -827,21 +929,29 @@ fn receipts_settle_only_their_own_attempt() {
         SchemaEditAttemptId::new(),
         SchemaEditOutcome::Applied { runtime_ms: 1 },
     );
-    assert_eq!(recovery.settle(&foreign, model.request()), Settlement::Unknown);
+    assert_eq!(
+        recovery.settle(&foreign, model.request()),
+        Settlement::Unknown
+    );
     assert!(recovery.unknown());
 
     // A receipt for a staged (not yet journaled as unknown) attempt is refused.
     let (record, id) = attempt_record(&model, WorkspaceApplyState::Staged);
     let mut recovery = Recovery::new(Some(record));
     let early = receipt(&model, id, SchemaEditOutcome::Applied { runtime_ms: 1 });
-    assert_eq!(recovery.settle(&early, model.request()), Settlement::Unknown);
+    assert_eq!(
+        recovery.settle(&early, model.request()),
+        Settlement::Unknown
+    );
     assert!(recovery.unknown());
 }
 
 #[test]
 fn refusals_before_dispatch_keep_the_draft_but_lost_replies_stay_unknown() {
     let mut model = model(PG);
-    model.set_input(Target::Table, Input::Comment, "people").unwrap();
+    model
+        .set_input(Target::Table, Input::Comment, "people")
+        .unwrap();
     let (record, _) = attempt_record(&model, WorkspaceApplyState::OutcomeUnknown);
     let mut recovery = Recovery::new(Some(record.clone()));
     recovery.submission_error(&SchemaEditError::Busy);

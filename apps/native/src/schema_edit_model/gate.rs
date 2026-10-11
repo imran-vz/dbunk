@@ -178,9 +178,11 @@ pub fn plan_toggles(engine: SchemaEngine, changes: &SchemaChangeSet) -> Vec<Plan
                 toggles.push(PlanToggle::ConcurrentIndexes);
             }
             if changes.changes.iter().any(|change| {
-                matches!(change.object, SchemaObject::ForeignKey | SchemaObject::Check)
-                    && (change.kind == ChangeKind::Added
-                        || change.destructive == Some(Destructive::Recreate))
+                matches!(
+                    change.object,
+                    SchemaObject::ForeignKey | SchemaObject::Check
+                ) && (change.kind == ChangeKind::Added
+                    || change.destructive == Some(Destructive::Recreate))
             }) {
                 toggles.push(PlanToggle::ValidateSeparately);
             }
@@ -194,8 +196,8 @@ pub fn plan_toggles(engine: SchemaEngine, changes: &SchemaChangeSet) -> Vec<Plan
 pub fn concurrent_candidates(changes: &SchemaChangeSet) -> Vec<Origin> {
     let mut origins = Vec::new();
     for change in &changes.changes {
-        let creates = change.kind == ChangeKind::Added
-            || change.destructive == Some(Destructive::Recreate);
+        let creates =
+            change.kind == ChangeKind::Added || change.destructive == Some(Destructive::Recreate);
         if change.object == SchemaObject::Index
             && creates
             && let Some(origin) = change.origin
