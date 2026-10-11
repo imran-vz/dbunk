@@ -165,6 +165,7 @@ async fn save_restore_is_disconnected_and_only_explicit_test_contacts_owned_peer
             schema_alter: None,
             object_ddl: None,
             admin_control: None,
+            schema_edit: None,
             maintenance: None,
             tool: None,
             saved_query_id: None,

@@ -165,6 +165,20 @@ identity; see the **Keyspace model** section below.
   auto-connecting, and loads its description after the connection becomes
   active. Functions and procedures expose **Edit source**, which opens the
   Routine Editor. List-only catalog entries have no Object Viewer.
+- **Schema Baseline** — one table's complete captured structure in the
+  engine-neutral schema-edit model (Plan 033, ADR-0016), with server facts,
+  a Drift Token and its editability (`Editable` or `ReadOnly` with reasons).
+- **Schema Draft** — the editable copy of a Schema Baseline. Every column,
+  key, index and constraint carries an origin (`Existing` or `New`); keys and
+  indexes reference columns by origin, so a rename is never drop plus add.
+- **Schema Change Set** — the object- and field-level result of
+  `diff(baseline, draft)`, in review order, with destructive flags.
+- **Schema Edit Preview** — a planner's rendering of a draft: statements,
+  atomic or standalone groups and engine notes. Apply re-renders it and
+  refuses unless it equals the reviewed one.
+- **Drift Token** — opaque, engine-specific evidence that a table is unchanged
+  since capture (PostgreSQL OID and xmins, SQLite `schema_version`, a hash of
+  the MySQL introspection). A mismatch at apply is `BaselineChanged`.
 - **Table Designer** — the `table-designer` Workspace Tab for creating one
   PostgreSQL table. Its form maps purely to a `createTable` operation followed
   by table/column comments and extra indexes, continuously previews the typed

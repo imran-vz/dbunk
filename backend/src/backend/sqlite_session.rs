@@ -44,6 +44,7 @@ use crate::postgres::sql_class::{
 use crate::safety::policy::{
     assert_permitted, AuditDisposition, ResolvedSafetyPolicy, SafetyRefusal, WriteIntent,
 };
+use crate::schema_edit::{SchemaBaseline, SchemaDraft, SchemaEditPreview, SessionApply};
 use crate::{quote_double, StoredConnection};
 
 /// Rows retained per result set (query tab).
@@ -250,6 +251,24 @@ enum Work {
         name: String,
         reply: oneshot::Sender<Result<SqliteStructure, SqliteSessionError>>,
     },
+    /// Plan 033: capture a schema-edit baseline.
+    SchemaBaseline {
+        schema: String,
+        name: String,
+        reply: oneshot::Sender<Result<SchemaBaseline, SqliteSessionError>>,
+    },
+    /// Plan 033: apply a reviewed schema edit on this connection.
+    SchemaApply {
+        edit: Box<SchemaApplyWork>,
+        reply: oneshot::Sender<Result<SessionApply, SqliteSessionError>>,
+    },
+}
+
+struct SchemaApplyWork {
+    baseline: SchemaBaseline,
+    draft: SchemaDraft,
+    preview: SchemaEditPreview,
+    confirmed: bool,
 }
 
 impl Work {
@@ -259,6 +278,8 @@ impl Work {
             Work::Execute { reply, .. } => drop(reply.send(Err(error))),
             Work::Browse { reply, .. } => drop(reply.send(Err(error))),
             Work::Structure { reply, .. } => drop(reply.send(Err(error))),
+            Work::SchemaBaseline { reply, .. } => drop(reply.send(Err(error))),
+            Work::SchemaApply { reply, .. } => drop(reply.send(Err(error))),
         }
     }
 }
@@ -471,7 +492,13 @@ impl SqliteSession {
             sqlite_version: version,
         };
         let (jobs, receiver) = mpsc::channel(QUEUE);
-        let worker = tokio::spawn(run_worker(connection, receiver, shared.clone(), config));
+        let worker = tokio::spawn(run_worker(
+            connection,
+            receiver,
+            shared.clone(),
+            config,
+            info.sqlite_version.clone(),
+        ));
         Ok(Self {
             info,
             jobs: Mutex::new(Some(jobs)),
@@ -594,6 +621,46 @@ impl SqliteSession {
         .await
     }
 
+    /// Plan 033: captures `schema.name` as a schema-edit baseline on this
+    /// session's connection.
+    pub async fn schema_baseline(
+        &self,
+        ticket: u64,
+        schema: String,
+        name: String,
+    ) -> Result<SchemaBaseline, SqliteSessionError> {
+        self.request(ticket, |reply| Work::SchemaBaseline {
+            schema,
+            name,
+            reply,
+        })
+        .await
+    }
+
+    /// Plan 033: applies a reviewed schema edit. The policy is checked on the
+    /// worker (nothing runs on a refusal); the caller has re-planned and
+    /// compared the preview. Runs on the shared connection so it never
+    /// contends with the session for the write lock.
+    pub async fn apply_schema_edit(
+        &self,
+        ticket: u64,
+        baseline: SchemaBaseline,
+        draft: SchemaDraft,
+        preview: SchemaEditPreview,
+        confirmed: bool,
+    ) -> Result<SessionApply, SqliteSessionError> {
+        self.request(ticket, |reply| Work::SchemaApply {
+            edit: Box::new(SchemaApplyWork {
+                baseline,
+                draft,
+                preview,
+                confirmed,
+            }),
+            reply,
+        })
+        .await
+    }
+
     /// Refuses queued work, interrupts the running request and joins the
     /// worker (which closes the connection, rolling back an open
     /// transaction). Past `deadline` the worker is aborted and an error is
@@ -624,6 +691,7 @@ async fn run_worker(
     mut jobs: mpsc::Receiver<Job>,
     shared: Arc<Shared>,
     config: SqliteSessionConfig,
+    version: String,
 ) {
     while let Some(Job {
         ticket,
@@ -686,11 +754,62 @@ async fn run_worker(
                 );
                 let _ = reply.send(result);
             }
+            Work::SchemaBaseline {
+                schema,
+                name,
+                reply,
+            } => {
+                let result = outcome(
+                    &shared,
+                    &cancel,
+                    crate::schema_edit::sqlite::capture(&mut connection, &schema, &name, &version)
+                        .await,
+                );
+                let _ = reply.send(result);
+            }
+            Work::SchemaApply { edit, reply } => {
+                let result = schema_apply(&mut connection, &config, *edit).await;
+                let _ = reply.send(Ok(result));
+            }
         }
         *lock(&shared.current) = None;
         shared.forget(ticket, &cancel);
     }
     let _ = connection.close().await;
+}
+
+/// Plan 033: policy first (nothing runs on a refusal), then the engine
+/// executor. Confirmed overrides are audited once the change may have run.
+async fn schema_apply(
+    connection: &mut SqliteConnection,
+    config: &SqliteSessionConfig,
+    edit: SchemaApplyWork,
+) -> SessionApply {
+    if config.read_only {
+        return SessionApply::Blocked("The connection is read-only".into());
+    }
+    let authorization = match assert_permitted(&config.policy, &WriteIntent::Ddl, edit.confirmed) {
+        Ok(authorization) => authorization,
+        Err(SafetyRefusal::Blocked { reason, .. }) => return SessionApply::Blocked(reason.into()),
+        Err(SafetyRefusal::NeedsConfirmation { .. }) => return SessionApply::NeedsConfirmation,
+    };
+    let outcome =
+        crate::schema_edit::sqlite::execute(connection, &edit.baseline, &edit.draft, &edit.preview)
+            .await;
+    if outcome.may_have_changed()
+        && authorization.audit_disposition() == AuditDisposition::RequiredAfterSuccess
+    {
+        if let Some(pool) = &config.audit {
+            crate::safety::gate::record_override(
+                pool,
+                &config.connection_id,
+                "sqlite_schema_edit",
+                &WriteIntent::Ddl,
+            )
+            .await;
+        }
+    }
+    SessionApply::Finished(outcome)
 }
 
 /// A failure caused by `close` or `cancel` reports that cause, not SQLite's

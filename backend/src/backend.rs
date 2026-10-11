@@ -41,6 +41,7 @@ pub mod safety_audit;
 pub mod schema_alter;
 pub mod schema_comparisons;
 pub mod schema_ddl;
+pub mod schema_edit;
 pub mod schema_map;
 mod selection;
 pub mod sequences;
@@ -108,6 +109,9 @@ pub use development::{
     REDIS_MAX_DATABASES, REDIS_PAGE_KEYS, REDIS_SCAN_COUNT,
 };
 pub use development::{WorkspaceObjectDdl, WORKSPACE_OBJECT_DDL_MAX_BYTES};
+pub use development::{
+    WorkspaceSchemaEdit, WorkspaceSchemaEditAttempt, WORKSPACE_SCHEMA_EDIT_MAX_BYTES,
+};
 pub use legacy_import::{
     import_legacy_profile, snapshot_legacy_profile, LegacyImportManifest, LegacySnapshotManifest,
 };

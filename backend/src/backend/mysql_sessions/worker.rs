@@ -20,6 +20,7 @@ use crate::app::AppState;
 use crate::backend::bastions::ProbeRoute;
 use crate::backend::Inner;
 use crate::safety::policy::{assert_permitted, AuditDisposition, SafetyRefusal, WriteIntent};
+use crate::schema_edit::SessionApply;
 use crate::{quote_backtick, StoredConnection};
 
 pub(super) struct Session {
@@ -120,6 +121,7 @@ pub(super) fn spawn(
         kill,
         current_database: default_database.clone(),
         default_database,
+        server_version: opened.session.server.version.clone(),
     };
     let route = opened.route;
     inner.tasks.track_task(tokio::spawn(async move {
@@ -144,6 +146,8 @@ struct Worker {
     default_database: Option<String>,
     /// `DATABASE()` as last observed on this connection.
     current_database: Option<String>,
+    /// `VERSION()` at connect, for the schema-edit version gate.
+    server_version: String,
 }
 
 impl Worker {
@@ -239,8 +243,43 @@ impl Worker {
                     ))),
                 }
             }
+            Request::SchemaApply(edit) => Ok(Reply::SchemaApply(self.schema_apply(*edit).await)),
             request => self.bounded_metadata(request).await,
         }
+    }
+
+    /// Plan 033: policy first (nothing runs on a refusal), then the engine
+    /// executor on its own connection. Confirmed overrides are audited once
+    /// the change may have run.
+    async fn schema_apply(&mut self, edit: super::SchemaApplyRequest) -> SessionApply {
+        let policy = crate::safety::gate::resolved_policy(&self.resolved);
+        let authorization = match assert_permitted(&policy, &WriteIntent::Ddl, edit.confirmed) {
+            Ok(authorization) => authorization,
+            Err(SafetyRefusal::Blocked { reason, .. }) => {
+                return SessionApply::Blocked(reason.into())
+            }
+            Err(SafetyRefusal::NeedsConfirmation { .. }) => return SessionApply::NeedsConfirmation,
+        };
+        let outcome = crate::schema_edit::mysql::execute(
+            &self.kill.0,
+            &edit.baseline,
+            &edit.draft,
+            &edit.preview,
+        )
+        .await;
+        if outcome.may_have_changed() {
+            if authorization.audit_disposition() == AuditDisposition::RequiredAfterSuccess {
+                crate::safety::gate::record_override(
+                    &self.state.pool,
+                    &self.connection_id,
+                    "mysql_schema_edit",
+                    &WriteIntent::Ddl,
+                )
+                .await;
+            }
+            crate::app::touch_connection_activity(&self.state, &self.connection_id).await;
+        }
+        SessionApply::Finished(outcome)
     }
 
     /// Runs a metadata request on the session connection within
@@ -295,7 +334,19 @@ impl Worker {
                 .definition(&database, kind, &name)
                 .await
                 .map(Reply::Definition),
-            Request::Query { .. } | Request::Structure { .. } => {
+            Request::SchemaBaseline { database, table } => {
+                let version = self.server_version.clone();
+                crate::schema_edit::mysql::capture(
+                    &mut self.connection,
+                    &version,
+                    &database,
+                    &table,
+                )
+                .await
+                .map(|baseline| Reply::SchemaBaseline(Box::new(baseline)))
+                .map_err(|error| Failure::Request(MySqlSessionError::Database(error)))
+            }
+            Request::Query { .. } | Request::Structure { .. } | Request::SchemaApply(_) => {
                 unreachable!("handled before the bounded metadata path")
             }
         }

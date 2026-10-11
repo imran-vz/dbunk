@@ -215,6 +215,7 @@ async fn seed(backend: &Backend, service: &str, primary: &str, backup: &str) -> 
                     schema_alter: None,
                     object_ddl: None,
                     admin_control: None,
+                    schema_edit: None,
                     maintenance: None,
                     tool: None,
                     saved_query_id: None,

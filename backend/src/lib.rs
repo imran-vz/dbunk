@@ -23,6 +23,7 @@ mod query_session;
 mod redis;
 mod result_mutation;
 mod safety;
+mod schema_edit;
 mod seed;
 /// Locales and realism for a seed run (ADR-0014).
 pub use seed::{GenOptions as SeedOptions, Locale as SeedLocale, Realism as SeedRealism};
