@@ -20,6 +20,7 @@ pub mod mysql;
 pub mod outcome;
 pub mod postgres;
 pub mod preview;
+pub mod rebase;
 pub mod sqlite;
 
 pub use change::*;
@@ -32,6 +33,7 @@ pub use fragment::{check_data_type, check_fragment, normalize_type, FragmentErro
 pub use model::*;
 pub use outcome::*;
 pub use preview::*;
+pub use rebase::{rebase, RebaseConflict};
 
 use serde::{Deserialize, Serialize};
 

@@ -542,6 +542,13 @@ impl SchemaDraft {
         if self.table.columns.len() == before {
             return false;
         }
+        self.drop_references(origin);
+        true
+    }
+
+    /// Removes every key, index and foreign key that uses `origin` as a
+    /// member, as a column drop does.
+    pub fn drop_references(&mut self, origin: Origin) {
         if self
             .table
             .primary_key
@@ -559,11 +566,11 @@ impl SchemaDraft {
         self.table
             .indexes
             .retain(|index| !index_uses(index, origin));
-        true
     }
 
     /// Moves a column to `position` (clamped). Only engines with
-    /// `column_reorder` plan a reorder; elsewhere it is a validation issue.
+    /// `column_reorder` (or a SQLite rebuild) plan a reorder; elsewhere the
+    /// planner refuses it as unsupported.
     pub fn move_column(&mut self, origin: Origin, position: usize) -> bool {
         let Some(from) = self
             .table
