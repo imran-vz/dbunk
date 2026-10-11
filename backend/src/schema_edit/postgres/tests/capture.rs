@@ -589,7 +589,10 @@ fn preserved_attributes_mark_only_the_objects_that_carry_them() {
     };
     mark_preserved(&mut baseline.table, &attributes);
     let table = &baseline.table;
-    assert_eq!(preserved_attributes(table.uniques[0].origin), vec!["a comment"]);
+    assert_eq!(
+        preserved_attributes(table.uniques[0].origin),
+        vec!["a comment"]
+    );
     let expression = table
         .indexes
         .iter()
