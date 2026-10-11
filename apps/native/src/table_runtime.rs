@@ -109,6 +109,8 @@ pub enum TableCommand {
     ),
     MaintenanceApply(u64, MaintenanceReview),
     Sequence(u64, crate::sequence_runtime::SequenceRequest),
+    /// Plan 033 schema editor; document-bound like the other Objects DDL.
+    SchemaEdit(u64, crate::schema_edit_review::runtime::SchemaEditCall),
     MaintenanceConfirm(u64, MaintenanceConfirmation),
     AdminApply(u64, AdminControlReview),
     AdminConfirm(u64, AdminControlConfirmation),
@@ -175,6 +177,7 @@ pub enum TableMessage {
     MaintenanceReviewed(u64, Result<MaintenanceReview, Arc<MaintenanceError>>),
     MaintenanceApplied(u64, Result<MaintenanceSubmission, Arc<MaintenanceError>>),
     Sequence(u64, crate::sequence_runtime::SequenceReply),
+    SchemaEdit(u64, crate::schema_edit_review::runtime::SchemaEditReply),
     AdminApplied(u64, Result<AdminControlSubmission, Arc<AdminControlError>>),
     SchemaReviewed(u64, Result<CreateSchemaReview, Arc<CreateSchemaError>>),
     SchemaApplied(u64, Result<CreateSchemaSubmission, Arc<CreateSchemaError>>),
@@ -430,6 +433,7 @@ fn message_bytes(message: &TableMessage) -> usize {
         | TableMessage::TableDdlReviewed(..)
         | TableMessage::TableDdlApplied(..) => table_ddl::message_bytes(message),
         TableMessage::Sequence(..) => crate::sequence_runtime::message_bytes(message),
+        TableMessage::SchemaEdit(..) => crate::schema_edit_review::runtime::message_bytes(message),
         TableMessage::MaintenanceReviewed(_, Ok(value)) => value.retained_bytes(),
         TableMessage::MaintenanceApplied(
             _,
@@ -876,6 +880,10 @@ impl TableBackend for Backend {
                     id,
                     crate::sequence_runtime::request(self, document, request).await,
                 ),
+                TableCommand::SchemaEdit(id, request) => TableMessage::SchemaEdit(
+                    id,
+                    crate::schema_edit_review::runtime::request(self, document, request).await,
+                ),
                 command @ (TableCommand::ObjectDdlObserve(..)
                 | TableCommand::ObjectDdlReview(..)
                 | TableCommand::ObjectDdlApply(..)
@@ -1254,6 +1262,7 @@ async fn run_request<B: TableBackend>(
             | TableCommand::ObjectDdlReview(..)
             | TableCommand::ObjectDdlApply(..)
             | TableCommand::ObjectDdlConfirm(..)
+            | TableCommand::SchemaEdit(..)
     ) && (delivery.data.is_closed() || delivery.data.is_full())
     {
         delivery
@@ -1282,6 +1291,9 @@ async fn run_request<B: TableBackend>(
         }
         TableCommand::Sequence(_, request) if request.writes() => {
             Some(crate::sequence_runtime::RESPONSE_BYTES)
+        }
+        TableCommand::SchemaEdit(_, request) if request.writes() => {
+            Some(crate::schema_edit_review::runtime::RESPONSE_BYTES)
         }
         _ => None,
     };
@@ -1526,6 +1538,7 @@ fn cancelled(command: TableCommand) -> TableMessage {
             ))),
         ),
         TableCommand::Sequence(id, request) => TableMessage::Sequence(id, request.cancelled()),
+        TableCommand::SchemaEdit(id, request) => TableMessage::SchemaEdit(id, request.cancelled()),
         TableCommand::MaintenanceReview(id, _, _) => {
             TableMessage::MaintenanceReviewed(id, Err(Arc::new(MaintenanceError::Unavailable)))
         }

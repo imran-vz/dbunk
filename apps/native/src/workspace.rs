@@ -841,6 +841,7 @@ impl Workspace {
                     metadata.query_changes = document.view.read(cx).query_changes(cx);
                     metadata.schema_changes = document.view.read(cx).schema_changes(cx);
                     metadata.table_ddl = document.view.read(cx).table_ddl(cx);
+                    metadata.schema_edit = document.view.read(cx).schema_edit(cx);
                     metadata.schema_alter = document.view.read(cx).schema_alter(cx);
                     metadata.object_ddl = document.view.read(cx).object_ddl(cx);
                     metadata.admin_control = document.view.read(cx).admin_control(cx);

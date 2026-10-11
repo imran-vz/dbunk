@@ -423,7 +423,8 @@ impl DocumentView {
                 .saturating_add(view.read(cx).maintenance_bytes(cx))
                 .saturating_add(view.read(cx).table_ddl_bytes(cx))
                 .saturating_add(view.read(cx).schema_alter_bytes(cx))
-                .saturating_add(view.read(cx).object_ddl_bytes(cx)),
+                .saturating_add(view.read(cx).object_ddl_bytes(cx))
+                .saturating_add(view.read(cx).schema_edit_bytes(cx)),
             Content::Admin(view) => view.read(cx).control_bytes(),
             Content::SchemaMap(_) => 0,
             Content::Library(_)
@@ -449,6 +450,12 @@ impl DocumentView {
     pub fn table_ddl(&self, cx: &App) -> Option<dbunk_lib::backend::WorkspaceTableDdl> {
         match &self.content {
             Content::Catalog(view) => view.read(cx).table_ddl_snapshot(cx),
+            _ => None,
+        }
+    }
+    pub fn schema_edit(&self, cx: &App) -> Option<dbunk_lib::backend::WorkspaceSchemaEdit> {
+        match &self.content {
+            Content::Catalog(view) => view.read(cx).schema_edit_snapshot(cx),
             _ => None,
         }
     }
@@ -485,6 +492,7 @@ impl DocumentView {
                     || view.read(cx).has_table_ddl_changes(cx)
                     || view.read(cx).has_schema_alter_changes(cx)
                     || view.read(cx).has_object_ddl_changes(cx)
+                    || view.read(cx).has_schema_edit_changes(cx)
             }
             Content::Admin(view) => view.read(cx).has_control_recovery(),
             _ => false,

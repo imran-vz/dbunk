@@ -100,6 +100,7 @@ impl StructureView {
             .when(self.busy, |bar| {
                 bar.child(self.button(Action::Cancel, Some("icons/stop.svg"), cx))
             })
+            .child(self.button(Action::EditStructure, Some("icons/pencil.svg"), cx))
             .child(self.button(Action::Refresh, Some("icons/rotate_cw.svg"), cx))
             .child(self.button(
                 Action::Details,
