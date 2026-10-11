@@ -22,11 +22,16 @@ use dbunk_lib::backend::schema_edit::{
 };
 use gpui::{
     AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, Subscription, Task,
-    Window,
+    UniformListScrollHandle, Window,
 };
-use std::{cell::Cell, rc::Rc, sync::Arc};
+use std::{cell::Cell, rc::Rc, sync::Arc, time::Duration};
 
 mod render;
+
+/// PostgreSQL journals the draft at most once per this interval while it is
+/// edited (every journal clones and encodes the whole table), and always
+/// before review, close and disconnect.
+const JOURNAL_IDLE: Duration = Duration::from_millis(400);
 
 pub enum SchemaEditEvent {
     /// The journaled draft or attempt changed (PostgreSQL persists it).
@@ -88,6 +93,12 @@ pub struct SchemaEditView {
     pub(crate) failure: ui::Failure,
     pub(crate) focus: FocusHandle,
     pub(crate) focus_request: bool,
+    /// The virtualized draft table's scroll position.
+    pub(crate) scroll: UniformListScrollHandle,
+    /// An edit is not journaled yet (PostgreSQL).
+    journal_dirty: bool,
+    journal_scheduled: bool,
+    _journal_timer: Option<Task<()>>,
     tasks: Vec<Task<()>>,
 }
 
@@ -114,7 +125,7 @@ impl SchemaEditView {
         session_read_only: bool,
         cx: &mut Context<Self>,
     ) -> Self {
-        let recovery = Recovery::new(restored);
+        let recovery = Recovery::new(restored, persist);
         let message = if recovery.unknown() {
             "A previous structure change has an unknown outcome. Inspect the table, then reconcile before editing again.".into()
         } else {
@@ -146,6 +157,10 @@ impl SchemaEditView {
             failure: ui::Failure::default(),
             focus: cx.focus_handle(),
             focus_request: true,
+            scroll: UniformListScrollHandle::new(),
+            journal_dirty: false,
+            journal_scheduled: false,
+            _journal_timer: None,
             tasks: Vec::new(),
         };
         view.load_policy(cx);
@@ -171,15 +186,44 @@ impl SchemaEditView {
         cx.notify();
     }
 
-    /// The journal record for the workspace snapshot (PostgreSQL).
+    /// The journal record for the workspace snapshot (PostgreSQL). An edit
+    /// still waiting for the journal timer is included, so a save taken in
+    /// between (quit, close) never loses it.
     pub fn snapshot(&self) -> Option<WorkspaceSchemaEdit> {
-        self.recovery.record().cloned()
+        match self.pending_draft() {
+            Some(record) => record,
+            None => self.recovery.record().cloned(),
+        }
     }
 
     pub fn snapshot_bytes(&self) -> usize {
-        self.recovery
-            .record()
-            .map_or(0, crate::results::encoded_size)
+        match self.pending_draft() {
+            Some(record) => record.as_ref().map_or(0, crate::results::encoded_size),
+            None => self
+                .recovery
+                .record()
+                .map_or(0, crate::results::encoded_size),
+        }
+    }
+
+    /// What `journal` would store for an edit not journaled yet: `Some(None)`
+    /// clears the record (unchanged or too large), `None` keeps the stored one.
+    fn pending_draft(&self) -> Option<Option<WorkspaceSchemaEdit>> {
+        if !self.journal_dirty || !self.persist || self.recovery.unknown() {
+            return None;
+        }
+        let model = self.model.as_ref().filter(|model| model.editable())?;
+        if model.draft().table == model.baseline().table {
+            return Some(None);
+        }
+        Some(
+            WorkspaceSchemaEdit::draft(
+                model.request().clone(),
+                model.baseline().clone(),
+                model.draft().clone(),
+            )
+            .ok(),
+        )
     }
 
     /// A draft, an attempt or a request is outstanding.
@@ -234,9 +278,14 @@ impl SchemaEditView {
     }
 
     /// The lane disconnected: authority is gone; a save fence not yet
-    /// released is revoked. A dispatched apply settles as unknown when its
-    /// reply never comes.
+    /// released is revoked. A dispatched PostgreSQL apply settles as unknown:
+    /// its worker dies with the document, so the reply never comes. A
+    /// MySQL or SQLite call runs on the host runtime with its own session and
+    /// always replies (`SchemaEditCall::lost` when its task ends), so that
+    /// flow stays open until the real receipt settles it.
     pub fn disconnected(&mut self, cx: &mut Context<Self>) {
+        self.flush_journal(cx);
+        let worker = matches!(self.channel, Channel::Worker(_));
         // A retained worker handle would keep the closed document's worker
         // alive (`ControlHandle` stops it on drop).
         if let Channel::Worker(controls) = &mut self.channel {
@@ -249,9 +298,16 @@ impl SchemaEditView {
             .as_ref()
             .and_then(|review| review.flow.as_ref())
             .is_some_and(|flow| flow.dispatched());
+        let lost = dispatched && worker;
         self.revoke_before_dispatch();
+        // A settled outcome ("Structure change applied") stays on screen: the
+        // refresh after a successful apply disconnects the document too.
+        let settled = self
+            .review
+            .as_ref()
+            .is_some_and(|review| review.settlement.is_some());
         if let Some(review) = &mut self.review {
-            if dispatched {
+            if lost {
                 // The reply can no longer arrive; the journal stays unknown.
                 review.flow = None;
                 review.settlement = Some(Settlement::Unknown);
@@ -264,12 +320,16 @@ impl SchemaEditView {
                 review.failure = Some("Disconnected. Reconnect and review again.".into());
             }
         }
-        if self.model.is_some() {
+        if dispatched && !lost {
+            self.message =
+                "Disconnected while applying; waiting for the outcome of the change already sent."
+                    .into();
+        } else if self.model.is_some() && !settled {
             self.message =
                 "Disconnected. The draft is kept; reconnect and reload to review.".into();
         }
         self.publish(cx);
-        if dispatched {
+        if lost {
             cx.emit(SchemaEditEvent::StructureChanged);
         }
     }
@@ -452,11 +512,18 @@ impl SchemaEditView {
     }
 
     /// Journals the draft in progress (kept in memory when it does not fit).
+    /// MySQL and SQLite journal nothing: the model holds the draft.
     pub(crate) fn journal(&mut self) {
+        self.journal_dirty = false;
         let Some(model) = &self.model else {
             return;
         };
         if !model.editable() {
+            return;
+        }
+        if !self.persist {
+            self.recovery.forget_draft();
+            self.memory_only = false;
             return;
         }
         match self
@@ -500,11 +567,41 @@ impl SchemaEditView {
     }
 
     fn edited(&mut self, cx: &mut Context<Self>) {
-        self.journal();
         if self.message.is_empty() || self.failure.shown(&self.message).is_some() {
             self.message = String::new();
         }
-        self.publish(cx);
+        if self.persist {
+            // Journaling clones and encodes the whole table: coalesce it.
+            self.journal_dirty = true;
+            self.schedule_journal(cx);
+            cx.notify();
+        } else {
+            self.journal();
+            self.publish(cx);
+        }
+    }
+
+    fn schedule_journal(&mut self, cx: &mut Context<Self>) {
+        if self.journal_scheduled {
+            return;
+        }
+        self.journal_scheduled = true;
+        self._journal_timer = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(JOURNAL_IDLE).await;
+            this.update(cx, |this, cx| {
+                this.journal_scheduled = false;
+                this.flush_journal(cx);
+            })
+            .ok();
+        }));
+    }
+
+    /// Journals an edit still waiting for the timer, and tells the host.
+    pub(crate) fn flush_journal(&mut self, cx: &mut Context<Self>) {
+        if self.journal_dirty {
+            self.journal();
+            cx.emit(SchemaEditEvent::Changed);
+        }
     }
 
     // -- Editing actions (from render listeners) ------------------------------
@@ -684,6 +781,10 @@ impl SchemaEditView {
         };
         match added {
             Ok(target) => {
+                if let Some(line) = model.line_of(target) {
+                    self.scroll
+                        .scroll_to_item(line, gpui::ScrollStrategy::Nearest);
+                }
                 self.selected = target;
                 self.inputs_stale = true;
                 self.edited(cx);
@@ -744,6 +845,7 @@ impl SchemaEditView {
         if self.review.is_some() {
             return;
         }
+        self.flush_journal(cx);
         cx.emit(SchemaEditEvent::Close);
     }
 }

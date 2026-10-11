@@ -234,7 +234,7 @@ fn new_objects_are_added_rows_and_undo_removes_them() {
     assert_eq!(model.input_value(target, Input::DataType), "text");
     let second = model.add_column();
     assert_eq!(model.label(second), "column_2");
-    assert_eq!(model.targets(ChangeGroup::Columns)[5], second);
+    assert_eq!(model.rows(ChangeGroup::Columns)[5].target, second);
     assert_eq!(model.revert_object(target), Ok(true));
     assert!(!model.in_draft(target));
     assert_eq!(model.rows(ChangeGroup::Columns).len(), 5);
@@ -747,6 +747,22 @@ fn plan_toggles_match_engine_and_changes() {
         vec![PlanToggle::OnlineOnly]
     );
     assert!(plan_toggles(SchemaEngine::Sqlite, mysql.changes()).is_empty());
+
+    // Re-creating an existing index (unique toggled) is never offered
+    // CONCURRENTLY: the planner refuses it for existing indexes.
+    let mut recreated = model(PG);
+    assert!(recreated.set_choice(Target::Index(existing(500)), Choice::Unique(true)));
+    assert!(recreated.changes().changes.iter().any(|change| {
+        change.object == SchemaObject::Index && change.destructive == Some(Destructive::Recreate)
+    }));
+    assert!(concurrent_candidates(recreated.changes()).is_empty());
+    assert!(!plan_toggles(PG, recreated.changes()).contains(&PlanToggle::ConcurrentIndexes));
+    // A new index next to it is the only candidate.
+    let added = recreated.add_index();
+    assert_eq!(
+        concurrent_candidates(recreated.changes()),
+        vec![added.origin().unwrap()]
+    );
 }
 
 fn preview(statements: &[&str], groups: Vec<PreviewGroup>) -> SchemaEditPreview {
@@ -899,7 +915,7 @@ fn journal_keeps_only_changed_drafts_and_never_overwrites_unknown() {
     );
 
     let (record, _) = attempt_record(&model, WorkspaceApplyState::OutcomeUnknown);
-    let mut recovery = Recovery::new(Some(record));
+    let mut recovery = Recovery::new(Some(record), true);
     assert!(recovery.unknown());
     assert!(recovery.attempt_id().is_some());
     assert_eq!(
@@ -919,7 +935,7 @@ fn receipts_settle_only_their_own_attempt() {
         .unwrap();
 
     let (record, id) = attempt_record(&model, WorkspaceApplyState::OutcomeUnknown);
-    let mut recovery = Recovery::new(Some(record));
+    let mut recovery = Recovery::new(Some(record), true);
     let applied = receipt(&model, id, SchemaEditOutcome::Applied { runtime_ms: 1 });
     assert_eq!(
         recovery.settle(&applied, model.request()),
@@ -928,7 +944,7 @@ fn receipts_settle_only_their_own_attempt() {
     assert!(recovery.record().is_none());
 
     let (record, id) = attempt_record(&model, WorkspaceApplyState::OutcomeUnknown);
-    let mut recovery = Recovery::new(Some(record));
+    let mut recovery = Recovery::new(Some(record), true);
     let rolled = receipt(
         &model,
         id,
@@ -945,7 +961,7 @@ fn receipts_settle_only_their_own_attempt() {
     assert_eq!(kept.draft, *model.draft());
 
     let (record, id) = attempt_record(&model, WorkspaceApplyState::OutcomeUnknown);
-    let mut recovery = Recovery::new(Some(record));
+    let mut recovery = Recovery::new(Some(record), true);
     let stopped = receipt(
         &model,
         id,
@@ -963,7 +979,7 @@ fn receipts_settle_only_their_own_attempt() {
 
     // Another attempt's receipt leaves the journal unknown.
     let (record, _) = attempt_record(&model, WorkspaceApplyState::OutcomeUnknown);
-    let mut recovery = Recovery::new(Some(record));
+    let mut recovery = Recovery::new(Some(record), true);
     let foreign = receipt(
         &model,
         SchemaEditAttemptId::new(),
@@ -977,7 +993,7 @@ fn receipts_settle_only_their_own_attempt() {
 
     // A receipt for a staged (not yet journaled as unknown) attempt is refused.
     let (record, id) = attempt_record(&model, WorkspaceApplyState::Staged);
-    let mut recovery = Recovery::new(Some(record));
+    let mut recovery = Recovery::new(Some(record), true);
     let early = receipt(&model, id, SchemaEditOutcome::Applied { runtime_ms: 1 });
     assert_eq!(
         recovery.settle(&early, model.request()),
@@ -993,12 +1009,127 @@ fn refusals_before_dispatch_keep_the_draft_but_lost_replies_stay_unknown() {
         .set_input(Target::Table, Input::Comment, "people")
         .unwrap();
     let (record, _) = attempt_record(&model, WorkspaceApplyState::OutcomeUnknown);
-    let mut recovery = Recovery::new(Some(record.clone()));
+    let mut recovery = Recovery::new(Some(record.clone()), true);
     recovery.submission_error(&SchemaEditError::Busy);
     assert!(!recovery.unknown());
     assert!(recovery.record().unwrap().attempt.is_none());
 
-    let mut recovery = Recovery::new(Some(record));
+    let mut recovery = Recovery::new(Some(record), true);
     recovery.submission_error(&SchemaEditError::OutcomeUnavailable);
     assert!(recovery.unknown());
+}
+
+fn staged(baseline: SchemaBaseline) -> WorkspaceSchemaEdit {
+    let draft = SchemaDraft::from_baseline(&baseline);
+    WorkspaceSchemaEdit {
+        engine: PG,
+        request: SchemaEditRequest::new("public", "users"),
+        baseline,
+        draft,
+        attempt: Some(WorkspaceSchemaEditAttempt {
+            attempt_id: SchemaEditAttemptId::new(),
+            preview: preview(
+                &["SELECT 1"],
+                vec![PreviewGroup::Standalone { statement: 0 }],
+            ),
+            apply_state: WorkspaceApplyState::Staged,
+        }),
+    }
+}
+
+/// A table whose journal record exceeds the 192 KiB workspace allowance.
+fn wide() -> SchemaBaseline {
+    let mut baseline = users(PG);
+    for id in 10..50 {
+        let mut column = col(id, &format!("wide_{id}"), "text");
+        column.comment = Some("x".repeat(8 * 1024));
+        baseline.table.columns.push(column);
+    }
+    baseline
+}
+
+#[test]
+fn only_a_persisted_journal_refuses_an_attempt_it_cannot_hold() {
+    // PostgreSQL: the attempt must be journaled before dispatch.
+    let mut persisted = Recovery::new(None, true);
+    assert_eq!(persisted.stage_record(staged(wide())), Err(JOURNAL_REFUSAL));
+    assert!(persisted.record().is_none(), "nothing was staged");
+    assert!(persisted.stage_record(staged(users(PG))).is_ok());
+    assert!(
+        persisted.unknown(),
+        "a staged attempt is unknown until settled"
+    );
+
+    // MySQL and SQLite keep the record in memory only: a wide table applies.
+    let mut memory = Recovery::new(None, false);
+    assert!(memory.stage_record(staged(wide())).is_ok());
+    assert!(memory.unknown());
+    assert_eq!(
+        memory.stage_record(staged(users(PG))),
+        Err("Reconcile the previous unknown outcome first")
+    );
+}
+
+#[test]
+fn an_in_memory_journal_forgets_drafts_but_keeps_attempts() {
+    let mut model = model(PG);
+    model
+        .set_input(Target::Table, Input::Comment, "people")
+        .unwrap();
+    let mut recovery = Recovery::new(None, false);
+    recovery.save_draft(model.request(), model.baseline(), model.draft());
+    assert!(recovery.record().is_some());
+    recovery.forget_draft();
+    assert!(recovery.record().is_none());
+
+    let (record, _) = attempt_record(&model, WorkspaceApplyState::OutcomeUnknown);
+    let mut recovery = Recovery::new(Some(record), false);
+    recovery.forget_draft();
+    assert!(recovery.unknown(), "an unknown attempt is never forgotten");
+}
+
+#[test]
+fn row_view_data_is_precomputed_per_edit() {
+    let mut model = model(PG);
+    // Columns title and heads, four column rows, then the next section.
+    assert_eq!(
+        &model.lines()[..7],
+        &[
+            Line::Title(ChangeGroup::Columns),
+            Line::Head(ChangeGroup::Columns),
+            Line::Row(ChangeGroup::Columns, 0),
+            Line::Row(ChangeGroup::Columns, 1),
+            Line::Row(ChangeGroup::Columns, 2),
+            Line::Row(ChangeGroup::Columns, 3),
+            Line::Title(ChangeGroup::Keys),
+        ]
+    );
+    let name = Target::Column(existing(3));
+    assert_eq!(model.line_of(name), Some(4));
+    assert_eq!(model.position(existing(4)), Some(4));
+
+    model.set_input(name, Input::Name, "full_name").unwrap();
+    let row = &model.rows(ChangeGroup::Columns)[2];
+    assert_eq!(row.label, "full_name");
+    assert_eq!(row.state, RowState::Changed);
+    assert_eq!(row.description, "full_name, changed: name to full_name");
+    assert_eq!(model.row(name), row.clone());
+    assert_eq!(model.review_count(), model.changes().object_count());
+
+    // A removed column moves to the end of its section; later positions shift.
+    assert!(model.remove(name));
+    assert_eq!(model.position(existing(4)), Some(3));
+    assert_eq!(model.position(existing(3)), None);
+    let columns = model.rows(ChangeGroup::Columns);
+    assert_eq!(columns.last().map(|row| row.target), Some(name));
+    assert_eq!(model.line_of(name), Some(5));
+    assert_eq!(model.review_count(), model.changes().object_count());
+
+    // Issues are counted on their row.
+    let check = model.add_check();
+    assert_eq!(model.row(check).issues, model.issues_for(check).count());
+    assert!(
+        model.row(check).issues > 0,
+        "an empty check expression is a problem"
+    );
 }

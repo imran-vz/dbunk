@@ -5,7 +5,7 @@
 use super::*;
 use crate::{
     schema_edit_model::{
-        ACTIONS, DEFERRABLE, DefaultKind, GeneratedKind, Row, RowState, action_label,
+        ACTIONS, DEFERRABLE, DefaultKind, GeneratedKind, Line, Row, RowState, action_label,
         identity_label,
     },
     structure_table::{self as table, ColumnSpec, INSET, fill, fixed, mono},
@@ -14,7 +14,9 @@ use crate::{
 use dbunk_lib::backend::schema_edit::{
     Field, Identity, describe_default, describe_generated, describe_identity,
 };
-use gpui::{AnyElement, Div, KeyDownEvent, Role, SharedString, Stateful, div, prelude::*, px};
+use gpui::{
+    AnyElement, Div, KeyDownEvent, Role, SharedString, Stateful, div, prelude::*, px, uniform_list,
+};
 
 const INSPECTOR: f32 = 320.;
 const ROW_ACTIONS: f32 = 96.;
@@ -162,15 +164,6 @@ fn tint(state: RowState) -> gpui::Rgba {
         RowState::Added => style::ok_fill(),
         RowState::Changed => style::edited_fill(),
         RowState::Removed => style::deleted_fill(),
-    }
-}
-
-fn state_label(state: RowState) -> &'static str {
-    match state {
-        RowState::Unchanged => "unchanged",
-        RowState::Added => "added",
-        RowState::Changed => "changed",
-        RowState::Removed => "removed",
     }
 }
 
@@ -471,14 +464,9 @@ impl SchemaEditView {
         actions.into_any_element()
     }
 
-    fn section(&self, group: ChangeGroup, start: usize, cx: &Context<Self>) -> (AnyElement, usize) {
-        let Some(model) = &self.model else {
-            return (div().into_any_element(), 0);
-        };
-        let rows = model.rows(group);
-        let count = rows.len();
+    fn title(&self, group: ChangeGroup, count: usize, cx: &Context<Self>) -> AnyElement {
         let editable = self.can_edit();
-        let mut title = table::title_line(group.label(), count, None).child(ui::grow());
+        let title = table::title_line(group.label(), count, None).child(ui::grow());
         let add = |id: &'static str, label: &'static str, primary: bool| {
             ui::tool_button(id, label, Some("icons/plus.svg"), editable, false)
                 .tab_index(0)
@@ -486,10 +474,13 @@ impl SchemaEditView {
                     button.on_click(cx.listener(move |this, _, _, cx| this.add(group, primary, cx)))
                 })
         };
-        title = match group {
+        let title = match group {
             ChangeGroup::Columns => title.child(add("schema-edit-add-column", "Column", false)),
             ChangeGroup::Keys => {
-                let has_primary = model.draft().table.primary_key.is_some();
+                let has_primary = self
+                    .model
+                    .as_ref()
+                    .is_some_and(|model| model.draft().table.primary_key.is_some());
                 title
                     .when(!has_primary, |title| {
                         title.child(add("schema-edit-add-primary", "Primary key", true))
@@ -503,90 +494,98 @@ impl SchemaEditView {
             ChangeGroup::Indexes => title.child(add("schema-edit-add-index", "Index", false)),
             ChangeGroup::Table => title,
         };
-        let mut section = div().flex().flex_col().child(title);
-        if count == 0 {
-            return (section.into_any_element(), 0);
-        }
-        let specs = specs(group);
-        let mut head: Vec<ColumnSpec> = specs.to_vec();
-        head.push(ACTIONS_SPEC);
-        section = section.child(table::head_line(&head));
-        let mut list = div()
-            .id(("schema-edit-section", start))
-            .role(Role::List)
-            .aria_label(SharedString::from(format!("{} {count}", group.label())))
-            .flex()
-            .flex_col();
-        for (index, row) in rows.iter().enumerate() {
-            let number = start + index;
-            let removed = row.state == RowState::Removed;
-            let selected = self.selected == row.target;
-            let cells = self.cells(row);
-            let target = row.target;
-            let deltas = row
-                .deltas
-                .iter()
-                .map(|delta| format!("{} to {}", delta.before, delta.after))
-                .collect::<Vec<_>>()
-                .join("; ");
-            let label = if deltas.is_empty() {
-                format!("{}, {}", row.label, state_label(row.state))
-            } else {
-                format!("{}, {}: {deltas}", row.label, state_label(row.state))
-            };
-            list = list.child(
-                table::line()
-                    .id(("schema-edit-row", number))
-                    .role(Role::ListItem)
-                    .aria_label(SharedString::from(label))
-                    .aria_selected(selected)
-                    .cursor_pointer()
-                    .on_click(
-                        cx.listener(move |this, _, window, cx| this.select(target, window, cx)),
-                    )
-                    .child(
-                        table::card(false, index + 1 == count)
-                            .text_color(style::text())
-                            .bg(if selected && row.state == RowState::Unchanged {
-                                style::select()
-                            } else {
-                                tint(row.state)
-                            })
-                            .when(selected, |card| card.border_color(style::accent()))
-                            .children(
-                                specs
-                                    .iter()
-                                    .zip(cells)
-                                    .map(|(spec, cell)| render_cell(spec, cell, removed)),
-                            )
-                            .child(self.row_actions(number, row, cx)),
-                    ),
-            );
-        }
-        (section.child(list).into_any_element(), count)
+        title.into_any_element()
     }
 
+    /// One row of a section. `number` is its line, unique across sections.
+    fn row_line(
+        &self,
+        number: usize,
+        group: ChangeGroup,
+        row: &Row,
+        last: bool,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let removed = row.state == RowState::Removed;
+        let selected = self.selected == row.target;
+        let cells = self.cells(row);
+        let target = row.target;
+        table::line()
+            .id(("schema-edit-row", number))
+            .role(Role::ListItem)
+            .aria_label(SharedString::from(row.description.clone()))
+            .aria_selected(selected)
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, _, window, cx| this.select(target, window, cx)))
+            .child(
+                table::card(false, last)
+                    .text_color(style::text())
+                    .bg(if selected && row.state == RowState::Unchanged {
+                        style::select()
+                    } else {
+                        tint(row.state)
+                    })
+                    .when(selected, |card| card.border_color(style::accent()))
+                    .children(
+                        specs(group)
+                            .iter()
+                            .zip(cells)
+                            .map(|(spec, cell)| render_cell(spec, cell, removed)),
+                    )
+                    .child(self.row_actions(number, row, cx)),
+            )
+            .into_any_element()
+    }
+
+    /// One line of the virtualized draft table.
+    fn item(&self, position: usize, cx: &Context<Self>) -> AnyElement {
+        let Some(model) = &self.model else {
+            return table::line().into_any_element();
+        };
+        match model.lines().get(position).copied() {
+            Some(Line::Title(group)) => self.title(group, model.rows(group).len(), cx),
+            Some(Line::Head(group)) => {
+                let mut head: Vec<ColumnSpec> = specs(group).to_vec();
+                head.push(ACTIONS_SPEC);
+                table::head_line(&head).into_any_element()
+            }
+            Some(Line::Row(group, index)) => {
+                let rows = model.rows(group);
+                match rows.get(index) {
+                    Some(row) => self.row_line(position, group, row, index + 1 == rows.len(), cx),
+                    None => table::line().into_any_element(),
+                }
+            }
+            None => table::line().into_any_element(),
+        }
+    }
+
+    /// Every section as one uniform list: a table may have thousands of
+    /// columns, and only the visible lines are built.
     fn sections(&self, cx: &Context<Self>) -> AnyElement {
-        let mut page = div()
+        let lines = self.model.as_ref().map_or(0, |model| model.lines().len());
+        div()
             .id("schema-edit-sections")
-            .role(Role::Group)
+            .role(Role::List)
             .aria_label("Draft table structure")
             .flex_1()
             .min_w_0()
             .min_h_0()
-            .overflow_y_scroll()
-            .flex()
-            .flex_col()
+            .h_full()
             .pt(px(4.))
-            .pb(px(12.));
-        let mut start = 0;
-        for group in ChangeGroup::ALL {
-            let (section, count) = self.section(group, start, cx);
-            // Leave room so row ids never collide across sections.
-            start += count + 1;
-            page = page.child(section);
-        }
-        page.into_any_element()
+            .pb(px(12.))
+            .child(
+                uniform_list(
+                    "schema-edit-lines",
+                    lines,
+                    cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                        range.map(|position| this.item(position, cx)).collect()
+                    }),
+                )
+                .track_scroll(&self.scroll)
+                .size_full(),
+            )
+            .into_any_element()
     }
 
     /// The per-field Undo, shown only while the field differs from the
@@ -937,7 +936,7 @@ impl SchemaEditView {
                         .child(format!("{} {}", target.object().label(), row.label)),
                 )
                 .when(row.state != RowState::Unchanged, |header| {
-                    header.child(ui::badge(state_label(row.state)))
+                    header.child(ui::badge(row.state.label()))
                 }),
         );
         let mut reasons: Vec<&'static str> = row
@@ -1251,7 +1250,7 @@ impl SchemaEditView {
             out.push(
                 note(
                     "schema-edit-memory-only",
-                    "This draft is too large to keep across restarts; it stays in memory only."
+                    "This draft is too large for the workspace journal. It stays in memory only, and Apply is refused because the attempt must be journaled before it is sent."
                         .into(),
                     false,
                 )

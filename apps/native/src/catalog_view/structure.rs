@@ -154,11 +154,18 @@ impl CatalogView {
                             }
                         }
                         StructureEvent::EditStructure { schema, table } => {
-                            if this.structure_current
-                                && this.ready
-                                && this.editable
-                                && !this.has_pending()
-                            {
+                            if !this.ready || !this.editable {
+                                this.status =
+                                    "Connect the Objects document before editing a structure"
+                                        .into();
+                            } else if !this.structure_current {
+                                this.status =
+                                    "Reload the structure, then edit it again".into();
+                            } else if this.has_pending() {
+                                this.status =
+                                    "Finish the current Objects operation, then edit the structure again"
+                                        .into();
+                            } else {
                                 this.open_schema_edit(schema.clone(), table.clone(), window, cx);
                             }
                         }

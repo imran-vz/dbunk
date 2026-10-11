@@ -53,6 +53,8 @@ pub(crate) struct ReviewState {
     pub(crate) review: Option<Box<SchemaEditReview>>,
     /// A copy of what was reviewed, shown while the token is in flight.
     pub(crate) preview: SchemaEditPreview,
+    /// Distinct objects the preview changes, counted once per review.
+    pub(crate) objects: usize,
     pub(crate) inbound: Vec<InboundReference>,
     pub(crate) dependents: Vec<Dependent>,
     pub(crate) estimated_rows: Option<u64>,
@@ -118,6 +120,8 @@ impl SchemaEditView {
             cx.notify();
             return;
         }
+        // The journal is coalesced while editing; never review ahead of it.
+        self.flush_journal(cx);
         let Some(draft) = self.model.as_ref().map(|model| model.draft().clone()) else {
             return;
         };
@@ -138,6 +142,7 @@ impl SchemaEditView {
         match self.host.backend.review_schema_edit(target, draft, options) {
             Ok(review) => {
                 let preview = review.preview().clone();
+                let objects = preview.changes.object_count();
                 let baseline = review.baseline();
                 let inbound = baseline.inbound.clone();
                 let dependents = baseline.dependents.clone();
@@ -146,6 +151,7 @@ impl SchemaEditView {
                 self.review = Some(ReviewState {
                     review: Some(Box::new(review)),
                     preview,
+                    objects,
                     inbound,
                     dependents,
                     estimated_rows,
@@ -434,14 +440,20 @@ impl SchemaEditView {
         cx: &mut Context<Self>,
     ) {
         if !self.recovery.matches_review(confirmation.review()) {
+            // Safe Mode refused before executing anything, so this is not an
+            // unknown outcome. The mismatched token is dropped unused and the
+            // draft is kept; closing takes a fresh capture to review again.
+            self.recovery.not_sent();
+            self.journal();
+            self.target = None;
             if let Some(state) = &mut self.review {
                 state.flow = None;
-                state.settlement = Some(Settlement::Unknown);
-                state.outcome = Some(OutcomeText {
-                    text: "The confirmation does not match the saved attempt; nothing was sent. Reconcile before another attempt.".into(),
-                    error: true,
-                });
+                state.review = None;
             }
+            self.set_failure(
+                "The confirmation does not match the saved attempt; nothing was sent. Close and review again."
+                    .into(),
+            );
             self.publish(cx);
             return;
         }
@@ -585,6 +597,14 @@ impl SchemaEditView {
                 cx.emit(SchemaEditEvent::Close);
                 return;
             }
+            Some(Settlement::Partial) => {
+                // Some statements committed: the draft no longer describes
+                // a change from the table as it is. Drop it and capture the
+                // table again (the journal already dropped its record).
+                self.model = None;
+                self.selected = crate::schema_edit_model::Target::Table;
+                self.observe(cx);
+            }
             Some(_) => self.observe(cx),
             None if self.target.is_none() => self.observe(cx),
             None => {}
@@ -648,7 +668,7 @@ impl SchemaEditView {
         let phase = state.phase();
         let style_kind = policy.confirm_style();
         let enabled = apply_enabled(style_kind, typed_matched, phase, policy.read_only);
-        let objects = state.preview.changes.object_count();
+        let objects = state.objects;
         let destructive = state.preview.destructive();
         let (label, danger) = apply_label(&policy, phase, objects, destructive);
         let title = format!(
