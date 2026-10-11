@@ -480,7 +480,10 @@ fn constraints_the_model_cannot_represent_are_read_only() {
         .find(|c| c.kind == "foreign key")
         .unwrap()
         .definition = "FOREIGN KEY (org_id) REFERENCES orgs(id) ON DELETE SET NULL (org_id)".into();
-    read_only_because(&set_null_columns, "Foreign key users_org_id_fkey has options");
+    read_only_because(
+        &set_null_columns,
+        "Foreign key users_org_id_fkey has options",
+    );
 
     let mut collation = snapshot();
     collation.columns[2].collation_schema = Some("public".into());
@@ -543,7 +546,10 @@ fn helpers() {
     assert_eq!(estimated_rows(-1.0), None);
     assert_eq!(estimated_rows(1234.0), Some(1234));
     assert_eq!(check_expression("CHECK (a > 0)"), Some("a > 0"));
-    assert_eq!(check_expression("CHECK ((a > 0) AND (b > 0))"), Some("(a > 0) AND (b > 0)"));
+    assert_eq!(
+        check_expression("CHECK ((a > 0) AND (b > 0))"),
+        Some("(a > 0) AND (b > 0)")
+    );
     assert_eq!(check_expression("CHECK (a > 0) NO INHERIT"), None);
     assert_eq!(check_expression("CHECK (a > ')') NOT VALID"), None);
     assert_eq!(strip_outer_parens("(a + b)"), "a + b");

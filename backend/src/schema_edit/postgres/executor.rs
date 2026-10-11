@@ -208,7 +208,11 @@ pub(crate) async fn execute(
 
 /// The plan as rebuilt here must be exactly the reviewed one: the facade has
 /// already compared previews, and this is what tells each statement's role.
-fn rebuild(baseline: &SchemaBaseline, draft: &SchemaDraft, preview: &SchemaEditPreview) -> Result<Built, Failure> {
+fn rebuild(
+    baseline: &SchemaBaseline,
+    draft: &SchemaDraft,
+    preview: &SchemaEditPreview,
+) -> Result<Built, Failure> {
     let built = planner::build(baseline, draft, &preview.options).map_err(|error| {
         Failure::Unsupported {
             reason: error.to_string(),
@@ -258,9 +262,7 @@ pub(super) async fn run(
         outcome,
         Outcome::Applied { .. } | Outcome::RolledBack { .. }
     );
-    socket
-        .cleanup(!clean, Instant::now() + CLEANUP_GRACE)
-        .await;
+    socket.cleanup(!clean, Instant::now() + CLEANUP_GRACE).await;
     outcome
 }
 
@@ -483,13 +485,16 @@ async fn transaction(
             quote_double(schema),
             quote_double(&baseline.table.name)
         );
-        socket.execute(&lock).await.map_err(|failure| match failure {
-            // The table was dropped or renamed since capture.
-            Failure::Database { code: Some(code), .. } if code == "42P01" => {
-                Failure::BaselineChanged
-            }
-            other => other,
-        })?;
+        socket
+            .execute(&lock)
+            .await
+            .map_err(|failure| match failure {
+                // The table was dropped or renamed since capture.
+                Failure::Database {
+                    code: Some(code), ..
+                } if code == "42P01" => Failure::BaselineChanged,
+                other => other,
+            })?;
         match socket.drift(schema, &baseline.table.name).await? {
             Some(token) if token == baseline.drift => {}
             _ => return Err(Failure::BaselineChanged),

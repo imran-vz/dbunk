@@ -350,7 +350,13 @@ fn unique(
             constraint.name
         ));
     }
-    check_key_definition(snapshot, constraint.oid, &constraint.name, "UNIQUE", reasons);
+    check_key_definition(
+        snapshot,
+        constraint.oid,
+        &constraint.name,
+        "UNIQUE",
+        reasons,
+    );
     let mut columns = Vec::new();
     if let Some(index) = backing_index(snapshot, constraint.oid) {
         for key in key_columns(index) {
@@ -432,8 +438,7 @@ fn foreign_key(
             key.name, key.match_type
         ));
     }
-    if let Some(definition) = constraint_by_oid(snapshot, key.oid).map(|c| c.definition.as_str())
-    {
+    if let Some(definition) = constraint_by_oid(snapshot, key.oid).map(|c| c.definition.as_str()) {
         // PostgreSQL 15 column lists for SET NULL / SET DEFAULT, and 18 NOT
         // ENFORCED, have no place in the model.
         if definition.contains("SET NULL (")
@@ -462,7 +467,8 @@ fn foreign_key(
         origin: object_origin(TAG_FOREIGN_KEY, key.oid),
         name: Some(key.name.clone()),
         columns,
-        referenced_schema: (key.target_schema != snapshot.schema).then(|| key.target_schema.clone()),
+        referenced_schema: (key.target_schema != snapshot.schema)
+            .then(|| key.target_schema.clone()),
         referenced_table: key.target_table.clone(),
         referenced_columns: key.columns.iter().map(|pair| pair.target.clone()).collect(),
         on_update: action(key.on_update),

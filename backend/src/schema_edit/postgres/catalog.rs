@@ -12,7 +12,9 @@ use crate::postgres::native_catalog::{
     },
     CatalogError,
 };
-use crate::schema_edit::{DriftToken, SchemaBaseline, SchemaEditFailure, SchemaEditRequest, TableModel};
+use crate::schema_edit::{
+    DriftToken, SchemaBaseline, SchemaEditFailure, SchemaEditRequest, TableModel,
+};
 use serde::de::DeserializeOwned;
 use std::time::Duration;
 use tokio::{sync::watch, time::Instant};

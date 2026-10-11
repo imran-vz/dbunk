@@ -69,7 +69,9 @@ impl Built {
                 statements: (0..atomic).collect(),
             });
         }
-        groups.extend((atomic..self.statements.len()).map(|statement| PreviewGroup::Standalone { statement }));
+        groups.extend(
+            (atomic..self.statements.len()).map(|statement| PreviewGroup::Standalone { statement }),
+        );
         groups
     }
 
@@ -167,7 +169,11 @@ pub(crate) fn build(
         .chain(std::iter::repeat_n(Role::Validate, validate.len()))
         .chain(std::iter::repeat_n(Role::ConcurrentIndex, concurrent.len()))
         .collect();
-    let ops: Vec<PgObjectOp> = atomic.into_iter().chain(validate).chain(concurrent).collect();
+    let ops: Vec<PgObjectOp> = atomic
+        .into_iter()
+        .chain(validate)
+        .chain(concurrent)
+        .collect();
     let rendered = generate_object_ddl(&ops).map_err(object_error)?;
     let statements: Vec<PreviewStatement> = rendered
         .statements
@@ -238,7 +244,9 @@ fn precheck(
                 column.name
             )));
         }
-        let previous = old.column(column.origin).filter(|_| !column.origin.is_new());
+        let previous = old
+            .column(column.origin)
+            .filter(|_| !column.origin.is_new());
         let retyped = previous.is_none_or(|p| p.data_type != column.data_type);
         if retyped && SERIAL_TYPES.contains(&normalize_type(&column.data_type).as_str()) {
             return Err(unsupported(format!(
@@ -345,9 +353,7 @@ pub(crate) fn resolve_renames<K: Clone>(
     let mut budget = pending.len() * 4 + 4;
     while !pending.is_empty() {
         let ready = pending.iter().position(|(_, from, to)| {
-            from == to
-                || !current.contains(to)
-                || !pending.iter().any(|(_, other, _)| other == to)
+            from == to || !current.contains(to) || !pending.iter().any(|(_, other, _)| other == to)
         });
         let ready = if budget == 0 { Some(0) } else { ready };
         budget = budget.saturating_sub(1);
@@ -745,10 +751,13 @@ impl<'a> Emitter<'a> {
                 nullable: column.nullable,
                 default: default_value(&column.default),
                 identity: identity(column.identity),
-                generated: column.generated.as_ref().map(|generated| PgGeneratedColumn {
-                    expression: generated.expression.as_str().to_owned(),
-                    stored: generated.stored,
-                }),
+                generated: column
+                    .generated
+                    .as_ref()
+                    .map(|generated| PgGeneratedColumn {
+                        expression: generated.expression.as_str().to_owned(),
+                        stored: generated.stored,
+                    }),
                 collation: column.collation.clone(),
             },
         });
@@ -865,14 +874,12 @@ impl<'a> Emitter<'a> {
         }
 
         match (identity(old.identity), identity(new.identity)) {
-            (None, Some(after)) => {
-                ops.push(PgObjectOp::SetColumnIdentity(SetColumnIdentityOp {
-                    schema: schema.clone(),
-                    table: table.clone(),
-                    name: name.clone(),
-                    change: PgIdentityChange::Add { identity: after },
-                }))
-            }
+            (None, Some(after)) => ops.push(PgObjectOp::SetColumnIdentity(SetColumnIdentityOp {
+                schema: schema.clone(),
+                table: table.clone(),
+                name: name.clone(),
+                change: PgIdentityChange::Add { identity: after },
+            })),
             (Some(before), Some(after)) if before != after => {
                 ops.push(PgObjectOp::SetColumnIdentity(SetColumnIdentityOp {
                     schema: schema.clone(),
@@ -926,7 +933,9 @@ impl<'a> Emitter<'a> {
 
     fn taken(&self, name: &str) -> bool {
         self.reserved.iter().any(|other| other == name)
-            || object_names(self.before()).iter().any(|other| other == name)
+            || object_names(self.before())
+                .iter()
+                .any(|other| other == name)
             || object_names(self.after()).iter().any(|other| other == name)
     }
 
@@ -972,7 +981,9 @@ impl<'a> Emitter<'a> {
             .check(origin)
             .ok_or_else(|| internal("an added check is not in the draft"))?;
         if !check.enforced {
-            return Err(unsupported("NOT ENFORCED checks are not supported on PostgreSQL"));
+            return Err(unsupported(
+                "NOT ENFORCED checks are not supported on PostgreSQL",
+            ));
         }
         let later = self.options.validate_separately;
         let name = match (&check.name, later) {
@@ -1190,10 +1201,7 @@ fn notes(
                 if fields.contains(&ColumnField::Nullable) && !after.nullable {
                     notes.push(EngineNote::new(
                         NoteKind::Info,
-                        format!(
-                            "Setting NOT NULL on {} scans the whole table",
-                            after.name
-                        ),
+                        format!("Setting NOT NULL on {} scans the whole table", after.name),
                     ));
                 }
             }

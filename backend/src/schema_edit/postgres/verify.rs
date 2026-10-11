@@ -20,7 +20,10 @@ pub(crate) struct Expectation<'a> {
 
 /// Draft types the server must canonicalize, by column: every new column
 /// and every column whose type text differs from the captured one.
-pub(crate) fn type_requests(baseline: &SchemaBaseline, draft: &SchemaDraft) -> Vec<(Origin, String)> {
+pub(crate) fn type_requests(
+    baseline: &SchemaBaseline,
+    draft: &SchemaDraft,
+) -> Vec<(Origin, String)> {
     draft
         .table
         .columns
@@ -54,13 +57,15 @@ impl Expectation<'_> {
     /// True when the plan renames or retypes a column, which re-renders
     /// expressions that use it.
     fn rerenders(&self) -> bool {
-        plan_steps(self.baseline, self.draft).iter().any(|step| match step {
-            PlanStep::RenameColumn { .. } => true,
-            PlanStep::AlterColumn { fields, .. } => fields
-                .iter()
-                .any(|field| matches!(field, ColumnField::DataType | ColumnField::Collation)),
-            _ => false,
-        })
+        plan_steps(self.baseline, self.draft)
+            .iter()
+            .any(|step| match step {
+                PlanStep::RenameColumn { .. } => true,
+                PlanStep::AlterColumn { fields, .. } => fields
+                    .iter()
+                    .any(|field| matches!(field, ColumnField::DataType | ColumnField::Collation)),
+                _ => false,
+            })
     }
 
     /// `canonical` pairs each `type_requests` entry with the server's
@@ -75,7 +80,10 @@ impl Expectation<'_> {
         let strict = !self.rerenders();
 
         if actual.name != new.name {
-            return Err(format!("the table is named {}, expected {}", actual.name, new.name));
+            return Err(format!(
+                "the table is named {}, expected {}",
+                actual.name, new.name
+            ));
         }
         if comment(&actual.comment) != comment(&new.comment) {
             return Err("the table comment differs".into());
@@ -97,9 +105,14 @@ impl Expectation<'_> {
         for (expected, found) in new.columns.iter().zip(&actual.columns) {
             let name = &expected.name;
             if found.name != *name {
-                return Err(format!("column {} is where {name} was expected", found.name));
+                return Err(format!(
+                    "column {} is where {name} was expected",
+                    found.name
+                ));
             }
-            let previous = old.column(expected.origin).filter(|_| !expected.origin.is_new());
+            let previous = old
+                .column(expected.origin)
+                .filter(|_| !expected.origin.is_new());
             let data_type = canonical
                 .iter()
                 .find(|(origin, _)| *origin == expected.origin)
@@ -154,7 +167,9 @@ impl Expectation<'_> {
             (None, None) => {}
             (Some(e), Some(f)) => {
                 if names(new, &e.columns) != names(actual, &f.columns)
-                    || e.name.as_ref().is_some_and(|name| f.name.as_ref() != Some(name))
+                    || e.name
+                        .as_ref()
+                        .is_some_and(|name| f.name.as_ref() != Some(name))
                 {
                     return Err("the primary key differs".into());
                 }
@@ -171,7 +186,10 @@ impl Expectation<'_> {
             let columns = names(new, &expected.columns);
             let found = actual.uniques.iter().enumerate().position(|(i, f)| {
                 !used[i]
-                    && expected.name.as_ref().is_none_or(|name| f.name.as_ref() == Some(name))
+                    && expected
+                        .name
+                        .as_ref()
+                        .is_none_or(|name| f.name.as_ref() == Some(name))
                     && names(actual, &f.columns) == columns
             });
             match found {
@@ -197,7 +215,10 @@ impl Expectation<'_> {
             let columns = names(new, &expected.columns);
             let found = actual.foreign_keys.iter().enumerate().position(|(i, f)| {
                 !used[i]
-                    && expected.name.as_ref().is_none_or(|name| f.name.as_ref() == Some(name))
+                    && expected
+                        .name
+                        .as_ref()
+                        .is_none_or(|name| f.name.as_ref() == Some(name))
                     && names(actual, &f.columns) == columns
                     && schema_of(&f.referenced_schema, actual)
                         == schema_of(&expected.referenced_schema, new)
@@ -227,7 +248,10 @@ impl Expectation<'_> {
             let untouched = strict && old.check(expected.origin) == Some(expected);
             let found = actual.checks.iter().enumerate().position(|(i, f)| {
                 !used[i]
-                    && expected.name.as_ref().is_none_or(|name| f.name.as_ref() == Some(name))
+                    && expected
+                        .name
+                        .as_ref()
+                        .is_none_or(|name| f.name.as_ref() == Some(name))
                     && (!untouched || f.expression == expected.expression)
             });
             match found {
@@ -235,7 +259,10 @@ impl Expectation<'_> {
                 None => {
                     return Err(format!(
                         "check {} is missing or differs",
-                        expected.name.as_deref().unwrap_or(expected.expression.as_str())
+                        expected
+                            .name
+                            .as_deref()
+                            .unwrap_or(expected.expression.as_str())
                     ))
                 }
             }
