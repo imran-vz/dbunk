@@ -259,6 +259,23 @@ fn mysql_error(error: MySqlSessionError) -> SchemaEditError {
     }
 }
 
+/// Apply errors: `Busy` means the request never queued. Anything else (a
+/// closed session, a dropped reply) may follow a commit on the session, so
+/// the outcome is unknown and the host must keep the attempt journaled.
+fn sqlite_apply_error(error: SqliteSessionError) -> SchemaEditError {
+    match error {
+        SqliteSessionError::Busy => SchemaEditError::Busy,
+        _ => SchemaEditError::OutcomeUnavailable,
+    }
+}
+
+fn mysql_apply_error(error: MySqlSessionError) -> SchemaEditError {
+    match error {
+        MySqlSessionError::Busy => SchemaEditError::Busy,
+        _ => SchemaEditError::OutcomeUnavailable,
+    }
+}
+
 /// Session-level outcome failures that mean "nothing was sent".
 fn session_outcome(
     review: SchemaEditReview,
@@ -436,7 +453,7 @@ impl Backend {
                         confirmed,
                     )
                     .await
-                    .map_err(sqlite_error)?;
+                    .map_err(sqlite_apply_error)?;
                 session_outcome(review, connection_id, result)
             }
             SchemaEditSource::MySql(session) => {
@@ -448,7 +465,7 @@ impl Backend {
                         confirmed,
                     )
                     .await
-                    .map_err(mysql_error)?;
+                    .map_err(mysql_apply_error)?;
                 session_outcome(review, connection_id, result)
             }
         }

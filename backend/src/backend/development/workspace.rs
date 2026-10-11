@@ -516,7 +516,7 @@ fn encode(snapshot: WorkspaceSnapshot) -> Result<String, WorkspaceError> {
     serde_json::to_writer(
         &mut output,
         &StoredWorkspace {
-            version: 16,
+            version: 17,
             snapshot: validate(snapshot)?,
         },
     )
@@ -531,12 +531,25 @@ fn decode(encoded: &str) -> Result<WorkspaceSnapshot, WorkspaceError> {
     }
     let version: Version = serde_json::from_str(encoded).map_err(|_| WorkspaceError::Corrupt)?;
     // Version 14 added `schemaAlter`; version 15 added `objectDdl`; version
-    // 16 added `shell`.
-    if !matches!(version.version, 1..=16) {
+    // 16 added `shell`; version 17 added `schemaEdit`.
+    if !matches!(version.version, 1..=17) {
         return Err(WorkspaceError::UnsupportedVersion(version.version));
     }
     let raw: serde_json::Value =
         serde_json::from_str(encoded).map_err(|_| WorkspaceError::Corrupt)?;
+    if version.version < 17
+        && raw["snapshot"]["documents"]
+            .as_array()
+            .is_some_and(|documents| {
+                documents.iter().any(|document| {
+                    document
+                        .as_object()
+                        .is_some_and(|fields| fields.contains_key("schemaEdit"))
+                })
+            })
+    {
+        return Err(WorkspaceError::Corrupt);
+    }
     if version.version < 16
         && raw["snapshot"]
             .as_object()
