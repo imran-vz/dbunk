@@ -283,14 +283,19 @@ fn every_structural_change_rebuilds() {
     let edits: Vec<DraftEdit> = vec![
         draft_edit(|d: &mut SchemaDraft| d.table.column_mut(existing(3)).unwrap().nullable = false),
         draft_edit(|d: &mut SchemaDraft| {
-            d.table.column_mut(existing(3)).unwrap().default =
-                DefaultValue::Literal("anon".into())
+            d.table.column_mut(existing(3)).unwrap().default = DefaultValue::Literal("anon".into())
         }),
-        draft_edit(|d: &mut SchemaDraft| d.table.column_mut(existing(3)).unwrap().collation = Some("NOCASE".into())),
+        draft_edit(|d: &mut SchemaDraft| {
+            d.table.column_mut(existing(3)).unwrap().collation = Some("NOCASE".into())
+        }),
         draft_edit(|d: &mut SchemaDraft| d.table.checks.clear()),
         draft_edit(|d: &mut SchemaDraft| d.table.uniques.clear()),
-        draft_edit(|d: &mut SchemaDraft| d.table.foreign_keys[0].on_delete = ReferentialAction::SetNull),
-        draft_edit(|d: &mut SchemaDraft| d.table.primary_key.as_mut().unwrap().name = Some("pk".into())),
+        draft_edit(|d: &mut SchemaDraft| {
+            d.table.foreign_keys[0].on_delete = ReferentialAction::SetNull
+        }),
+        draft_edit(|d: &mut SchemaDraft| {
+            d.table.primary_key.as_mut().unwrap().name = Some("pk".into())
+        }),
         draft_edit(|d: &mut SchemaDraft| d.table.options.strict = true),
         draft_edit(|d: &mut SchemaDraft| d.table.options.without_rowid = true),
         draft_edit(|d: &mut SchemaDraft| {
@@ -334,7 +339,9 @@ fn a_rebuild_follows_renames_in_untouched_expressions() {
     // An edited expression is taken as written.
     draft.table.checks[0].expression = SqlFragment::new("length(mail) > 5");
     let preview = review(&base, &draft).unwrap();
-    assert!(preview.statements[0].sql.contains("CHECK (length(mail) > 5)"));
+    assert!(preview.statements[0]
+        .sql
+        .contains("CHECK (length(mail) > 5)"));
 }
 
 #[test]
@@ -441,13 +448,21 @@ fn attributes_sqlite_lacks_are_unsupported() {
     let base = baseline();
     let edits: Vec<DraftEdit> = vec![
         draft_edit(|d: &mut SchemaDraft| d.table.comment = Some("people".into())),
-        draft_edit(|d: &mut SchemaDraft| d.table.column_mut(existing(3)).unwrap().comment = Some("x".into())),
+        draft_edit(|d: &mut SchemaDraft| {
+            d.table.column_mut(existing(3)).unwrap().comment = Some("x".into())
+        }),
         draft_edit(|d: &mut SchemaDraft| d.table.options.engine = Some("InnoDB".into())),
-        draft_edit(|d: &mut SchemaDraft| d.table.column_mut(existing(3)).unwrap().extra.invisible = true),
+        draft_edit(|d: &mut SchemaDraft| {
+            d.table.column_mut(existing(3)).unwrap().extra.invisible = true
+        }),
         draft_edit(|d: &mut SchemaDraft| d.table.checks[0].enforced = false),
         draft_edit(|d: &mut SchemaDraft| d.table.indexes[0].method = Some("hash".into())),
-        draft_edit(|d: &mut SchemaDraft| d.table.foreign_keys[0].referenced_schema = Some("aux".into())),
-        draft_edit(|d: &mut SchemaDraft| d.table.column_mut(existing(3)).unwrap().identity = Identity::AutoIncrement),
+        draft_edit(|d: &mut SchemaDraft| {
+            d.table.foreign_keys[0].referenced_schema = Some("aux".into())
+        }),
+        draft_edit(|d: &mut SchemaDraft| {
+            d.table.column_mut(existing(3)).unwrap().identity = Identity::AutoIncrement
+        }),
         draft_edit(|d: &mut SchemaDraft| {
             d.table.primary_key = None;
             d.table.options.without_rowid = true;
@@ -472,7 +487,15 @@ fn defaults_render_bare_only_when_sqlite_accepts_them() {
         render(DefaultValue::Literal("a'b".into())).as_deref(),
         Some("'a''b'")
     );
-    for bare in ["42", "-1.5", "'x'", "x'00'", "NULL", "CURRENT_TIMESTAMP", "TRUE"] {
+    for bare in [
+        "42",
+        "-1.5",
+        "'x'",
+        "x'00'",
+        "NULL",
+        "CURRENT_TIMESTAMP",
+        "TRUE",
+    ] {
         assert_eq!(
             render(DefaultValue::Expression(SqlFragment::new(bare))).as_deref(),
             Some(bare)

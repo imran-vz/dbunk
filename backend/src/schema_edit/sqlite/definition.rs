@@ -260,10 +260,7 @@ impl<'a> Cursor<'a> {
 
     /// Consumes an expression up to the first top-level token `stop`
     /// accepts (or the end) and returns its trimmed text.
-    fn expression_until(
-        &mut self,
-        stop: impl Fn(&Token, &str) -> bool,
-    ) -> Result<&'a str, String> {
+    fn expression_until(&mut self, stop: impl Fn(&Token, &str) -> bool) -> Result<&'a str, String> {
         let source: &'a str = self.source;
         let first = self.pos;
         let mut depth = 0usize;
@@ -506,9 +503,7 @@ fn parse_column(c: &mut Cursor<'_>) -> Result<ParsedColumn, String> {
         } else if c.eat_keyword("COLLATE") {
             column.collation = Some(c.name()?);
         } else if c.eat_keyword("REFERENCES") {
-            column
-                .references
-                .push(parse_reference(c, constraint_name)?);
+            column.references.push(parse_reference(c, constraint_name)?);
         } else if c.at_keyword("GENERATED") || c.at_keyword("AS") {
             if c.eat_keyword("GENERATED") {
                 c.expect_keyword("ALWAYS")?;
@@ -733,12 +728,14 @@ pub(super) fn parse_create_index(source: &str) -> Result<ParsedIndex, String> {
             c.eat_keyword("ASC");
             false
         };
-        let single = tokenize(expression).ok().and_then(|tokens| match tokens.as_slice() {
-            [token] if matches!(token.kind, Kind::Word | Kind::Quoted) => {
-                Some(dequote(token.text(expression)))
-            }
-            _ => None,
-        });
+        let single = tokenize(expression)
+            .ok()
+            .and_then(|tokens| match tokens.as_slice() {
+                [token] if matches!(token.kind, Kind::Word | Kind::Quoted) => {
+                    Some(dequote(token.text(expression)))
+                }
+                _ => None,
+            });
         members.push(ParsedIndexMember {
             target: match single {
                 Some(name) => MemberTarget::Name(name),
@@ -807,7 +804,8 @@ pub(super) fn qualify_trigger(sql: &str, schema: &str) -> Option<String> {
 /// option order does not matter.
 pub(super) fn cross_check(parsed: &ParsedTable, source: &str) -> Result<(), String> {
     let sql = format!("CREATE TABLE t {}", &source[parsed.body.clone()]);
-    let statements = Parser::parse_sql(&SQLiteDialect {}, &sql).map_err(|error| error.to_string())?;
+    let statements =
+        Parser::parse_sql(&SQLiteDialect {}, &sql).map_err(|error| error.to_string())?;
     let [Statement::CreateTable(table)] = statements.as_slice() else {
         return Err("sqlparser did not read one CREATE TABLE".into());
     };
@@ -902,17 +900,19 @@ pub(super) fn cross_check(parsed: &ParsedTable, source: &str) -> Result<(), Stri
             _ => "other",
         })
         .collect();
-    let ours: Vec<&str> = parsed.constraints.iter().map(ParsedConstraint::kind).collect();
+    let ours: Vec<&str> = parsed
+        .constraints
+        .iter()
+        .map(ParsedConstraint::kind)
+        .collect();
     if theirs != ours {
         return Err(format!(
             "sqlparser read table constraints {theirs:?}, the definition has {ours:?}"
         ));
     }
     for (constraint, ours) in table.constraints.iter().zip(&parsed.constraints) {
-        if let (
-            TableConstraint::ForeignKey(key),
-            ParsedConstraint::ForeignKey { columns, .. },
-        ) = (constraint, ours)
+        if let (TableConstraint::ForeignKey(key), ParsedConstraint::ForeignKey { columns, .. }) =
+            (constraint, ours)
         {
             let names: Vec<&str> = key.columns.iter().map(|c| c.value.as_str()).collect();
             if names != columns.iter().map(String::as_str).collect::<Vec<_>>() {

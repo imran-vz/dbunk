@@ -205,6 +205,9 @@ fn triggers_are_qualified_with_their_schema() {
         Some("CREATE TRIGGER IF NOT EXISTS \"aux\".\"x\" BEFORE DELETE ON t BEGIN SELECT 1; END")
     );
     let qualified = "CREATE TRIGGER main.x AFTER INSERT ON t BEGIN SELECT 1; END";
-    assert_eq!(qualify_trigger(qualified, "main").as_deref(), Some(qualified));
+    assert_eq!(
+        qualify_trigger(qualified, "main").as_deref(),
+        Some(qualified)
+    );
     assert_eq!(qualify_trigger("CREATE VIEW v AS SELECT 1", "main"), None);
 }

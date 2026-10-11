@@ -42,7 +42,11 @@ async fn open(setup: &str) -> Db {
 
 impl Db {
     fn path(&self) -> String {
-        self.dir.path().join("edit.db").to_string_lossy().into_owned()
+        self.dir
+            .path()
+            .join("edit.db")
+            .to_string_lossy()
+            .into_owned()
     }
 
     async fn run(&mut self, sql: &str) {
@@ -83,7 +87,11 @@ impl Db {
 
     /// Applies, asserts success and that the re-captured table is the
     /// draft (modulo origins), and returns the new baseline.
-    async fn round_trip(&mut self, baseline: &SchemaBaseline, draft: &SchemaDraft) -> SchemaBaseline {
+    async fn round_trip(
+        &mut self,
+        baseline: &SchemaBaseline,
+        draft: &SchemaDraft,
+    ) -> SchemaBaseline {
         let outcome = self.apply(baseline, draft).await;
         assert!(outcome.applied(), "{outcome:?}");
         let recaptured = self.capture(&draft.table.name).await;
@@ -164,7 +172,15 @@ async fn capture_reads_the_definition_and_cross_checks_it() {
     let names: Vec<&str> = table.columns.iter().map(|c| c.name.as_str()).collect();
     assert_eq!(
         names,
-        vec!["id", "email", "name", "score", "created", "org_id", "upper_name"]
+        vec![
+            "id",
+            "email",
+            "name",
+            "score",
+            "created",
+            "org_id",
+            "upper_name"
+        ]
     );
     for (cid, column) in table.columns.iter().enumerate() {
         assert_eq!(column.origin, column_origin(cid as i64));
@@ -173,7 +189,10 @@ async fn capture_reads_the_definition_and_cross_checks_it() {
     assert_eq!(table.columns[0].identity, Identity::AutoIncrement);
     assert_eq!(table.columns[1].collation.as_deref(), Some("NOCASE"));
     assert!(!table.columns[1].nullable);
-    assert_eq!(table.columns[2].default, DefaultValue::Literal("anon".into()));
+    assert_eq!(
+        table.columns[2].default,
+        DefaultValue::Literal("anon".into())
+    );
     assert_eq!(
         table.columns[3].default,
         DefaultValue::Expression(SqlFragment::new("0.5 * 2"))
@@ -235,7 +254,10 @@ async fn capture_reads_the_definition_and_cross_checks_it() {
     );
     let by_name = &table.indexes[1];
     assert_eq!(by_name.origin, object_origin(TAG_INDEX, 1));
-    assert_eq!(by_name.members[0].target, IndexTarget::Column(column_origin(2)));
+    assert_eq!(
+        by_name.members[0].target,
+        IndexTarget::Column(column_origin(2))
+    );
     assert!(by_name.members[0].descending);
     assert_eq!(
         by_name.predicate.as_ref().map(SqlFragment::as_str),
@@ -247,7 +269,10 @@ async fn capture_reads_the_definition_and_cross_checks_it() {
         .iter()
         .map(|d| (d.kind.as_str(), d.name.as_str()))
         .collect();
-    assert_eq!(dependents, vec![("trigger", "users_touch"), ("view", "named")]);
+    assert_eq!(
+        dependents,
+        vec![("trigger", "users_touch"), ("view", "named")]
+    );
     assert!(baseline.dependents[0]
         .definition
         .as_deref()
@@ -338,7 +363,8 @@ async fn fast_path_changes_round_trip() {
         IndexTarget::Column(column_origin(1))
     );
     assert_eq!(
-        db.texts("SELECT name || ':' || qty FROM products ORDER BY id").await,
+        db.texts("SELECT name || ':' || qty FROM products ORDER BY id")
+            .await,
         vec!["a:0", "b:0"]
     );
 
@@ -349,7 +375,8 @@ async fn fast_path_changes_round_trip() {
     assert!(!preview.notes.iter().any(|n| n.kind == NoteKind::Rebuild));
     db.round_trip(&products, &draft).await;
     assert_eq!(
-        db.texts("SELECT name || ':' || price FROM products ORDER BY id").await,
+        db.texts("SELECT name || ':' || price FROM products ORDER BY id")
+            .await,
         vec!["a:1.0", "b:2.5"]
     );
 }
@@ -412,7 +439,10 @@ async fn every_rebuild_operation_round_trips_and_keeps_the_rows() {
                 });
             }),
         ),
-        ("drop unique", edit(|d: &mut SchemaDraft| d.table.uniques.clear())),
+        (
+            "drop unique",
+            edit(|d: &mut SchemaDraft| d.table.uniques.clear()),
+        ),
         (
             "foreign key",
             edit(|d: &mut SchemaDraft| {
@@ -466,8 +496,14 @@ async fn every_rebuild_operation_round_trips_and_keeps_the_rows() {
                 });
             }),
         ),
-        ("strict on", edit(|d: &mut SchemaDraft| d.table.options.strict = true)),
-        ("strict off", edit(|d: &mut SchemaDraft| d.table.options.strict = false)),
+        (
+            "strict on",
+            edit(|d: &mut SchemaDraft| d.table.options.strict = true),
+        ),
+        (
+            "strict off",
+            edit(|d: &mut SchemaDraft| d.table.options.strict = false),
+        ),
         (
             "without rowid on",
             edit(|d: &mut SchemaDraft| d.table.options.without_rowid = true),
@@ -520,8 +556,10 @@ async fn every_rebuild_operation_round_trips_and_keeps_the_rows() {
     );
     // The index followed every rebuild.
     assert_eq!(
-        db.number("SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'people_name'")
-            .await,
+        db.number(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = 'people_name'"
+        )
+        .await,
         1
     );
 }
@@ -555,7 +593,8 @@ async fn a_rebuild_preserves_rowids_and_the_autoincrement_counter() {
     assert!(preview.notes[0].text.contains("Rowids are preserved"));
     db.round_trip(&plain, &draft).await;
     assert_eq!(
-        db.texts("SELECT rowid || v FROM plain ORDER BY rowid").await,
+        db.texts("SELECT rowid || v FROM plain ORDER BY rowid")
+            .await,
         vec!["1x", "3z"]
     );
 }
@@ -649,7 +688,8 @@ async fn an_open_user_transaction_is_refused_and_left_open() {
     let baseline = db.capture("items").await;
     let mut draft = SchemaDraft::from_baseline(&baseline);
     draft.add_column("qty", "INTEGER");
-    db.run("BEGIN; INSERT INTO items (title) VALUES ('pending');").await;
+    db.run("BEGIN; INSERT INTO items (title) VALUES ('pending');")
+        .await;
     let outcome = db.apply(&baseline, &draft).await;
     assert_eq!(
         outcome,
@@ -723,7 +763,8 @@ async fn a_rebuild_recreates_triggers_and_keeps_views_working() {
         .sql
         .starts_with("CREATE TRIGGER \"main\".notes_audit"));
     db.round_trip(&baseline, &draft).await;
-    db.run("INSERT INTO notes (body, rank) VALUES ('two', 2)").await;
+    db.run("INSERT INTO notes (body, rank) VALUES ('two', 2)")
+        .await;
     assert_eq!(
         db.texts("SELECT msg FROM audit ORDER BY rowid").await,
         vec!["one", "two"]
@@ -734,6 +775,7 @@ async fn a_rebuild_recreates_triggers_and_keeps_views_working() {
     );
 }
 
+#[cfg(feature = "isolated-profile")]
 #[tokio::test]
 async fn the_session_worker_captures_and_applies() {
     use crate::backend::sqlite_session::{SqliteSession, SqliteSessionConfig};
@@ -774,7 +816,10 @@ async fn the_session_worker_captures_and_applies() {
         .await
         .unwrap();
     assert!(
-        matches!(result, SessionApply::Finished(SchemaEditOutcome::Applied { .. })),
+        matches!(
+            result,
+            SessionApply::Finished(SchemaEditOutcome::Applied { .. })
+        ),
         "{result:?}"
     );
     let after = session

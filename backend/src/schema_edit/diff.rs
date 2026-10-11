@@ -753,13 +753,11 @@ fn match_objects<'a, T: 'a>(
 }
 
 fn renamed(old: &Option<String>, new: &Option<String>) -> Option<ChangeKind> {
-    match (old, new) {
-        (Some(from), Some(to)) if from != to => Some(ChangeKind::Renamed {
-            from: from.clone(),
-            to: to.clone(),
-        }),
-        _ => None,
-    }
+    // Naming an unnamed (server-named) constraint is a rename too.
+    (old != new).then(|| ChangeKind::Renamed {
+        from: old.clone().unwrap_or_else(|| "(unnamed)".into()),
+        to: new.clone().unwrap_or_else(|| "(unnamed)".into()),
+    })
 }
 
 fn key_changes<'a>(
@@ -1696,6 +1694,42 @@ pub fn validate(baseline: &SchemaBaseline, draft: &SchemaDraft) -> Vec<DraftIssu
                     format!("{what} is not a valid name"),
                 ));
             }
+        }
+    }
+
+    // An existing named constraint cannot lose its name: no engine renames
+    // a constraint to "server-chosen".
+    let old_names = old
+        .primary_key
+        .iter()
+        .chain(old.uniques.iter())
+        .map(|k| (SchemaObject::Unique, k.origin, k.name.is_some()))
+        .chain(
+            old.foreign_keys
+                .iter()
+                .map(|k| (SchemaObject::ForeignKey, k.origin, k.name.is_some())),
+        )
+        .chain(
+            old.checks
+                .iter()
+                .map(|c| (SchemaObject::Check, c.origin, c.name.is_some())),
+        );
+    for (object, origin, named) in old_names {
+        let cleared = table
+            .primary_key
+            .iter()
+            .chain(table.uniques.iter())
+            .find(|k| k.origin == origin)
+            .map(|k| k.name.is_none())
+            .or_else(|| table.foreign_key(origin).map(|k| k.name.is_none()))
+            .or_else(|| table.check(origin).map(|c| c.name.is_none()))
+            .unwrap_or(false);
+        if named && cleared {
+            issues.push(DraftIssue::at(
+                object,
+                origin,
+                "An existing constraint must keep a name",
+            ));
         }
     }
 

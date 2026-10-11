@@ -24,6 +24,7 @@ use super::{
     BaselineId, EnginePlan, Origin, PlanError, PlanOptions, SchemaBaseline, SchemaChangeSet,
     SchemaDraft, SchemaEditOutcome, SchemaEditPreview, ServerFeatures,
 };
+use futures_util::future::BoxFuture;
 use sqlx::SqliteConnection;
 
 /// Baseline id tags for non-column objects: `tag << 48 | n`, so ids never
@@ -44,16 +45,13 @@ fn object_origin(tag: u64, n: usize) -> Origin {
 
 /// `3.45.1` as `(3, 45, 1)`; missing or unreadable parts are zero.
 fn parse_version(text: &str) -> (u32, u32, u32) {
-    let mut parts = text
-        .trim()
-        .split('.')
-        .map(|part| {
-            part.chars()
-                .take_while(char::is_ascii_digit)
-                .collect::<String>()
-                .parse::<u32>()
-                .unwrap_or(0)
-        });
+    let mut parts = text.trim().split('.').map(|part| {
+        part.chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>()
+            .parse::<u32>()
+            .unwrap_or(0)
+    });
     (
         parts.next().unwrap_or(0),
         parts.next().unwrap_or(0),
@@ -100,24 +98,33 @@ pub fn plan(
 /// Captures `schema.table`. Errors are user-facing text; a definition that
 /// cannot be parsed or disagrees with the PRAGMAs yields a `ReadOnly`
 /// baseline, not an error.
-pub(crate) async fn capture(
-    connection: &mut SqliteConnection,
-    schema: &str,
-    table: &str,
-    sqlite_version: &str,
-) -> Result<SchemaBaseline, String> {
-    capture::capture_table(connection, schema, table, sqlite_version, true).await
+///
+/// Boxed so the session worker's future is provably `Send` (the inner
+/// futures borrow across awaits in ways the compiler cannot generalize).
+pub(crate) fn capture<'a>(
+    connection: &'a mut SqliteConnection,
+    schema: &'a str,
+    table: &'a str,
+    sqlite_version: &'a str,
+) -> BoxFuture<'a, Result<SchemaBaseline, String>> {
+    Box::pin(capture::capture_table(
+        connection,
+        schema,
+        table,
+        sqlite_version,
+        true,
+    ))
 }
 
 /// Runs a reviewed plan on the session connection. The caller has already
 /// re-planned and compared `preview` and checked the policy.
-pub(crate) async fn execute(
-    connection: &mut SqliteConnection,
-    baseline: &SchemaBaseline,
-    draft: &SchemaDraft,
-    preview: &SchemaEditPreview,
-) -> SchemaEditOutcome {
-    executor::execute(connection, baseline, draft, preview).await
+pub(crate) fn execute<'a>(
+    connection: &'a mut SqliteConnection,
+    baseline: &'a SchemaBaseline,
+    draft: &'a SchemaDraft,
+    preview: &'a SchemaEditPreview,
+) -> BoxFuture<'a, SchemaEditOutcome> {
+    Box::pin(executor::execute(connection, baseline, draft, preview))
 }
 
 #[cfg(test)]
