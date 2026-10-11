@@ -6,8 +6,8 @@
 //! workspace revision before dispatch.
 use super::{WorkspaceApplyState, WorkspaceError};
 use crate::backend::schema_edit::{
-    plan_review, SchemaBaseline, SchemaDraft, SchemaEditAttemptId, SchemaEditPreview,
-    SchemaEditRequest, SchemaEditReview, SchemaEngine,
+    SchemaBaseline, SchemaDraft, SchemaEditAttemptId, SchemaEditPreview, SchemaEditRequest,
+    SchemaEditReview, SchemaEngine,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -101,11 +101,12 @@ impl WorkspaceSchemaEdit {
             && self.request.validate().is_ok()
             && self.baseline.table.schema == self.request.schema
             && self.baseline.table.name == self.request.table;
-        // A journaled preview must be exactly what the planner renders for
-        // the journaled baseline and draft.
+        // Structural only. Re-rendering here would make a planner change in a
+        // later release mark the whole workspace corrupt, losing the very
+        // record needed to reconcile an unknown outcome. A live review is
+        // always re-planned and compared before dispatch.
         let preview_ok = self.attempt.as_ref().is_none_or(|attempt| {
-            plan_review(&self.baseline, &self.draft, &attempt.preview.options)
-                .is_ok_and(|expected| expected == attempt.preview)
+            attempt.preview.engine == self.engine && attempt.preview.check().is_ok()
         });
         if bytes > WORKSPACE_SCHEMA_EDIT_MAX_BYTES || !consistent || !preview_ok {
             return Err(WorkspaceError::InvalidSnapshot);

@@ -22,6 +22,8 @@ pub enum FragmentError {
     UnterminatedComment,
     UnbalancedParentheses,
     StatementTerminator,
+    /// MySQL `/*! … */` and `/*+ … */` comments run or steer SQL.
+    ExecutableComment,
     /// Data types only: a character the type grammar never uses.
     InvalidCharacter(char),
 }
@@ -36,6 +38,7 @@ impl std::fmt::Display for FragmentError {
             Self::UnterminatedComment => f.write_str("has an unterminated comment"),
             Self::UnbalancedParentheses => f.write_str("has unbalanced parentheses"),
             Self::StatementTerminator => f.write_str("contains a statement terminator"),
+            Self::ExecutableComment => f.write_str("contains an executable comment"),
             Self::InvalidCharacter(c) => write!(f, "contains {c:?}"),
         }
     }
@@ -52,7 +55,7 @@ pub fn check_fragment(text: &str, engine: SchemaEngine) -> Result<(), FragmentEr
     if text.contains('\0') {
         return Err(FragmentError::Nul);
     }
-    scan(text, engine)
+    scan_all(text, engine)
 }
 
 /// Checks a column data type: a fragment that also may not contain a comment
@@ -87,20 +90,47 @@ pub fn check_data_type(text: &str, engine: SchemaEngine) -> Result<(), FragmentE
     if text.contains("--") {
         return Err(FragmentError::InvalidCharacter('-'));
     }
-    scan(text, engine)
+    scan_all(text, engine)
 }
 
-fn scan(text: &str, engine: SchemaEngine) -> Result<(), FragmentError> {
+/// PostgreSQL honours backslash escapes in plain strings only when
+/// `standard_conforming_strings` is off, which a fragment cannot know, so a
+/// PostgreSQL fragment must pass under both readings. MySQL always escapes
+/// (the capture refuses `NO_BACKSLASH_ESCAPES` sessions); SQLite never does.
+fn scan_all(text: &str, engine: SchemaEngine) -> Result<(), FragmentError> {
+    match engine {
+        SchemaEngine::Postgres => {
+            scan(text, engine, false)?;
+            scan(text, engine, true)
+        }
+        SchemaEngine::MySql => scan(text, engine, true),
+        SchemaEngine::Sqlite => scan(text, engine, false),
+    }
+}
+
+/// Identifier characters, including PostgreSQL's non-leading `$` and any
+/// non-ASCII byte.
+fn identifier_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'$' || b >= 0x80
+}
+
+fn scan(text: &str, engine: SchemaEngine, backslash_strings: bool) -> Result<(), FragmentError> {
     let bytes = text.as_bytes();
     let mut depth = 0i64;
     let mut i = 0usize;
     while i < bytes.len() {
         let b = bytes[i];
+        let previous = i.checked_sub(1).map(|p| bytes[p]);
         match b {
             b'\'' => {
-                // MySQL also honours backslash escapes in strings by default.
-                i = close_quote(bytes, i + 1, b'\'', engine == SchemaEngine::MySql)?;
+                // PostgreSQL `E'…'` always escapes; `xE'…'` is an identifier
+                // followed by a plain string.
+                let escape_string = engine == SchemaEngine::Postgres
+                    && matches!(previous, Some(b'e' | b'E'))
+                    && !i.checked_sub(2).is_some_and(|p| identifier_byte(bytes[p]));
+                i = close_quote(bytes, i + 1, b'\'', backslash_strings || escape_string)?;
             }
+            // MySQL double quotes are strings; elsewhere identifiers.
             b'"' => i = close_quote(bytes, i + 1, b'"', engine == SchemaEngine::MySql)?,
             b'`' if engine != SchemaEngine::Postgres => i = close_quote(bytes, i + 1, b'`', false)?,
             b'[' if engine == SchemaEngine::Sqlite => {
@@ -110,11 +140,11 @@ fn scan(text: &str, engine: SchemaEngine) -> Result<(), FragmentError> {
                     .map(|offset| i + 1 + offset + 1)
                     .ok_or(FragmentError::UnterminatedQuote)?;
             }
-            b'$' if engine == SchemaEngine::Postgres => i = dollar_quote(bytes, i)?,
-            b'-' if bytes.get(i + 1) == Some(&b'-') => {
-                // A line comment runs to the end of the line. MySQL requires a
-                // space after `--`, but treating `--x` as a comment is the
-                // stricter reading.
+            // Inside an identifier (`x$a$`) a `$` never opens a quote.
+            b'$' if engine == SchemaEngine::Postgres && !previous.is_some_and(identifier_byte) => {
+                i = dollar_quote(bytes, i)?
+            }
+            b'-' if bytes.get(i + 1) == Some(&b'-') && line_comment(bytes, i, engine) => {
                 i = bytes[i..]
                     .iter()
                     .position(|c| *c == b'\n')
@@ -126,7 +156,12 @@ fn scan(text: &str, engine: SchemaEngine) -> Result<(), FragmentError> {
                     .position(|c| *c == b'\n')
                     .map_or(bytes.len(), |offset| i + offset + 1);
             }
-            b'/' if bytes.get(i + 1) == Some(&b'*') => i = block_comment(bytes, i, engine)?,
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                if engine == SchemaEngine::MySql && matches!(bytes.get(i + 2), Some(b'!' | b'+')) {
+                    return Err(FragmentError::ExecutableComment);
+                }
+                i = block_comment(bytes, i, engine)?
+            }
             b'(' => {
                 depth += 1;
                 i += 1;
@@ -146,6 +181,16 @@ fn scan(text: &str, engine: SchemaEngine) -> Result<(), FragmentError> {
         return Err(FragmentError::UnbalancedParentheses);
     }
     Ok(())
+}
+
+/// `--` starts a comment in PostgreSQL and SQLite; MySQL requires whitespace
+/// or a control character after it (or the end of the text), otherwise `--`
+/// is two minus signs and the rest of the line is live SQL.
+fn line_comment(bytes: &[u8], start: usize, engine: SchemaEngine) -> bool {
+    engine != SchemaEngine::MySql
+        || bytes
+            .get(start + 2)
+            .is_none_or(|next| next.is_ascii_whitespace() || next.is_ascii_control())
 }
 
 /// Index just past the closing quote. A doubled quote is an escaped quote.
@@ -219,15 +264,21 @@ fn block_comment(bytes: &[u8], start: usize, engine: SchemaEngine) -> Result<usi
 
 /// Canonical text for comparing data types: keywords case-folded outside
 /// quotes, runs of whitespace collapsed, and no space around `(`, `)` or `,`.
-/// `VARCHAR ( 10 )` and `varchar(10)` compare equal; `"MyType"` keeps its case.
+/// `VARCHAR ( 10 )` and `varchar(10)` compare equal; `"MyType"` and enum
+/// labels such as `enum('Yes')` keep their case and spacing.
 pub fn normalize_type(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut quoted = None::<char>;
+    let mut escaped = false;
     let mut pending_space = false;
     for c in text.trim().chars() {
         if let Some(q) = quoted {
             out.push(c);
-            if c == q {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' && q == '\'' {
+                escaped = true;
+            } else if c == q {
                 quoted = None;
             }
             continue;
@@ -241,7 +292,7 @@ pub fn normalize_type(text: &str) -> String {
             out.push(' ');
         }
         pending_space = false;
-        if matches!(c, '"' | '`') {
+        if matches!(c, '"' | '`' | '\'') {
             quoted = Some(c);
             out.push(c);
         } else {
@@ -271,6 +322,10 @@ mod tests {
             ("a /* note; */ + 1", Postgres),
             ("a /* outer /* inner */ ; */ + 1", Postgres),
             ("a -- trailing; comment", Sqlite),
+            ("a -- trailing; comment", MySql),
+            ("a --\ttab; comment", MySql),
+            ("x$a$ + 1", Postgres),
+            ("E'it\\'s' || 'x'", Postgres),
         ] {
             assert_eq!(check_fragment(text, engine), Ok(()), "{text}");
         }
@@ -309,6 +364,28 @@ mod tests {
             Err(FragmentError::StatementTerminator)
         );
         assert_eq!(check_fragment("a\0", Sqlite), Err(FragmentError::Nul));
+        // MySQL `--x` is not a comment: the `;` after it is live.
+        assert_eq!(
+            check_fragment("1 --1; DROP TABLE t", MySql),
+            Err(FragmentError::StatementTerminator)
+        );
+        assert_eq!(
+            check_fragment("1 /*!; DROP TABLE t */", MySql),
+            Err(FragmentError::ExecutableComment)
+        );
+        // A `$` inside an identifier does not open a dollar quote.
+        assert_eq!(
+            check_fragment("x$a$ ; DROP TABLE t", Postgres),
+            Err(FragmentError::StatementTerminator)
+        );
+        // E-strings escape: `E'\''` is a one-quote string, so the `;` after
+        // it is live even though a doubled-quote reading hides it.
+        assert_eq!(
+            check_fragment("E'\\'' ; DROP TABLE t --'", Postgres),
+            Err(FragmentError::StatementTerminator)
+        );
+        // Under either standard_conforming_strings reading.
+        assert!(check_fragment("'a\\' ; DROP TABLE t; --'", Postgres).is_err());
         assert_eq!(
             check_fragment(&"x".repeat(MAX_FRAGMENT_BYTES + 1), Sqlite),
             Err(FragmentError::TooLong)
@@ -341,5 +418,10 @@ mod tests {
         assert_eq!(normalize_type("\"MyType\""), "\"MyType\"");
         assert_eq!(normalize_type("int [ ]"), "int[]");
         assert_eq!(normalize_type("INT UNSIGNED"), "int unsigned");
+        assert_eq!(normalize_type("ENUM('Yes','No')"), "enum('Yes','No')");
+        assert_ne!(
+            normalize_type("enum('A b')"),
+            normalize_type("enum('a  b')")
+        );
     }
 }

@@ -26,7 +26,7 @@ fn draft_journal_validates_its_request_against_the_baseline() {
 }
 
 #[test]
-fn journal_refuses_a_preview_the_planner_would_not_render() {
+fn journal_validates_preview_structure_but_not_its_rendering() {
     let baseline = users(SchemaEngine::Postgres);
     let mut draft = SchemaDraft::from_baseline(&baseline);
     draft.add_column("age", "integer");
@@ -54,7 +54,17 @@ fn journal_refuses_a_preview_the_planner_would_not_render() {
         }),
     };
     assert!(record.outcome_unknown());
-    assert_eq!(record.validate(), Err(WorkspaceError::InvalidSnapshot));
+    // A preview from an older planner still loads, so the unknown outcome
+    // stays visible for reconciliation.
+    assert_eq!(record.validate(), Ok(()));
+    // Groups that do not cover the statements are refused.
+    let mut broken = record.clone();
+    broken.attempt.as_mut().unwrap().preview.groups.clear();
+    assert_eq!(broken.validate(), Err(WorkspaceError::InvalidSnapshot));
+    // So is a preview for another engine.
+    let mut other = record;
+    other.attempt.as_mut().unwrap().preview.engine = SchemaEngine::MySql;
+    assert_eq!(other.validate(), Err(WorkspaceError::InvalidSnapshot));
 }
 
 fn session_config(path: &str, read_only: bool, safe_mode: SafeMode) -> SqliteSessionConfig {
@@ -136,4 +146,20 @@ fn session_refusals_map_to_typed_errors() {
         sqlite_error(SqliteSessionError::Closed),
         SchemaEditError::Unavailable(_)
     ));
+}
+
+#[test]
+fn apply_errors_after_queueing_are_unknown_outcomes() {
+    assert_eq!(
+        sqlite_apply_error(SqliteSessionError::Busy),
+        SchemaEditError::Busy
+    );
+    assert_eq!(
+        sqlite_apply_error(SqliteSessionError::Closed),
+        SchemaEditError::OutcomeUnavailable
+    );
+    assert_eq!(
+        mysql_apply_error(MySqlSessionError::Closed(None)),
+        SchemaEditError::OutcomeUnavailable
+    );
 }

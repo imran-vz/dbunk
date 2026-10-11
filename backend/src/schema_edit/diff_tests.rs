@@ -496,3 +496,47 @@ fn naming_an_unnamed_key_is_a_rename_and_clearing_a_name_is_refused() {
         .iter()
         .any(|issue| issue.message.contains("keep a name")));
 }
+
+#[test]
+fn recreating_an_object_with_a_renamed_columns_old_name_is_refused() {
+    let (baseline, mut draft) = draft(MySql);
+    draft.table.column_mut(existing(2)).unwrap().name = "mail".into();
+    draft.table.checks[0].enforced = false;
+    assert!(validate(&baseline, &draft)
+        .iter()
+        .any(|issue| issue.origin == Some(existing(400))));
+    // Editing the expression clears it.
+    draft.table.checks[0].expression = SqlFragment::new("length(mail) > 3");
+    assert!(validate(&baseline, &draft).is_empty());
+    // A rename alone is fine: the server rewrites stored expressions.
+    let (baseline, mut draft) = super::tests::draft(MySql);
+    draft.table.column_mut(existing(2)).unwrap().name = "mail".into();
+    assert!(validate(&baseline, &draft).is_empty());
+}
+
+#[test]
+fn new_ids_are_unique_across_kinds() {
+    let (baseline, mut draft) = draft(Postgres);
+    let shared = draft.add_column("x", "int");
+    draft.table.uniques.push(KeyModel {
+        origin: shared,
+        name: Some("users_x_key".into()),
+        columns: vec![shared],
+    });
+    assert!(validate(&baseline, &draft)
+        .iter()
+        .any(|issue| issue.message == "appears twice"));
+}
+
+#[test]
+fn charset_changes_are_destructive_and_pg_char_is_not_widening() {
+    let (baseline, mut draft) = draft(MySql);
+    draft.table.column_mut(existing(2)).unwrap().extra.charset = Some("latin1".into());
+    assert_eq!(
+        diff(&baseline, &draft).changes[0].destructive,
+        Some(Destructive::NarrowingType)
+    );
+    assert!(!is_widening(Postgres, "char(5)", "text"));
+    assert!(!is_widening(Postgres, "char(5)", "varchar(10)"));
+    assert!(is_widening(Sqlite, "char(5)", "text"));
+}

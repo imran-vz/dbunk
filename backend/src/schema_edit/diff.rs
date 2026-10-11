@@ -207,7 +207,10 @@ pub fn is_widening(engine: SchemaEngine, before: &str, after: &str) -> bool {
                 _ => false,
             }
         }
-        ("varchar" | "char", "text") if engine != SchemaEngine::MySql => true,
+        ("varchar", "text") if engine != SchemaEngine::MySql => true,
+        // SQLite has no padding; PostgreSQL `char(n)` casts strip trailing
+        // spaces, so values change.
+        ("char", "text") if engine == SchemaEngine::Sqlite => true,
         ("varchar" | "char" | "tinytext" | "text", "mediumtext" | "longtext")
         | ("tinytext" | "mediumtext", "longtext")
         | ("tinytext", "text" | "mediumtext")
@@ -218,8 +221,7 @@ pub fn is_widening(engine: SchemaEngine, before: &str, after: &str) -> bool {
         {
             true
         }
-        ("char", "varchar") if engine != SchemaEngine::MySql => {
-            // Padding semantics differ, but no value is lost.
+        ("char", "varchar") if engine == SchemaEngine::Sqlite => {
             match (b_args.as_slice(), a_args.as_slice()) {
                 ([n], [m]) => m >= n,
                 (_, []) => true,
@@ -631,7 +633,8 @@ fn column_changes(
                 Field::Charset,
                 describe_optional(&previous.extra.charset),
                 describe_optional(&column.extra.charset),
-                None,
+                // Converting to a smaller character set loses characters.
+                Some(Destructive::NarrowingType),
             );
         }
         if previous.extra.on_update != column.extra.on_update {
@@ -1527,8 +1530,11 @@ pub fn validate(baseline: &SchemaBaseline, draft: &SchemaDraft) -> Vec<DraftIssu
                 .map(|i| (SchemaObject::Index, i.origin)),
         );
     let old = &baseline.table;
+    // Draft ids are issued from one counter, so a `New` id is unique across
+    // every kind; lookups such as `TableModel::key` rely on it.
+    let mut new_ids = HashSet::new();
     for (object, origin) in all_origins {
-        if !origins.insert((object, origin)) {
+        if !origins.insert((object, origin)) || (origin.is_new() && !new_ids.insert(origin)) {
             issues.push(DraftIssue::at(object, origin, "appears twice"));
         }
         if let Origin::New(id) = origin {
@@ -1928,6 +1934,16 @@ pub fn validate(baseline: &SchemaBaseline, draft: &SchemaDraft) -> Vec<DraftIssu
                     "Collation is not a valid name",
                 ));
             }
+            if member
+                .prefix_length
+                .is_some_and(|length| length == 0 || length > 65_535)
+            {
+                issues.push(DraftIssue::at(
+                    object,
+                    index.origin,
+                    "Key prefix length must be between 1 and 65535",
+                ));
+            }
         }
         if let Some(predicate) = &index.predicate {
             fragment_issue(
@@ -1953,7 +1969,114 @@ pub fn validate(baseline: &SchemaBaseline, draft: &SchemaDraft) -> Vec<DraftIssu
             }
         }
     }
+    stale_recreated_expressions(&mut issues, baseline, draft);
     issues
+}
+
+/// True when `name` appears in `text` as an identifier token (quoted or
+/// not), compared case-insensitively. Conservative: a string literal that
+/// happens to contain the name also matches, which only refuses.
+fn mentions(text: &str, name: &str) -> bool {
+    let lower = text.to_lowercase();
+    let name = name.to_lowercase();
+    let bytes = lower.as_bytes();
+    let mut from = 0;
+    while let Some(offset) = lower[from..].find(&name) {
+        let start = from + offset;
+        let end = start + name.len();
+        let before = start.checked_sub(1).map(|p| bytes[p]);
+        let after = bytes.get(end).copied();
+        let boundary =
+            |b: Option<u8>| !b.is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'$');
+        if boundary(before) && boundary(after) {
+            return true;
+        }
+        from = end;
+    }
+    false
+}
+
+/// A check or index that is dropped and re-created keeps its captured
+/// expression text, which still names columns by their old names. After a
+/// column rename that text would fail or bind to the wrong column, so the
+/// user must edit it. SQLite planners rewrite such text themselves, as
+/// SQLite's own RENAME does.
+fn stale_recreated_expressions(
+    issues: &mut Vec<DraftIssue>,
+    baseline: &SchemaBaseline,
+    draft: &SchemaDraft,
+) {
+    if baseline.engine == SchemaEngine::Sqlite {
+        return;
+    }
+    let old = &baseline.table;
+    let new = &draft.table;
+    let renamed: Vec<&str> = new
+        .columns
+        .iter()
+        .filter_map(|column| {
+            old.column(column.origin)
+                .filter(|previous| previous.name != column.name && !column.origin.is_new())
+                .map(|previous| previous.name.as_str())
+        })
+        .collect();
+    if renamed.is_empty() {
+        return;
+    }
+    let stale = |text: &str| renamed.iter().any(|name| mentions(text, name));
+    for check in &new.checks {
+        let Some(previous) = old.check(check.origin) else {
+            continue;
+        };
+        let recreated = previous.enforced != check.enforced;
+        if recreated && previous.expression == check.expression && stale(&check.expression.0) {
+            issues.push(DraftIssue::at(
+                SchemaObject::Check,
+                check.origin,
+                "This check is re-created and its expression still uses a renamed column's old name; edit the expression",
+            ));
+        }
+    }
+    for index in &new.indexes {
+        let Some(previous) = old.index(index.origin) else {
+            continue;
+        };
+        let recreated = previous.unique != index.unique
+            || previous.method != index.method
+            || previous.members != index.members
+            || previous.include != index.include
+            || previous.predicate != index.predicate;
+        if !recreated {
+            continue;
+        }
+        let untouched = index
+            .members
+            .iter()
+            .filter_map(|member| match &member.target {
+                IndexTarget::Expression(sql) => Some(sql),
+                IndexTarget::Column(_) => None,
+            })
+            .filter(|sql| {
+                previous
+                    .members
+                    .iter()
+                    .any(|m| m.target == IndexTarget::Expression((*sql).clone()))
+            })
+            .chain(
+                index
+                    .predicate
+                    .iter()
+                    .filter(|p| previous.predicate.as_ref() == Some(*p)),
+            );
+        let mut untouched = untouched;
+        if untouched.any(|sql| stale(&sql.0)) {
+            issues.push(DraftIssue::at(
+                SchemaObject::Index,
+                index.origin,
+                "This index is re-created and an expression still uses a renamed column's old name; edit it",
+            ));
+        }
+    }
 }
 
 #[cfg(test)]

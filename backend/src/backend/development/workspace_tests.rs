@@ -196,8 +196,8 @@ async fn corrupt_and_future_records_are_preserved_until_explicit_reset() {
     for (value, expected) in [
         ("broken", WorkspaceError::Corrupt),
         (
-            r#"{"version":17,"snapshot":{"future":"data"}}"#,
-            WorkspaceError::UnsupportedVersion(17),
+            r#"{"version":18,"snapshot":{"future":"data"}}"#,
+            WorkspaceError::UnsupportedVersion(18),
         ),
         (r#"{"version":1,"snapshot":{}}"#, WorkspaceError::Corrupt),
     ] {
@@ -748,8 +748,8 @@ async fn old_future_and_corrupt_schema_journals_preserve_their_original_bytes() 
         variants.push((value, WorkspaceError::Corrupt));
     }
     let mut future = base.clone();
-    future["version"] = 17.into();
-    variants.push((future, WorkspaceError::UnsupportedVersion(17)));
+    future["version"] = 18.into();
+    variants.push((future, WorkspaceError::UnsupportedVersion(18)));
     for attempt in [
         "not-a-uuid",
         "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
