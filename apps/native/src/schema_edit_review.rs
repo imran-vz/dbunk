@@ -194,7 +194,8 @@ impl SchemaEditView {
         };
         let options = toggle(&review.preview().options, choice, &review.preview().changes);
         let draft = review.draft().clone();
-        let target = (*review).into_target();
+        let review: SchemaEditReview = *review;
+        let target = review.into_target();
         self.review_with(target, draft, options, window, cx);
     }
 
@@ -572,7 +573,8 @@ impl SchemaEditView {
             return;
         }
         if let Some(review) = state.review {
-            self.target = Some((*review).into_target());
+            let review: SchemaEditReview = *review;
+            self.target = Some(review.into_target());
         }
         self.inputs_stale = true;
         self.focus_request = true;
@@ -1006,21 +1008,18 @@ fn changes_list(preview: &SchemaEditPreview) -> AnyElement {
         .flex()
         .flex_col()
         .gap(px(4.));
-    let mut index = 0;
+    let mut start = 0;
     for group in ChangeGroup::ALL {
         let changes: Vec<&SchemaChange> = preview.changes.in_group(group).collect();
-        if changes.is_empty() {
+        let count = changes.len();
+        if count == 0 {
             continue;
         }
-        list = list.child(ui::section_label(format!(
-            "{} · {}",
-            group.label(),
-            changes.len()
-        )));
-        for change in changes {
-            list = list.child(change_line(index, change));
-            index += 1;
+        list = list.child(ui::section_label(format!("{} · {count}", group.label())));
+        for (offset, change) in changes.into_iter().enumerate() {
+            list = list.child(change_line(start + offset, change));
         }
+        start += count;
     }
     list.into_any_element()
 }

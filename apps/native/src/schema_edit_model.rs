@@ -7,8 +7,9 @@
 use dbunk_lib::backend::schema_edit::{
     ChangeGroup, ChangeKind, CheckModel, ColumnModel, DefaultValue, Deferrable, Destructive,
     DraftIssue, Editability, Field, ForeignKeyModel, Generated, Identity, IndexModel, KeyModel,
-    Origin, ReferentialAction, SchemaBaseline, SchemaChange, SchemaChangeSet, SchemaDraft,
-    SchemaEditRequest, SchemaEngine, SchemaObject, SqlFragment, diff, same_name, validate,
+    Origin, RebaseConflict, ReferentialAction, SchemaBaseline, SchemaChange, SchemaChangeSet,
+    SchemaDraft, SchemaEditRequest, SchemaEngine, SchemaObject, SqlFragment, diff,
+    rebase as rebase_draft, same_name, validate,
 };
 
 mod gate;
@@ -366,6 +367,9 @@ pub struct SchemaEditModel {
     caps: Capabilities,
     changes: SchemaChangeSet,
     issues: Vec<DraftIssue>,
+    /// Fields and objects the last re-base found changed on both sides; the
+    /// draft's value was kept. Informational: they never block review.
+    conflicts: Vec<RebaseConflict>,
 }
 
 impl SchemaEditModel {
@@ -388,8 +392,23 @@ impl SchemaEditModel {
             caps,
             changes: SchemaChangeSet::default(),
             issues: Vec::new(),
+            conflicts: Vec::new(),
         };
         model.recompute();
+        model
+    }
+
+    /// A journaled draft edited against `old`, re-based onto a fresh
+    /// capture of the same table that differs from it.
+    pub fn rebased(
+        request: SchemaEditRequest,
+        old: &SchemaBaseline,
+        baseline: SchemaBaseline,
+        draft: &SchemaDraft,
+    ) -> Self {
+        let (draft, conflicts) = rebase_draft(old, &baseline, draft);
+        let mut model = Self::restore(request, baseline, draft);
+        model.conflicts = conflicts;
         model
     }
 
@@ -415,6 +434,9 @@ impl SchemaEditModel {
     }
     pub fn issues(&self) -> &[DraftIssue] {
         &self.issues
+    }
+    pub fn conflicts(&self) -> &[RebaseConflict] {
+        &self.conflicts
     }
     pub fn editable(&self) -> bool {
         self.baseline.editable.is_editable()
@@ -453,12 +475,20 @@ impl SchemaEditModel {
     }
 
     /// Takes a fresh capture of the same table. When nothing changed on the
-    /// server the draft carries over (only the drift token moves); otherwise
-    /// the draft restarts from the new baseline and `false` is returned.
+    /// server the draft carries over as is (only the drift token moves) and
+    /// `true` is returned. Otherwise the draft is re-based three-way: edits
+    /// the server did not touch carry over, server changes the draft did not
+    /// touch show through, and values both changed keep the draft's and are
+    /// listed in [`Self::conflicts`]. Conflicts describe this capture only.
     pub fn rebase(&mut self, baseline: SchemaBaseline) -> bool {
         let same = baseline.engine == self.baseline.engine && baseline.table == self.baseline.table;
-        if !same {
+        self.conflicts.clear();
+        if baseline.engine != self.baseline.engine {
             self.draft = SchemaDraft::from_baseline(&baseline);
+        } else if !same {
+            let (draft, conflicts) = rebase_draft(&self.baseline, &baseline, &self.draft);
+            self.draft = draft;
+            self.conflicts = conflicts;
         }
         self.caps = Capabilities::of(&baseline);
         self.baseline = baseline;
@@ -469,6 +499,7 @@ impl SchemaEditModel {
     /// Discard: the draft equals the baseline again.
     pub fn discard(&mut self) {
         self.draft = SchemaDraft::from_baseline(&self.baseline);
+        self.conflicts.clear();
         self.recompute();
     }
 
@@ -1516,21 +1547,21 @@ impl SchemaEditModel {
     /// and foreign keys that use it, as `DROP COLUMN` does; they stay visible
     /// as removed rows and can be restored on their own.
     pub fn remove(&mut self, target: Target) -> bool {
-        let table = &mut self.draft.table;
         let changed = match target {
             Target::Table => false,
             Target::Column(o) => self.draft.remove_column(o),
             Target::PrimaryKey(o) => {
+                let table = &mut self.draft.table;
                 let present = table.primary_key.as_ref().is_some_and(|k| k.origin == o);
                 if present {
                     table.primary_key = None;
                 }
                 present
             }
-            Target::Unique(o) => retain(&mut table.uniques, o, |k| k.origin),
-            Target::ForeignKey(o) => retain(&mut table.foreign_keys, o, |k| k.origin),
-            Target::Check(o) => retain(&mut table.checks, o, |c| c.origin),
-            Target::Index(o) => retain(&mut table.indexes, o, |i| i.origin),
+            Target::Unique(o) => retain(&mut self.draft.table.uniques, o, |k| k.origin),
+            Target::ForeignKey(o) => retain(&mut self.draft.table.foreign_keys, o, |k| k.origin),
+            Target::Check(o) => retain(&mut self.draft.table.checks, o, |c| c.origin),
+            Target::Index(o) => retain(&mut self.draft.table.indexes, o, |i| i.origin),
         };
         if changed {
             self.recompute();

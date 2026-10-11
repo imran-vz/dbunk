@@ -7,7 +7,7 @@
 use dbunk_lib::backend::WorkspaceApplyState;
 use dbunk_lib::backend::schema_edit::{
     SchemaBaseline, SchemaDraft, SchemaEditError, SchemaEditOutcome, SchemaEditReceipt,
-    SchemaEditRequest, SchemaEditReview, WorkspaceSchemaEdit,
+    SchemaEditRequest, SchemaEditReview, SchemaEngine, WorkspaceSchemaEdit,
 };
 
 /// What a settled receipt means for the editor.
@@ -63,21 +63,18 @@ impl Recovery {
             .map(|attempt| attempt.attempt_id.as_str())
     }
 
-    /// The journaled draft for this table, when it was edited against a
-    /// baseline whose table equals `baseline`'s (the drift token may move).
+    /// The journaled baseline and draft for this table on this engine. The
+    /// caller restores the draft as is when the captured table still equals
+    /// the journaled baseline's, and re-bases it otherwise.
     pub fn restorable(
         &self,
         request: &SchemaEditRequest,
-        baseline: &SchemaBaseline,
-    ) -> Option<SchemaDraft> {
+        engine: SchemaEngine,
+    ) -> Option<(&SchemaBaseline, &SchemaDraft)> {
         self.record
             .as_ref()
-            .filter(|record| {
-                record.request == *request
-                    && record.engine == baseline.engine
-                    && record.baseline.table == baseline.table
-            })
-            .map(|record| record.draft.clone())
+            .filter(|record| record.request == *request && record.engine == engine)
+            .map(|record| (&record.baseline, &record.draft))
     }
 
     /// Journals the draft in progress. An unchanged draft clears the record.

@@ -163,6 +163,8 @@ impl CatalogView {
                     cx.notify();
                 },
             ));
+            // The first observation started before this subscription existed.
+            self.schema_edit.busy = view.read(cx).has_pending();
             self.schema_edit.view = Some(view);
         }
         self.schema_edit.show = true;
