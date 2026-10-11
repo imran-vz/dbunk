@@ -33,6 +33,7 @@ use sqlx::mysql::{MySqlConnectOptions, MySqlSslMode};
 use tokio::sync::{mpsc, oneshot, watch, Mutex};
 
 use super::{Backend, StatementClassSummary};
+use crate::schema_edit::{SchemaBaseline, SchemaDraft, SchemaEditPreview, SessionApply};
 use crate::{credentials, storage, StoredConnection};
 
 /// Connect, including the SSH route, must finish within this budget.
@@ -255,6 +256,20 @@ enum Request {
         kind: MySqlObjectKind,
         name: String,
     },
+    /// Plan 033: capture a schema-edit baseline on the session connection.
+    SchemaBaseline {
+        database: String,
+        table: String,
+    },
+    /// Plan 033: apply a reviewed schema edit on a dedicated connection.
+    SchemaApply(Box<SchemaApplyRequest>),
+}
+
+struct SchemaApplyRequest {
+    baseline: SchemaBaseline,
+    draft: SchemaDraft,
+    preview: SchemaEditPreview,
+    confirmed: bool,
 }
 
 enum Reply {
@@ -263,6 +278,8 @@ enum Reply {
     Result(MySqlResult),
     Structure(MySqlStructure),
     Definition(String),
+    SchemaBaseline(Box<SchemaBaseline>),
+    SchemaApply(SessionApply),
 }
 
 type Envelope = (
@@ -348,6 +365,11 @@ impl MySqlSession {
 
     pub fn server(&self) -> &MySqlServerInfo {
         &self.0.server
+    }
+
+    /// True when both handles share one session.
+    pub fn same_session(&self, other: &MySqlSession) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
     }
 
     pub fn status(&self) -> MySqlSessionStatus {
@@ -492,6 +514,52 @@ impl MySqlSession {
         {
             Reply::Structure(structure) => Ok(structure),
             _ => unreachable!("structure reply"),
+        }
+    }
+
+    /// Plan 033: captures `database.table` as a schema-edit baseline.
+    pub async fn schema_baseline(
+        &self,
+        database: String,
+        table: String,
+    ) -> Result<SchemaBaseline, MySqlSessionError> {
+        match self
+            .request(
+                self.request_id().0,
+                Request::SchemaBaseline { database, table },
+            )
+            .await?
+        {
+            Reply::SchemaBaseline(baseline) => Ok(*baseline),
+            _ => unreachable!("schema baseline reply"),
+        }
+    }
+
+    /// Plan 033: applies a reviewed schema edit. The policy is checked on the
+    /// worker; the DDL runs on a dedicated short connection to the same
+    /// endpoint, so its implicit commit never touches a transaction open on
+    /// this session. The session queue waits for it.
+    pub async fn apply_schema_edit(
+        &self,
+        baseline: SchemaBaseline,
+        draft: SchemaDraft,
+        preview: SchemaEditPreview,
+        confirmed: bool,
+    ) -> Result<SessionApply, MySqlSessionError> {
+        match self
+            .request(
+                self.request_id().0,
+                Request::SchemaApply(Box::new(SchemaApplyRequest {
+                    baseline,
+                    draft,
+                    preview,
+                    confirmed,
+                })),
+            )
+            .await?
+        {
+            Reply::SchemaApply(result) => Ok(result),
+            _ => unreachable!("schema apply reply"),
         }
     }
 

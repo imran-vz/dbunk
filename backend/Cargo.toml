@@ -84,6 +84,9 @@ flate2 = "1.1"
 phonenumber = "=0.3.10"
 # Samples phonenumber's national-number patterns with the seed's own RNG.
 regex-syntax = "0.8"
+# Plan 033: parses SQLite `sqlite_master.sql` and MySQL `SHOW CREATE TABLE`
+# so schema-edit baselines can be cross-checked against the catalog.
+sqlparser = { version = "0.63", default-features = false, features = ["std"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

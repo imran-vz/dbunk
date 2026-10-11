@@ -32,6 +32,11 @@ pub use schema_alter_state::{WorkspaceSchemaAlter, WORKSPACE_SCHEMA_ALTER_MAX_BY
 #[path = "workspace_object_ddl.rs"]
 mod object_ddl_state;
 pub use object_ddl_state::{WorkspaceObjectDdl, WORKSPACE_OBJECT_DDL_MAX_BYTES};
+#[path = "workspace_schema_edit.rs"]
+mod schema_edit_state;
+pub use schema_edit_state::{
+    WorkspaceSchemaEdit, WorkspaceSchemaEditAttempt, WORKSPACE_SCHEMA_EDIT_MAX_BYTES,
+};
 #[path = "workspace_schema.rs"]
 mod schema_state;
 #[path = "workspace_table.rs"]
@@ -102,6 +107,9 @@ pub struct WorkspaceDocument {
     pub schema_alter: Option<WorkspaceSchemaAlter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub admin_control: Option<WorkspaceAdminControl>,
+    /// Plan 033. One table's schema draft and its apply attempt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_edit: Option<WorkspaceSchemaEdit>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub maintenance: Option<WorkspaceMaintenance>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -355,6 +363,18 @@ fn validate(mut snapshot: WorkspaceSnapshot) -> Result<WorkspaceSnapshot, Worksp
                 return Err(WorkspaceError::InvalidSnapshot);
             }
             query.validate()?;
+        }
+        if let Some(edit) = &document.schema_edit {
+            if document.connection_id.is_none()
+                || document.table_ddl.is_some()
+                || document.object_ddl.is_some()
+                || document.schema_alter.is_some()
+                || document.query_changes.is_some()
+                || document.saved_query_id.is_some()
+            {
+                return Err(WorkspaceError::InvalidSnapshot);
+            }
+            edit.validate()?;
         }
         if let Some(ddl) = &document.table_ddl {
             if document.tool != Some(WorkspaceTool::Objects)

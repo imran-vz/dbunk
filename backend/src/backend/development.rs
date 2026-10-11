@@ -41,6 +41,9 @@ pub use workspace::{
     WORKSPACE_TABLE_DDL_MAX_BYTES,
 };
 pub use workspace::{WorkspaceObjectDdl, WORKSPACE_OBJECT_DDL_MAX_BYTES};
+pub use workspace::{
+    WorkspaceSchemaEdit, WorkspaceSchemaEditAttempt, WORKSPACE_SCHEMA_EDIT_MAX_BYTES,
+};
 #[cfg(test)]
 mod tests;
 
