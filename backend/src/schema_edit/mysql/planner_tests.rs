@@ -292,7 +292,7 @@ fn table_rename_and_comment() {
     draft.table.comment = Some("Everyone's record".into());
     assert_eq!(
         sql(&baseline, &draft, &PlanOptions::default()),
-        vec!["ALTER TABLE `app`.`users` COMMENT = 'Everyone''s record', RENAME TO `people`"]
+        vec!["ALTER TABLE `app`.`users` COMMENT = 'Everyone''s record', RENAME TO `app`.`people`"]
     );
 
     // Foreign keys are added after the rename, under the new name.

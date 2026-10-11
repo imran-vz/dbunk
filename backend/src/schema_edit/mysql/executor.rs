@@ -20,8 +20,8 @@ use super::build::safe_sql_mode;
 use super::catalog::{cell, message};
 use super::sql::{canonical_type, is_textual, loose_expression, same_action};
 use crate::schema_edit::{
-    ColumnModel, DefaultValue, IndexTarget, SchemaBaseline, SchemaDraft, SchemaEditFailure,
-    SchemaEditOutcome, SchemaEditPreview, SchemaEngine, TableModel,
+    types_equal, ColumnModel, DefaultValue, IndexTarget, SchemaBaseline, SchemaDraft,
+    SchemaEditFailure, SchemaEditOutcome, SchemaEditPreview, SchemaEngine, TableModel,
 };
 use sqlx::mysql::{MySqlConnectOptions, MySqlConnection, MySqlDatabaseError};
 use sqlx::{ConnectOptions, Connection, Executor};
@@ -139,9 +139,11 @@ async fn kill_query(options: &MySqlConnectOptions, thread: u64) {
     let Ok(Ok(mut side)) = timeout(CONNECT_TIMEOUT, options.connect()).await else {
         return;
     };
-    let _ = (&mut side)
-        .execute(format!("KILL QUERY {thread}").as_str())
-        .await;
+    let _ = timeout(
+        KILL_TIMEOUT,
+        (&mut side).execute(format!("KILL QUERY {thread}").as_str()),
+    )
+    .await;
     close(side).await;
 }
 
@@ -161,7 +163,18 @@ async fn prepare(
         .and_then(|id| id.trim().parse().ok())
         .unwrap_or_default();
     let version = cell(&row, 1).unwrap_or_default();
-    let mode = safe_sql_mode(&cell(&row, 2).unwrap_or_default());
+    // Strict mode makes a narrowing ALTER fail instead of truncating data
+    // with only a warning on a non-strict server.
+    let mut mode = safe_sql_mode(&cell(&row, 2).unwrap_or_default());
+    if !mode
+        .split(',')
+        .any(|flag| flag.eq_ignore_ascii_case("STRICT_ALL_TABLES"))
+    {
+        if !mode.is_empty() {
+            mode.push(',');
+        }
+        mode.push_str("STRICT_ALL_TABLES");
+    }
     sqlx::query("SET SESSION sql_mode = ?")
         .bind(mode)
         .execute(&mut *connection)
@@ -178,8 +191,18 @@ async fn prepare(
         &baseline.table.name,
     )
     .await
-    // A table that is gone or unreadable has changed since review.
-    .map_err(|_| SchemaEditFailure::BaselineChanged)?;
+    // A missing table has changed since review; other failures (a lost
+    // connection, a permission error) are reported as they are.
+    .map_err(|message| {
+        if message.ends_with("was not found") {
+            SchemaEditFailure::BaselineChanged
+        } else {
+            SchemaEditFailure::Database {
+                code: None,
+                message,
+            }
+        }
+    })?;
     if current.drift != baseline.drift {
         return Err(SchemaEditFailure::BaselineChanged);
     }
@@ -657,7 +680,11 @@ fn column_problems(
     if !same_text(wanted.comment.as_deref(), found.comment.as_deref()) {
         differ("comment");
     }
-    let untouched_default = before.is_some_and(|before| before.default == wanted.default);
+    // After a type change the server re-renders an untouched default in the
+    // new type's format (`0.00` → `0.0000`), so it is compared loosely.
+    let untouched_default = before.is_some_and(|before| {
+        before.default == wanted.default && types_equal(&before.data_type, &wanted.data_type)
+    });
     let same_default = if untouched_default {
         found.default == wanted.default
     } else {

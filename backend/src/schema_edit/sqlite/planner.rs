@@ -891,6 +891,20 @@ fn rebuild(baseline: &SchemaBaseline, table: &TableModel) -> Result<EnginePlan, 
              the table or its columns on their own first, then make the other changes",
         ));
     }
+    // A rebuild runs with legacy_alter_table on, so SQLite does not rewrite
+    // other tables' REFERENCES or views that name the old table or columns.
+    let referenced = !baseline.inbound.is_empty()
+        || baseline
+            .dependents
+            .iter()
+            .any(|dependent| dependent.kind == VIEW || dependent.kind == REFERENCING_TRIGGER);
+    if referenced && (old.name != table.name || !renames.is_empty()) {
+        return Err(unsupported(
+            "Other tables, views or triggers refer to this table, and a rebuild would leave them \
+             pointing at the old names. Rename the table or its columns on their own first, then \
+             make the other changes",
+        ));
+    }
     for column in &old.columns {
         if table.column(column.origin).is_some() {
             continue;

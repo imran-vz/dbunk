@@ -199,6 +199,17 @@ pub(super) fn baseline(
             catalog.table.table_type.to_ascii_lowercase()
         ));
     }
+    // Cells are decoded lossily; a replaced byte means the text cannot be
+    // restated exactly (a binary default, a non-UTF-8 comment).
+    if catalog.columns.iter().any(|row| {
+        row.default
+            .as_deref()
+            .is_some_and(|d| d.contains('\u{FFFD}'))
+            || row.comment.contains('\u{FFFD}')
+    }) || catalog.create_table.contains('\u{FFFD}')
+    {
+        problems.push("A default or comment holds bytes that are not text and cannot be restated");
+    }
     if catalog.truncated || catalog.columns.len() > MAX_SCHEMA_EDIT_COLUMNS {
         problems.push("The table has more columns, keys or indexes than the editor supports");
     }

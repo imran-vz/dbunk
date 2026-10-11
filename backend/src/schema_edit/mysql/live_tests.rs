@@ -237,3 +237,54 @@ async fn a_rejected_statement_leaves_the_table_unchanged() {
     assert_eq!(after.drift, baseline.drift);
     connection.close().await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires make -C infrastructure/test-db mysql"]
+async fn retype_with_default_and_rename_without_a_default_database() {
+    let table = "schema_edit_price";
+    let mut connection = connect().await;
+    let server = version(&mut connection).await;
+    connection
+        .execute(
+            format!(
+                "DROP TABLE IF EXISTS `{table}`, `{table}_v2`;
+                 CREATE TABLE `{table}` (id INT PRIMARY KEY, price DECIMAL(10,2) NOT NULL DEFAULT '0.00')"
+            )
+            .as_str(),
+        )
+        .await
+        .unwrap();
+    let baseline = capture(&mut connection, &server, "dbunk_demo", table)
+        .await
+        .unwrap();
+    assert_eq!(
+        baseline.editable,
+        Editability::Editable,
+        "{:?}",
+        baseline.editable
+    );
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    let price = origin(&draft, "price");
+    draft.table.column_mut(price).unwrap().data_type = "decimal(12,4)".into();
+    draft.table.name = format!("{table}_v2");
+    let preview = plan_review(&baseline, &draft, &PlanOptions::default()).unwrap();
+    // No default database: the rename must still land in dbunk_demo.
+    let mut bare = MySqlConnectOptions::new()
+        .host("127.0.0.1")
+        .port(13306)
+        .username("dbunk")
+        .password("dbunk");
+    bare = bare.statement_cache_capacity(0);
+    let outcome = execute(&bare, &baseline, &draft, &preview).await;
+    assert!(outcome.applied(), "{outcome:?}\n{}", preview.sql_text());
+    let after = capture(
+        &mut connection,
+        &server,
+        "dbunk_demo",
+        &format!("{table}_v2"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(after.editable, Editability::Editable);
+    connection.close().await.unwrap();
+}
