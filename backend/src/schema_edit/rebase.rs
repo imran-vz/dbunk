@@ -9,7 +9,8 @@
 //! captures (ADR-0016).
 use super::change::{DraftIssue, SchemaObject};
 use super::model::{
-    ColumnModel, IndexTarget, KeyModel, Origin, SchemaBaseline, SchemaDraft, TableModel,
+    ColumnModel, IndexTarget, KeyModel, Origin, SchemaBaseline, SchemaDraft, SchemaEngine,
+    TableModel,
 };
 
 /// One field or object both sides changed, or a user edit whose object the
@@ -141,6 +142,41 @@ fn key_label(key: &KeyModel) -> String {
     key.name.clone().unwrap_or_else(|| "Key".into())
 }
 
+/// SQLite and MySQL ids are positional (column position, constraint order),
+/// so a server-side drop or insert shifts them onto other objects. For those
+/// engines a merge is only sound when every id present in both baselines
+/// still names the same object and no object appeared or vanished.
+/// PostgreSQL ids (attnum, OIDs) never move.
+fn ids_comparable(old: &SchemaBaseline, new: &SchemaBaseline) -> bool {
+    if old.engine != new.engine || old.table.schema != new.table.schema {
+        return false;
+    }
+    if old.engine == SchemaEngine::Postgres {
+        return true;
+    }
+    fn names<T>(
+        items: &[T],
+        key: impl Fn(&T) -> (Origin, Option<String>),
+    ) -> Vec<(Origin, Option<String>)> {
+        let mut out: Vec<_> = items.iter().map(key).collect();
+        out.sort();
+        out
+    }
+    let (a, b) = (&old.table, &new.table);
+    names(&a.columns, |c| (c.origin, Some(c.name.clone())))
+        == names(&b.columns, |c| (c.origin, Some(c.name.clone())))
+        && names(a.primary_key.as_slice(), |k| (k.origin, k.name.clone()))
+            == names(b.primary_key.as_slice(), |k| (k.origin, k.name.clone()))
+        && names(&a.uniques, |k| (k.origin, k.name.clone()))
+            == names(&b.uniques, |k| (k.origin, k.name.clone()))
+        && names(&a.foreign_keys, |k| (k.origin, k.name.clone()))
+            == names(&b.foreign_keys, |k| (k.origin, k.name.clone()))
+        && names(&a.checks, |c| (c.origin, c.name.clone()))
+            == names(&b.checks, |c| (c.origin, c.name.clone()))
+        && names(&a.indexes, |i| (i.origin, Some(i.name.clone())))
+            == names(&b.indexes, |i| (i.origin, Some(i.name.clone())))
+}
+
 /// Re-bases `draft` (edited against `old`) onto `new`. The result keeps the
 /// draft's issued ids (`next_id`), so new objects never collide.
 pub fn rebase(
@@ -148,6 +184,18 @@ pub fn rebase(
     new: &SchemaBaseline,
     draft: &SchemaDraft,
 ) -> (SchemaDraft, Vec<RebaseConflict>) {
+    if !ids_comparable(old, new) {
+        return (
+            SchemaDraft {
+                table: new.table.clone(),
+                next_id: draft.next_id,
+            },
+            vec![DraftIssue::table(
+                "The table's columns or constraints changed on the server in a way the draft \
+                 cannot follow; the draft was restarted from the current structure",
+            )],
+        );
+    }
     let base = &old.table;
     let server = &new.table;
     let user = &draft.table;
@@ -398,6 +446,37 @@ mod tests {
         assert!(rebased.table.column(existing(4)).is_none());
         assert!(rebased.table.indexes.is_empty());
         assert_eq!(conflicts.len(), 2);
+    }
+
+    #[test]
+    fn positional_engines_restart_when_ids_shift() {
+        let old = users(SchemaEngine::Sqlite);
+        let mut draft = SchemaDraft::from_baseline(&old);
+        draft.table.column_mut(existing(3)).unwrap().comment = Some("x".into());
+        // The server dropped `email` (cid 1): every later cid moves down.
+        let mut new = old.clone();
+        new.table.columns.remove(1);
+        for (cid, column) in new.table.columns.iter_mut().enumerate() {
+            column.origin = existing(cid as u64 + 1);
+        }
+        let (rebased, conflicts) = rebase(&old, &new, &draft);
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(rebased.table, new.table);
+        assert_eq!(rebased.next_id, draft.next_id);
+        // A same-shape change (a type edit) still merges.
+        let mut new = old.clone();
+        new.table.column_mut(existing(2)).unwrap().data_type = "text".into();
+        let (rebased, conflicts) = rebase(&old, &new, &draft);
+        assert!(conflicts.is_empty());
+        assert_eq!(
+            rebased
+                .table
+                .column(existing(3))
+                .unwrap()
+                .comment
+                .as_deref(),
+            Some("x")
+        );
     }
 
     #[test]
