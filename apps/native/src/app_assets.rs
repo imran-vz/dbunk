@@ -5,7 +5,7 @@ use std::borrow::Cow;
 
 use gpui::{AssetSource, Result, SharedString};
 
-const LOGOS: [(&str, &[u8]); 4] = [
+const LOGOS: [(&str, &[u8]); 5] = [
     (
         "logos/postgres.svg",
         include_bytes!("../../../logos/postgres.svg"),
@@ -21,6 +21,10 @@ const LOGOS: [(&str, &[u8]); 4] = [
     (
         "logos/redis.svg",
         include_bytes!("../../../logos/redis.svg"),
+    ),
+    (
+        "logos/sqlite-mark.svg",
+        include_bytes!("../../../logos/sqlite-mark.svg"),
     ),
 ];
 
@@ -53,13 +57,13 @@ mod tests {
 
     #[test]
     fn engine_logos_load_and_parse_as_svg() {
-        for engine in ["PostgreSQL", "MySQL", "ClickHouse", "Redis"] {
+        for engine in ["PostgreSQL", "MySQL", "SQLite", "ClickHouse", "Redis"] {
             let path = crate::style::engine_logo(engine).expect("engine has a logo");
             let data = AppAssets.load(path).unwrap().expect("logo is embedded");
             usvg::Tree::from_data(&data, &usvg::Options::default())
                 .unwrap_or_else(|error| panic!("{path} does not parse: {error}"));
         }
-        assert_eq!(crate::style::engine_logo("SQLite"), None);
+        assert_eq!(crate::style::engine_logo("Unknown"), None);
     }
 
     #[test]

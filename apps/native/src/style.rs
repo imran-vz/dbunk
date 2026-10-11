@@ -241,13 +241,14 @@ pub fn engine_badge(engine: &str) -> (&'static str, u32) {
     }
 }
 
-/// Embedded logo for an engine, shown in place of its badge. SQLite has none.
+/// Embedded logo for an engine, shown in place of its badge.
 pub fn engine_logo(engine: &str) -> Option<&'static str> {
     match engine {
         "PostgreSQL" => Some("logos/postgres.svg"),
         "MySQL" => Some("logos/mysql.svg"),
         "ClickHouse" => Some("logos/clickhouse.svg"),
         "Redis" => Some("logos/redis.svg"),
+        "SQLite" => Some("logos/sqlite-mark.svg"),
         _ => None,
     }
 }
