@@ -3,1391 +3,1357 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
     <link rel="icon" type="image/webp" href="images/favicon.webp" />
     <link rel="icon" type="image/png" href="images/favicon.png" />
-    <title>Dbunk — The Database Tool for Serious Work</title>
+    <title>dbunk · A native database client for macOS</title>
     <meta
       name="description"
-      content="A fast, local workspace for PostgreSQL, MySQL, SQLite, ClickHouse, and Redis. No cloud lock-in, no paywalled basics, no IDE-sized sprawl. Open source."
+      content="dbunk is a fast, open-source database client for macOS, written in Rust on GPUI. PostgreSQL, MySQL, SQLite, ClickHouse and Redis in one native window."
     />
+    <meta property="og:title" content="dbunk · Databases at native speed" />
+    <meta
+      property="og:description"
+      content="A fast, open-source database client for macOS, written in Rust on GPUI."
+    />
+    <meta property="og:image" content="images/app-editor.webp" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Hepta+Slab:wght@300;400;500;700;900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:ital,wght@0,300;0,400;1,300;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <style>
+      @font-face {
+        font-family: "Writer";
+        src: url("fonts/iAWriterQuattroS-Regular.woff2") format("woff2");
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Writer";
+        src: url("fonts/iAWriterQuattroS-Italic.woff2") format("woff2");
+        font-weight: 400;
+        font-style: italic;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Writer";
+        src: url("fonts/iAWriterQuattroS-Bold.woff2") format("woff2");
+        font-weight: 700;
+        font-style: normal;
+        font-display: swap;
+      }
+
       *,
       *::before,
       *::after {
+        box-sizing: border-box;
         margin: 0;
         padding: 0;
-        box-sizing: border-box;
       }
 
       :root {
-        --bg: #fafaf8;
-        --fg: #1a1a1a;
-        --red: #e60012;
-        --gray: #666;
-        --gray-light: #999;
-        --border: rgba(0, 0, 0, 0.1);
+        /* Stonewash greys: the app's surfaces under its environment tint
+           (apps/native/src/style.rs), not Zed's blue-grey. */
+        --bg: #0f1312;
+        --bg-2: #141a18;
+        --card: #161c1a;
+        --rail: rgba(214, 230, 220, 0.075);
+        --rail-strong: rgba(214, 230, 220, 0.13);
+        --dot: rgba(214, 230, 220, 0.3);
+        --text: #dfe5e1;
+        --body: #a9b2ad;
+        --muted: #87918b;
+        --faint: #5f6964;
+        /* Brand lime, from the dbunk mark. */
+        --blue: #56751f;
+        --blue-hi: #648727;
+        --sky: #b5cc7f;
+        --sky-2: #e2ebcd;
+        --ok: #3fb950;
+        --warn: #d29922;
+        --bad: #f85149;
+
+        --serif: "IBM Plex Serif", Georgia, serif;
+        --sans: "Writer", "IBM Plex Mono", ui-monospace, Menlo, monospace;
+        --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+        --inner: 840px;
+        --outer: 990px;
       }
 
       html {
-        scroll-behavior: smooth;
-      }
-
-      body {
-        font-family: "Hepta Slab", Georgia, serif;
         background: var(--bg);
-        color: var(--fg);
+        scroll-behavior: smooth;
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        font: 400 12px/1.65 var(--sans);
+        letter-spacing: 0.01em;
+        color: var(--body);
+        background: var(--bg);
+        -webkit-font-smoothing: antialiased;
         overflow-x: hidden;
-        line-height: 1.5;
       }
-
-      /* Grid background */
-      .grid-bg {
-        position: fixed;
-        inset: 0;
-        background-image:
-          linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
-        background-size: 60px 60px;
-        pointer-events: none;
-        z-index: 0;
-      }
-
-      /* Red accent line */
-      .accent-line {
-        position: fixed;
-        top: 0;
-        left: 50%;
-        width: 2px;
-        height: 100%;
-        background: var(--red);
-        opacity: 0.15;
-        pointer-events: none;
-        z-index: 1;
-      }
-
-      /* Header */
-      header {
-        position: relative;
-        z-index: 10;
-        display: grid;
-        grid-template-columns: 1fr auto 1fr;
-        align-items: center;
-        padding: 32px 48px;
-        border-bottom: 1px solid var(--border);
-      }
-
-      .header-tag {
-        font-size: 0.75rem;
-        letter-spacing: 0.2em;
-        color: var(--gray-light);
-      }
-
-      .logo {
-        font-size: 1.4rem;
-        font-weight: 900;
-        letter-spacing: -0.02em;
-      }
-
-      nav {
-        display: flex;
-        justify-content: flex-end;
-        gap: 32px;
-        font-size: 0.8rem;
-      }
-
-      nav a {
-        color: var(--gray);
+      a {
+        color: inherit;
         text-decoration: none;
-        transition: color 0.2s;
       }
-
-      nav a:hover {
-        color: var(--fg);
-      }
-
-      nav a.app-link {
-        color: var(--red);
-      }
-
-      /* Hero */
-      .hero {
-        position: relative;
-        z-index: 10;
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        min-height: 90vh;
-        align-items: center;
-        gap: 0;
-      }
-
-      .hero-content {
-        padding: 0 48px 0 80px;
-      }
-
-      .hero-tag {
-        font-size: 0.7rem;
-        letter-spacing: 0.3em;
-        color: var(--red);
-        margin-bottom: 32px;
-        font-weight: 500;
-      }
-
-      .hero h1 {
-        font-size: clamp(3rem, 6vw, 5.5rem);
-        font-weight: 300;
-        line-height: 1.05;
-        letter-spacing: -0.03em;
-        margin-bottom: 40px;
-        word-break: keep-all;
-      }
-
-      .hero h1 strong {
-        font-weight: 900;
-      }
-
-      .hero p {
-        font-size: 1rem;
-        line-height: 1.7;
-        color: var(--gray);
-        max-width: 420px;
-        margin-bottom: 48px;
-        font-family:
-          system-ui,
-          -apple-system,
-          sans-serif;
-      }
-
-      .hero-actions {
-        display: flex;
-        gap: 16px;
-        align-items: center;
-      }
-
-      .btn {
-        display: inline-block;
-        background: var(--fg);
-        color: #fff;
-        padding: 16px 36px;
-        font-size: 0.8rem;
-        font-weight: 500;
-        letter-spacing: 0.1em;
-        text-decoration: none;
-        transition: background 0.2s;
-        border: none;
-        cursor: pointer;
-        font-family: inherit;
-      }
-
-      .btn:hover {
-        background: var(--red);
-      }
-
-      .btn-outline {
-        background: transparent;
-        color: var(--fg);
-        border: 2px solid var(--fg);
-      }
-
-      .btn-outline:hover {
-        background: var(--fg);
-        color: #fff;
-      }
-
-      .hero-meta {
-        font-size: 0.7rem;
-        color: var(--gray-light);
-        letter-spacing: 0.1em;
-      }
-
-      /* Hero Screenshot */
-      .hero-visual {
-        position: relative;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 24px 48px 24px 0;
-        overflow: hidden;
-      }
-
-      .hero-zoom-container {
-        position: relative;
-        width: 100%;
-        max-width: 760px;
-        aspect-ratio: 16/10;
-        overflow: hidden;
-        border-radius: 8px;
-        box-shadow:
-          0 20px 60px -15px rgba(0, 0, 0, 0.2),
-          0 0 0 1px rgba(0, 0, 0, 0.06);
-      }
-
-      .hero-zoom-container img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
+      img {
         display: block;
+        max-width: 100%;
+      }
+      :focus-visible {
+        outline: 2px solid var(--sky);
+        outline-offset: 2px;
       }
 
-      /* Features - screenshot with animated zoom */
-      .features {
+      /* ── Rails: the vertical guide lines and crosshair dots ── */
+      .frame {
         position: relative;
-        z-index: 10;
-        padding: 120px 48px;
-        border-top: 1px solid var(--border);
-      }
-
-      .features-container {
-        max-width: 1400px;
+        max-width: var(--outer);
         margin: 0 auto;
+        border-left: 1px solid var(--rail);
+        border-right: 1px solid var(--rail);
       }
-
-      .features-header {
-        display: grid;
-        grid-template-columns: 200px 1fr;
-        gap: 80px;
-        margin-bottom: 80px;
-      }
-
-      .features-label {
-        font-size: 0.7rem;
-        letter-spacing: 0.2em;
-        color: var(--red);
-        font-weight: 500;
-        padding-top: 8px;
-      }
-
-      .features-title {
-        font-size: clamp(2rem, 4vw, 3.5rem);
-        font-weight: 300;
-        line-height: 1.2;
-        margin-bottom: 24px;
-      }
-
-      .features-accent {
-        width: 60px;
-        height: 3px;
-        background: var(--red);
-        margin-bottom: 48px;
-      }
-
-      .features-grid {
-        display: grid;
-        grid-template-columns: 320px 1fr;
-        gap: 60px;
-        align-items: start;
-      }
-
-      .feature-list {
-        list-style: none;
-        position: sticky;
-        top: 120px;
-      }
-
-      .feature-item {
-        padding: 4px 0 4px 16px;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-        cursor: pointer;
-        transition: opacity 0.4s ease;
-        opacity: 0.4;
+      .inner {
         position: relative;
+        max-width: var(--inner);
+        margin: 0 auto;
+        border-left: 1px solid var(--rail);
+        border-right: 1px solid var(--rail);
       }
-
-      .feature-item.active {
-        opacity: 1;
+      .band {
+        position: relative;
+        border-top: 1px solid var(--rail);
       }
-
-      .feature-item.active::before {
+      /* Dots where a band's top border meets the four rails. */
+      .band::before {
         content: "";
         position: absolute;
+        top: -3px;
         left: 0;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 3px;
-        height: 60%;
-        background: var(--red);
+        right: 0;
+        height: 5px;
+        pointer-events: none;
+        background:
+          radial-gradient(circle, var(--dot) 1.5px, transparent 2px) calc(50% - var(--outer) / 2) 0 / 5px 5px no-repeat,
+          radial-gradient(circle, var(--dot) 1.5px, transparent 2px) calc(50% + var(--outer) / 2) 0 / 5px 5px no-repeat,
+          radial-gradient(circle, var(--dot) 1.5px, transparent 2px) calc(50% - var(--inner) / 2) 0 / 5px 5px no-repeat,
+          radial-gradient(circle, var(--dot) 1.5px, transparent 2px) calc(50% + var(--inner) / 2) 0 / 5px 5px no-repeat;
       }
-
-      .feature-item:hover {
-        opacity: 0.7;
+      .band.dashed {
+        border-top-style: dashed;
       }
-
-      .feature-item.active:hover {
-        opacity: 1;
-      }
-
-      .feature-row {
-        display: flex;
-        align-items: baseline;
-        gap: 16px;
-      }
-
-      .feature-num {
-        font-size: 0.65rem;
-        letter-spacing: 0.1em;
-        color: var(--red);
-        font-weight: 500;
-        min-width: 24px;
-      }
-
-      .feature-name {
-        font-size: 1.3rem;
-        transition: all 0.3s;
-      }
-
-      .feature-item.active .feature-name {
-        font-weight: 700;
-      }
-
-      .feature-desc {
-        font-size: 0.85rem;
-        color: var(--gray-light);
-        margin-top: 8px;
-        line-height: 1.5;
-        font-family:
-          system-ui,
-          -apple-system,
-          sans-serif;
-        min-height: 64px;
-        opacity: 0;
-        transition: opacity 0.3s ease;
-      }
-
-      .feature-item.active .feature-desc {
-        opacity: 1;
-      }
-
-      .feature-viewport {
-        position: relative;
-        width: 100%;
-        aspect-ratio: 16/10;
-        overflow: hidden;
-        border-radius: 12px;
-        box-shadow:
-          0 4px 6px -1px rgba(0, 0, 0, 0.1),
-          0 20px 40px -10px rgba(0, 0, 0, 0.15),
-          0 0 0 1px rgba(0, 0, 0, 0.05);
-        background: #f0f0f0;
-      }
-
-      .feature-viewport img {
+      /* Faint square grid in the gutters between outer and inner rails. */
+      .gutter-grid {
+        background-image: radial-gradient(circle, var(--dot) 0.75px, transparent 1.25px);
+        background-size: 12px 12px;
+        background-position: center;
+        -webkit-mask: linear-gradient(90deg, #000 0, #000 calc(50% - var(--inner) / 2), transparent calc(50% - var(--inner) / 2), transparent calc(50% + var(--inner) / 2), #000 calc(50% + var(--inner) / 2));
+        mask: linear-gradient(90deg, #000 0, #000 calc(50% - var(--inner) / 2), transparent calc(50% - var(--inner) / 2), transparent calc(50% + var(--inner) / 2), #000 calc(50% + var(--inner) / 2));
+        opacity: 0.35;
         position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      /* ── Buttons and keys ──────────────────────────────── */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7.5px;
+        height: 27px;
+        padding: 0 6px 0 10.5px;
+        border-radius: 3px;
+        font: 400 12px/1 var(--sans);
+        color: var(--text);
+        border: 1px solid #45504a;
+        background: rgba(255, 255, 255, 0.02);
+        box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.35);
+        transition:
+          background 0.15s,
+          border-color 0.15s;
+        white-space: nowrap;
+      }
+      .btn:hover {
+        background: rgba(255, 255, 255, 0.06);
+        border-color: #5f6964;
+      }
+      .btn.primary {
+        background: var(--blue);
+        border-color: #7b9c3a;
+        color: #fff;
+      }
+      .btn.primary:hover {
+        background: var(--blue-hi);
+      }
+      .btn svg {
+        width: 11px;
+        height: 11px;
+        flex: none;
+      }
+      .btn.plain {
+        border-color: transparent;
+        background: transparent;
+        box-shadow: none;
+        padding-right: 4px;
+      }
+      kbd {
+        display: inline-grid;
+        place-items: center;
+        min-width: 15px;
+        height: 15px;
+        padding: 0 5px;
+        border-radius: 3px;
+        font: 500 10px/1 var(--mono);
+        color: var(--muted);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(0, 0, 0, 0.2);
+      }
+      .btn.primary kbd {
+        color: #eef4e0;
+        border-color: rgba(255, 255, 255, 0.35);
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .chev {
+        width: 10.5px;
+        height: 10.5px;
+        color: var(--muted);
+      }
+
+      /* ── Nav ───────────────────────────────────────────── */
+      .nav {
+        position: sticky;
         top: 0;
-        left: 0;
+        z-index: 40;
+        background: rgba(15, 19, 18, 0.86);
+        backdrop-filter: blur(9px);
+        -webkit-backdrop-filter: blur(9px);
+        border-bottom: 1px solid var(--rail);
+      }
+      .nav .inner {
+        display: flex;
+        align-items: center;
+        gap: 21px;
+        height: 42px;
+        padding: 0 10.5px;
+        border-color: transparent;
+      }
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font: 400 16px/1 var(--serif);
+        color: var(--text);
+        letter-spacing: -0.01em;
+      }
+      .logo img {
+        width: 18px;
+        height: 18px;
+        border-radius: 5px;
+      }
+      .nav-links {
+        display: flex;
+        gap: 18px;
+        font-size: 12px;
+      }
+      .nav-links a {
+        color: var(--body);
+        transition: color 0.15s;
+      }
+      .nav-links a:hover {
+        color: var(--text);
+      }
+      .nav-right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 10.5px;
+      }
+      .nav-right .gh {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--body);
+      }
+      .nav-right .gh:hover {
+        color: var(--text);
+      }
+
+      .news {
+        text-align: center;
+        padding: 7.5px 12px;
+        font-size: 12px;
+        color: var(--text);
+      }
+      .news span {
+        color: var(--sky);
+      }
+      .news a:hover {
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+
+      /* ── Hero ──────────────────────────────────────────── */
+      .hero {
+        position: relative;
+        text-align: center;
+        padding: clamp(60px, 9vw, 112.5px) 18px clamp(48px, 6.75vw, 82.5px);
+        overflow: hidden;
+      }
+      .hero::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 40%;
+        width: 675px;
+        height: 315px;
+        transform: translate(-50%, -50%);
+        background: radial-gradient(closest-side, rgba(130, 170, 60, 0.12), transparent);
+        pointer-events: none;
+      }
+      .hero h1 {
+        position: relative;
+        font: italic 300 clamp(31.5px, 4.65vw, 54px) / 1.08 var(--serif);
+        letter-spacing: -0.015em;
+        background: linear-gradient(180deg, var(--sky-2), var(--sky) 70%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        padding-bottom: 0.06em;
+      }
+      .hero p {
+        position: relative;
+        max-width: 390px;
+        margin: 16.5px auto 0;
+        font-size: clamp(12px, 1.12vw, 13.5px);
+        line-height: 1.6;
+        color: var(--body);
+      }
+      .hero .actions {
+        position: relative;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 7.5px;
+        margin-top: 25.5px;
+      }
+      .hero .avail {
+        position: relative;
+        margin-top: 13.5px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .pillars {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .pillars > div {
+        padding: 19.5px 18px 22.5px;
+      }
+      .pillars > div + div {
+        border-left: 1px solid var(--rail);
+      }
+      .pillars h3,
+      .card h3,
+      .acc-btn,
+      .engine h3 {
+        font: 400 13px/1.3 var(--serif);
+        color: var(--text);
+      }
+      .pillars p {
+        margin-top: 6px;
+        font-size: 12px;
+      }
+
+      /* ── Showcase ──────────────────────────────────────── */
+      .showcase {
+        padding: 0 12px 30px;
+      }
+      .tabs {
+        display: flex;
+        justify-content: center;
+        gap: 0;
+        position: relative;
+        top: 1px;
+        z-index: 2;
+      }
+      .tabs button {
+        all: unset;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10.5px;
+        font: 400 12px/1 var(--sans);
+        color: var(--muted);
+        border: 1px solid transparent;
+        border-bottom: 0;
+        border-radius: 4px 4px 0 0;
+      }
+      .tabs button:hover {
+        color: var(--text);
+      }
+      .tabs button[aria-selected="true"] {
+        color: var(--text);
+        background: var(--bg-2);
+        border-color: var(--rail-strong);
+      }
+      .tabs button:focus-visible {
+        outline: 2px solid var(--sky);
+        outline-offset: -2px;
+      }
+      .tabs .dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+      }
+      .stage {
+        position: relative;
+        padding: 7.5px;
+        border: 1px solid var(--rail-strong);
+        border-radius: 6px;
+        background: var(--bg-2);
+        box-shadow: 0 30px 90px -40px rgba(110, 150, 50, 0.28);
+      }
+      .stage figure {
+        position: relative;
+        aspect-ratio: 1440 / 900;
+      }
+      .stage img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        opacity: 0;
+        transition: opacity 0.35s ease;
+      }
+      .stage img.on {
+        opacity: 1;
+      }
+      .stage figcaption {
+        margin-top: 7.5px;
+        text-align: center;
+        font-size: 12px;
+        color: var(--muted);
+        min-height: 1.6em;
+      }
+
+      /* ── Section headers ───────────────────────────────── */
+      .sec-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 15px 30px;
+        padding: clamp(36px, 4.5vw, 54px) 36px 36px;
+      }
+      .sec-head h2 {
+        font: 300 clamp(21px, 2.25vw, 25.5px) / 1.2 var(--serif);
+        color: var(--text);
+        letter-spacing: -0.005em;
+      }
+      .sec-head p {
+        margin-top: 7.5px;
+        max-width: 390px;
+        font-size: 12px;
+      }
+      .sec-head .links {
+        display: flex;
+        gap: 7.5px;
+        flex-wrap: wrap;
+      }
+
+      /* ── Feature cards ─────────────────────────────────── */
+      .grid-2,
+      .grid-3 {
+        display: grid;
+      }
+      .grid-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .grid-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+      .grid-2 > .card + .card,
+      .grid-3 > .card:not(:nth-child(3n + 1)) {
+        border-left: 1px solid var(--rail);
+      }
+      .card {
+        padding: 27px 30px 30px;
+        min-width: 0;
+      }
+      .grid-3 .card {
+        padding: 24px 27px 27px;
+      }
+      .shot {
+        position: relative;
+        padding: 4.5px;
+        border: 1px dashed rgba(255, 255, 255, 0.1);
+        margin-bottom: 16.5px;
+        overflow: hidden;
+      }
+      .shot .clip {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+        background: #0f1412;
+        aspect-ratio: 16 / 9;
+      }
+      .shot .clip img {
         width: 100%;
         height: 100%;
         object-fit: cover;
-        transition:
-          opacity 0.6s ease,
-          transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-        will-change: transform, opacity;
-        opacity: 0;
+        object-position: left top;
+        transition: transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
       }
-
-      .feature-viewport img.active {
-        opacity: 1;
+      .card:hover .shot .clip img {
+        transform: scale(1.025);
       }
-
-      /* Mobile caption shown under the viewport (mobile only) */
-      .feature-caption {
-        display: none;
-      }
-
-      /* Stats */
-      .stats {
-        position: relative;
-        z-index: 10;
-        padding: 80px 48px;
-        border-top: 1px solid var(--border);
-        background: var(--fg);
-        color: #fff;
-      }
-
-      .stats-grid {
-        max-width: 1200px;
-        margin: 0 auto;
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 48px;
-        text-align: center;
-      }
-
-      .stat-value {
-        font-size: 2.8rem;
-        font-weight: 900;
-        color: var(--red);
-        margin-bottom: 8px;
-        line-height: 1;
-      }
-
-      .stat-label {
-        font-size: 0.7rem;
-        letter-spacing: 0.15em;
-        color: #666;
-        text-transform: uppercase;
-      }
-
-      /* Security section */
-      .security {
-        position: relative;
-        z-index: 10;
-        padding: 120px 48px;
-        border-top: 1px solid var(--border);
-      }
-
-      .security-container {
-        max-width: 1400px;
-        margin: 0 auto;
-      }
-
-      .security-header {
-        display: grid;
-        grid-template-columns: 200px 1fr;
-        gap: 80px;
-        margin-bottom: 80px;
-      }
-
-      .security-label {
-        font-size: 0.7rem;
-        letter-spacing: 0.2em;
-        color: var(--red);
-        font-weight: 500;
-        padding-top: 8px;
-      }
-
-      .security-title {
-        font-size: clamp(2rem, 4vw, 3.5rem);
-        font-weight: 300;
-        line-height: 1.2;
-        margin-bottom: 24px;
-      }
-
-      .security-accent {
-        width: 60px;
-        height: 3px;
-        background: var(--red);
-        margin-bottom: 32px;
-      }
-
-      .security-intro {
-        font-size: 1rem;
-        line-height: 1.7;
-        color: var(--gray);
-        max-width: 640px;
-        font-family:
-          system-ui,
-          -apple-system,
-          sans-serif;
-      }
-
-      .security-grid {
-        display: grid;
-        grid-template-columns: 1.1fr 1fr;
-        gap: 60px;
-        align-items: center;
-      }
-
-      .security-modes {
-        display: flex;
-        flex-direction: column;
-        gap: 24px;
-      }
-
-      .mode-card {
-        padding: 28px 32px;
-        border: 1px solid var(--border);
-        background: #fff;
-        transition: border-color 0.2s;
-      }
-
-      .mode-card.recommended {
-        border-color: var(--fg);
-        border-left: 3px solid var(--red);
-      }
-
-      .mode-card-head {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        margin-bottom: 12px;
-        gap: 16px;
-      }
-
-      .mode-name {
-        font-size: 1.15rem;
-        font-weight: 700;
-        letter-spacing: -0.01em;
-      }
-
-      .mode-badge {
-        font-size: 0.6rem;
-        letter-spacing: 0.15em;
-        color: var(--red);
-        font-weight: 500;
-      }
-
-      .mode-desc {
-        font-size: 0.9rem;
-        line-height: 1.6;
-        color: var(--gray);
-        font-family:
-          system-ui,
-          -apple-system,
-          sans-serif;
-      }
-
-      .mode-desc strong {
-        color: var(--fg);
-        font-weight: 600;
-      }
-
-      .security-visual {
-        position: relative;
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow:
-          0 4px 6px -1px rgba(0, 0, 0, 0.1),
-          0 20px 40px -10px rgba(0, 0, 0, 0.15),
-          0 0 0 1px rgba(0, 0, 0, 0.05);
-        background: #0a0a0a;
-      }
-
-      .security-visual img {
-        display: block;
-        width: 100%;
-        height: auto;
-      }
-
-      .security-caption {
-        margin-top: 16px;
-        font-size: 0.75rem;
-        color: var(--gray-light);
-        text-align: center;
-        letter-spacing: 0.05em;
-        font-family:
-          system-ui,
-          -apple-system,
-          sans-serif;
-      }
-
-      /* Footer */
-      footer {
-        position: relative;
-        z-index: 10;
-        padding: 80px 48px;
-        text-align: center;
-        border-top: 1px solid var(--border);
-      }
-
-      .footer-title {
-        font-size: clamp(2rem, 4vw, 3.5rem);
-        font-weight: 300;
-        margin-bottom: 16px;
-      }
-
-      footer p {
-        font-size: 0.9rem;
-        color: var(--gray-light);
-        margin-bottom: 40px;
-        font-family:
-          system-ui,
-          -apple-system,
-          sans-serif;
-      }
-
-      .footer-note {
-        margin-top: 60px;
-        font-size: 0.65rem;
-        color: #ccc;
-        letter-spacing: 0.15em;
-      }
-
-      /* Lightbox */
-      .zoomable {
-        cursor: zoom-in;
-      }
-
-      .lightbox {
-        position: fixed;
-        inset: 0;
-        background: rgba(8, 8, 10, 0.94);
-        display: none;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-        padding: 48px;
-      }
-
-      .lightbox.open {
-        display: flex;
-      }
-
-      .lightbox-img {
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-        border-radius: 6px;
-        box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.6);
-      }
-
-      .lightbox-close,
-      .lightbox-prev,
-      .lightbox-next {
+      /* Soft glare like zed.dev's screenshot cards. */
+      .shot .clip::after {
+        content: "";
         position: absolute;
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        color: #fff;
-        width: 44px;
-        height: 44px;
-        border-radius: 50%;
+        inset: 0;
+        background: linear-gradient(115deg, transparent 55%, rgba(255, 255, 255, 0.06) 75%, transparent 90%);
+        pointer-events: none;
+      }
+      .card p {
+        margin-top: 6px;
+        font-size: 12px;
+        max-width: 330px;
+      }
+      .card .meta {
+        display: inline-block;
+        margin-top: 9px;
+        font: 400 10px/1 var(--mono);
+        color: var(--faint);
+      }
+      .text-cards .card {
+        padding: 22.5px 27px 24px;
+      }
+      .text-cards .card + .card {
+        border-left: 1px solid var(--rail);
+      }
+      .text-cards + .text-cards {
+        border-top: 1px solid var(--rail);
+      }
+
+      /* ── Accordion with switching image ────────────────── */
+      .acc {
+        display: grid;
+        grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.25fr);
+      }
+      .acc-list {
+        border-right: 1px solid var(--rail);
+      }
+      .acc-item {
+        border-bottom: 1px solid var(--rail);
+      }
+      .acc-item:last-child {
+        border-bottom: 0;
+      }
+      .acc-btn {
+        all: unset;
+        box-sizing: border-box;
         cursor: pointer;
         display: flex;
         align-items: center;
-        justify-content: center;
-        transition:
-          background 0.2s,
-          transform 0.2s;
-        font-family: inherit;
-        line-height: 1;
-        padding: 0;
+        justify-content: space-between;
+        width: 100%;
+        padding: 13.5px 36px;
+        font: 400 12px/1.3 var(--sans);
+        color: var(--body);
       }
-
-      .lightbox-close:hover,
-      .lightbox-prev:hover,
-      .lightbox-next:hover {
-        background: rgba(255, 255, 255, 0.18);
+      .acc-btn:hover {
+        color: var(--text);
       }
-
-      .lightbox-close {
-        top: 24px;
-        right: 24px;
-        font-size: 1.5rem;
+      .acc-btn:focus-visible {
+        outline: 2px solid var(--sky);
+        outline-offset: -2px;
       }
-
-      .lightbox-prev,
-      .lightbox-next {
-        top: 50%;
-        transform: translateY(-50%);
-        font-size: 1.8rem;
+      .acc-btn .pm {
+        font: 300 13.5px/1 var(--mono);
+        color: var(--faint);
       }
-
-      .lightbox-prev {
-        left: 24px;
+      .acc-item.open .acc-btn {
+        font: 400 14px/1.3 var(--serif);
+        color: var(--text);
+        padding-top: 22.5px;
       }
-
-      .lightbox-next {
-        right: 24px;
-      }
-
-      .lightbox-prev:hover,
-      .lightbox-next:hover {
-        transform: translateY(-50%) scale(1.06);
-      }
-
-      .lightbox-counter {
-        position: absolute;
-        bottom: 24px;
-        left: 50%;
-        transform: translateX(-50%);
-        color: #888;
-        font-size: 0.7rem;
-        letter-spacing: 0.2em;
-        font-family:
-          system-ui,
-          -apple-system,
-          sans-serif;
-      }
-
-      .lightbox.solo .lightbox-prev,
-      .lightbox.solo .lightbox-next,
-      .lightbox.solo .lightbox-counter {
+      .acc-panel {
         display: none;
+        padding: 0 36px 22.5px;
       }
-
-      body.lightbox-open {
+      .acc-item.open .acc-panel {
+        display: block;
+      }
+      .acc-panel p {
+        font-size: 12px;
+        line-height: 1.6;
+        max-width: 315px;
+      }
+      .acc-media {
+        position: relative;
+        padding: 13.5px;
+        min-height: 315px;
         overflow: hidden;
       }
-
-      /* Responsive */
-      @media (max-width: 1100px) {
-        .features-grid {
-          grid-template-columns: 1fr;
-          gap: 40px;
-        }
-
-        .feature-list {
-          position: relative;
-          top: 0;
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 0 24px;
-        }
-
-        .security-grid {
-          grid-template-columns: 1fr;
-          gap: 48px;
-        }
+      .acc-media img {
+        position: absolute;
+        top: 13.5px;
+        left: 13.5px;
+        width: 128%;
+        max-width: none;
+        border-radius: 4.5px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        opacity: 0;
+        transition: opacity 0.35s ease;
+      }
+      .acc-media img.on {
+        opacity: 1;
+      }
+      .acc-media::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent 70%, var(--bg) 100%),
+          linear-gradient(180deg, transparent 75%, var(--bg) 100%);
+        pointer-events: none;
       }
 
-      @media (max-width: 900px) {
-        .hero {
-          grid-template-columns: 1fr;
-          min-height: auto;
-          padding: 60px 0;
-        }
+      /* ── Engines ───────────────────────────────────────── */
+      .engines {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        padding: 0 36px 42px;
+      }
+      .engine {
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+        padding: 10.5px 10.5px 12px;
+        background: rgba(255, 255, 255, 0.015);
+        box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.3);
+        min-width: 0;
+      }
+      .engine.flag {
+        grid-column: span 2;
+      }
+      .engine .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 6px;
+      }
+      .badge {
+        display: inline-grid;
+        place-items: center;
+        min-width: 18px;
+        height: 13px;
+        padding: 0 4px;
+        border-radius: 3px;
+        font: 500 9px/1 var(--mono);
+        color: #0c0d0f;
+      }
+      .engine .note {
+        font: 400 10px/1 var(--mono);
+        color: var(--muted);
+      }
+      .engine p {
+        margin-top: 4.5px;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+      .engine ul {
+        list-style: none;
+        margin-top: 7.5px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .engine li::before {
+        content: "· ";
+        color: var(--faint);
+      }
 
-        .hero-content {
-          padding: 0 32px;
-        }
+      /* ── Keyboard ──────────────────────────────────────── */
+      .keys {
+        display: grid;
+        grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr);
+      }
+      .keys-list {
+        padding: 6px 36px 36px;
+        border-right: 1px solid var(--rail);
+      }
+      .keys-list div {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 9px 0;
+        border-bottom: 1px dashed var(--rail);
+        font-size: 12px;
+      }
+      .keys-list kbd {
+        margin-left: 4px;
+      }
+      .keys-media {
+        padding: 0 0 0 24px;
+        overflow: hidden;
+        position: relative;
+      }
+      .keys-media img {
+        width: 118%;
+        max-width: none;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 4.5px 0 0 0;
+      }
+      .keys-media::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(180deg, transparent 70%, var(--bg));
+        pointer-events: none;
+      }
 
-        .hero-visual {
+      /* ── Open source ───────────────────────────────────── */
+      .oss {
+        position: relative;
+        text-align: center;
+        padding: 54px 18px 0;
+        background: radial-gradient(60% 80% at 50% 0%, rgba(110, 150, 50, 0.12), transparent 70%);
+      }
+      .oss h2 {
+        font: 300 clamp(22.5px, 2.4vw, 28.5px) / 1.2 var(--serif);
+        color: var(--sky);
+      }
+      .oss > p {
+        max-width: 390px;
+        margin: 10.5px auto 30px;
+        font-size: 12px;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        border-top: 1px solid var(--rail);
+        margin: 0 -18px;
+      }
+      .stats div {
+        padding: 16.5px 9px 19.5px;
+      }
+      .stats div + div {
+        border-left: 1px solid var(--rail);
+      }
+      .stats b {
+        display: block;
+        font: 400 21px/1.2 var(--mono);
+        color: var(--text);
+      }
+      .stats span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      /* ── Final CTA ─────────────────────────────────────── */
+      .cta {
+        text-align: center;
+        padding: clamp(48px, 6.75vw, 82.5px) 18px;
+      }
+      .cta h2 {
+        font: italic 300 clamp(24px, 3vw, 36px) / 1.15 var(--serif);
+        color: var(--text);
+      }
+      .cta p {
+        margin: 10.5px auto 22.5px;
+        max-width: 390px;
+        font-size: 12px;
+      }
+      .cta .actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 7.5px;
+      }
+      .cta code {
+        display: inline-block;
+        margin-top: 21px;
+        padding: 6px 9px;
+        font: 400 10px/1.4 var(--mono);
+        color: var(--muted);
+        border: 1px dashed rgba(255, 255, 255, 0.12);
+        border-radius: 3px;
+        max-width: 100%;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+
+      footer .inner {
+        display: grid;
+        grid-template-columns: 1.4fr 1fr 1fr;
+        gap: 24px;
+        padding: 36px 36px 42px;
+        font-size: 12px;
+      }
+      footer h4 {
+        font: 400 12px/1 var(--serif);
+        color: var(--text);
+        margin-bottom: 10.5px;
+      }
+      footer ul {
+        list-style: none;
+        display: grid;
+        gap: 6px;
+      }
+      footer a:hover {
+        color: var(--text);
+      }
+      footer .fine {
+        margin-top: 9px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+        max-width: 270px;
+      }
+
+      /* ── Responsive ────────────────────────────────────── */
+      @media (max-width: 1020px) {
+        .band::before {
           display: none;
         }
-
-        .features-header,
-        .security-header {
-          grid-template-columns: 1fr;
-          gap: 24px;
+      }
+      @media (max-width: 750px) {
+        .nav-links {
+          display: none;
         }
-
-        .features-grid {
-          gap: 20px;
+        .grid-3,
+        .text-cards.grid-3 {
+          grid-template-columns: minmax(0, 1fr);
         }
-
-        /* Image first, caption second, list last */
-        .feature-viewport {
-          order: 1;
+        .grid-3 > .card:not(:nth-child(3n + 1)),
+        .text-cards .card + .card {
+          border-left: 0;
+          border-top: 1px solid var(--rail);
         }
-
-        .feature-caption {
-          display: block;
-          order: 2;
-          padding: 4px 4px 0;
+        .acc,
+        .keys {
+          grid-template-columns: minmax(0, 1fr);
         }
-
-        .feature-caption-head {
-          display: flex;
-          align-items: baseline;
-          gap: 12px;
-          margin-bottom: 8px;
+        .acc-list,
+        .keys-list {
+          border-right: 0;
         }
-
-        .feature-caption-num {
-          font-size: 0.65rem;
-          letter-spacing: 0.1em;
-          color: var(--red);
-          font-weight: 500;
-        }
-
-        .feature-caption-name {
-          font-size: 1.25rem;
-          font-weight: 700;
-          letter-spacing: -0.01em;
-        }
-
-        .feature-caption-desc {
-          font-size: 0.9rem;
-          line-height: 1.55;
-          color: var(--gray);
-          font-family:
-            system-ui,
-            -apple-system,
-            sans-serif;
-          margin: 0;
+        .acc-media {
           min-height: 0;
+          aspect-ratio: 16 / 10;
+          border-top: 1px solid var(--rail);
         }
-
-        /* Compact list: just num + name, descriptions hidden, tap to switch */
-        .feature-list {
-          order: 3;
-          margin-top: 4px;
-          border-top: 1px solid rgba(0, 0, 0, 0.08);
+        .acc-media img {
+          width: calc(100% - 27px);
         }
-
-        .feature-item {
-          padding: 12px 12px 12px 16px;
-          border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        .keys-media {
+          padding: 18px 0 0 18px;
         }
-
-        .feature-item .feature-desc {
-          display: none;
+        .engines {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
-
-        .feature-item .feature-name {
-          font-size: 0.95rem;
+        footer .inner {
+          grid-template-columns: 1fr 1fr;
         }
-
-        .stats-grid {
-          grid-template-columns: repeat(2, 1fr);
-        }
-
-        header {
-          grid-template-columns: 1fr;
-          gap: 16px;
-          text-align: center;
-        }
-
-        nav {
-          justify-content: center;
+        footer .about {
+          grid-column: 1 / -1;
         }
       }
-
-      @media (max-width: 500px) {
-        .security {
-          padding: 60px 24px;
+      @media (max-width: 540px) {
+        .pillars,
+        .grid-2 {
+          grid-template-columns: minmax(0, 1fr);
         }
-
-        .lightbox {
-          padding: 16px;
+        .pillars > div + div,
+        .grid-2 > .card + .card {
+          border-left: 0;
+          border-top: 1px solid var(--rail);
         }
-
-        .lightbox-close {
-          top: 12px;
-          right: 12px;
+        .card,
+        .grid-3 .card,
+        .text-cards .card {
+          padding: 21px 16.5px 22.5px;
         }
-
-        .lightbox-prev {
-          left: 12px;
+        .sec-head {
+          padding: 33px 16.5px 24px;
         }
-
-        .lightbox-next {
-          right: 12px;
+        .acc-btn {
+          padding: 12px 16.5px;
         }
-
-        .hero-content {
-          padding: 0 24px;
+        .acc-panel {
+          padding: 0 16.5px 18px;
         }
-
-        .features {
-          padding: 60px 24px;
+        .keys-list {
+          padding: 0 16.5px 24px;
         }
-
-        .feature-list {
-          grid-template-columns: 1fr;
+        .engines {
+          grid-template-columns: minmax(0, 1fr);
+          padding: 0 16.5px 30px;
         }
-
-        .stats-grid {
-          grid-template-columns: 1fr;
-          gap: 32px;
+        .engine.flag {
+          grid-column: auto;
         }
-
-        header {
-          padding: 24px;
+        .stats {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .stats div:nth-child(3) {
+          border-left: 0;
+        }
+        .stats div:nth-child(n + 3) {
+          border-top: 1px solid var(--rail);
+        }
+        .tabs {
+          flex-wrap: wrap;
+        }
+        .nav-right .gh span {
+          display: none;
+        }
+        .nav .btn kbd,
+        .hero .btn kbd {
+          display: none;
+        }
+        footer .inner {
+          padding: 30px 16.5px 36px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        *,
+        *::before,
+        *::after {
+          transition: none !important;
         }
       }
     </style>
   </head>
   <body>
-    <div class="grid-bg"></div>
-    <div class="accent-line"></div>
-
-    <header>
-      <div class="header-tag">DATABASE WORKSPACE</div>
-      <div class="logo">dbunk</div>
-      <nav>
-        <a href="#features">Features</a>
-        <a href="#security">Security</a>
-        <a href="#download">Download</a>
-        <a href="/" class="app-link">App →</a>
-      </nav>
+    <header class="nav">
+      <div class="inner">
+        <a class="logo" href="#top" aria-label="dbunk home">
+          <img src="images/favicon.webp" alt="" width="24" height="24" />
+          dbunk
+        </a>
+        <nav class="nav-links" aria-label="Primary">
+          <a href="#features">Features</a>
+          <a href="#safety">Safety</a>
+          <a href="#engines">Engines</a>
+          <a href="https://github.com/imran-vz/dbunk/blob/main/ROADMAP.md">Roadmap</a>
+          <a href="https://github.com/imran-vz/dbunk/releases">Releases</a>
+        </nav>
+        <div class="nav-right">
+          <a class="gh" href="https://github.com/imran-vz/dbunk">
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z" />
+            </svg>
+            <span>GitHub</span>
+          </a>
+          <a class="btn primary" href="https://github.com/imran-vz/dbunk/releases" data-key="d">
+            Download <kbd>D</kbd>
+          </a>
+        </div>
+      </div>
     </header>
 
-    <section class="hero">
-      <div class="hero-content">
-        <div class="hero-tag">OPEN SOURCE / DESKTOP APP</div>
-        <h1>The database<br />tool for<br /><strong>serious work</strong></h1>
-        <p>
-          No cloud lock-in. No paywalled basics. No IDE-sized sprawl. Just a
-          fast, local database workspace that respects your workflow.
-        </p>
-        <div class="hero-actions">
-          <a href="#download" class="btn">DOWNLOAD</a>
-          <span class="hero-meta">macOS / Linux / Windows</span>
-        </div>
-      </div>
-
-      <div class="hero-visual">
-        <div class="hero-zoom-container">
-          <picture>
-            <source srcset="images/pg-overview.webp" type="image/webp" />
-            <img
-              src="images/pg-overview.jpg"
-              alt="Dbunk PostgreSQL connection overview with stats, recent queries, and favourite tables"
-              class="zoomable"
-              data-lightbox="solo"
-            />
-          </picture>
-        </div>
-      </div>
-    </section>
-
-    <section class="features" id="features">
-      <div class="features-container">
-        <div class="features-header">
-          <div class="features-label">CAPABILITIES</div>
-          <div>
-            <h2 class="features-title">
-              Everything you need.<br />Nothing you don't.
-            </h2>
-            <div class="features-accent"></div>
-          </div>
+    <main id="top">
+      <div class="frame">
+        <div class="news band" style="border-top: 0">
+          <span>News:</span>
+          <a href="https://github.com/imran-vz/dbunk/blob/main/docs/adr/0033-hard-migration-to-native-app.md"
+            >dbunk is now fully native, rebuilt on GPUI. Read why →</a
+          >
         </div>
 
-        <div class="features-grid">
-          <ul class="feature-list" id="featureList">
-            <li class="feature-item active" data-index="0">
-              <div class="feature-row">
-                <span class="feature-num">01</span>
-                <span class="feature-name">SQL Editor</span>
-              </div>
-              <div class="feature-desc">
-                Tabbed editor with syntax highlighting, autocomplete, and
-                one-click formatting
-              </div>
-            </li>
-            <li class="feature-item" data-index="1">
-              <div class="feature-row">
-                <span class="feature-num">02</span>
-                <span class="feature-name">EXPLAIN Analysis</span>
-              </div>
-              <div class="feature-desc">
-                Visual query plans that flag overestimates, sequential scans,
-                and planning overhead
-              </div>
-            </li>
-            <li class="feature-item" data-index="2">
-              <div class="feature-row">
-                <span class="feature-num">03</span>
-                <span class="feature-name">Data Grid</span>
-              </div>
-              <div class="feature-desc">
-                Browse, filter, sort, and edit rows with virtualised tables and
-                inline schema info
-              </div>
-            </li>
-            <li class="feature-item" data-index="3">
-              <div class="feature-row">
-                <span class="feature-num">04</span>
-                <span class="feature-name">FK Drill-Down</span>
-              </div>
-              <div class="feature-desc">
-                Follow foreign keys inline as a mini-table under the clicked
-                row — never lose your place
-              </div>
-            </li>
-            <li class="feature-item" data-index="4">
-              <div class="feature-row">
-                <span class="feature-num">05</span>
-                <span class="feature-name">Schema Maps</span>
-              </div>
-              <div class="feature-desc">
-                Visual relationship diagrams that reveal your database structure
-              </div>
-            </li>
-            <li class="feature-item" data-index="5">
-              <div class="feature-row">
-                <span class="feature-num">06</span>
-                <span class="feature-name">Redis Workspace</span>
-              </div>
-              <div class="feature-desc">
-                First-class Redis: strings, hashes, lists, sets, streams,
-                pub/sub, and a built-in CLI
-              </div>
-            </li>
-            <li class="feature-item" data-index="6">
-              <div class="feature-row">
-                <span class="feature-num">07</span>
-                <span class="feature-name">Query History</span>
-              </div>
-              <div class="feature-desc">
-                Every query you've run — searchable, scoped by connection, and
-                replayable in one click
-              </div>
-            </li>
-            <li class="feature-item" data-index="7">
-              <div class="feature-row">
-                <span class="feature-num">08</span>
-                <span class="feature-name">Encrypted Credentials</span>
-              </div>
-              <div class="feature-desc">
-                Passwords encrypted in a local SQLite vault, or stored in the
-                OS keychain — your call
-              </div>
-            </li>
-          </ul>
-
-          <div class="feature-viewport" id="featureViewport">
-            <picture>
-              <source srcset="images/pg-sql-editor.webp" type="image/webp" />
-              <img
-                src="images/pg-sql-editor.jpg"
-                alt="SQL editor with syntax highlighting and query results"
-                class="active zoomable"
-                data-feature="0"
-                data-lightbox="features"
-              />
-            </picture>
-            <picture>
-              <source srcset="images/explain-page.webp" type="image/webp" />
-              <img
-                src="images/explain-page.jpg"
-                alt="EXPLAIN plan viewer highlighting overestimates and sequential scans"
-                class="zoomable"
-                data-feature="1"
-                data-lightbox="features"
-              />
-            </picture>
-            <picture>
-              <source srcset="images/pg-table-view-page.webp" type="image/webp" />
-              <img
-                src="images/pg-table-view-page.jpg"
-                alt="Data grid browsing rows in a PostgreSQL table"
-                class="zoomable"
-                data-feature="2"
-                data-lightbox="features"
-              />
-            </picture>
-            <picture>
-              <source srcset="images/pg-table-fk-dig-view.webp" type="image/webp" />
-              <img
-                src="images/pg-table-fk-dig-view.jpg"
-                alt="Foreign-key drill-down rendered as a mini-table under the clicked row"
-                class="zoomable"
-                data-feature="3"
-                data-lightbox="features"
-              />
-            </picture>
-            <picture>
-              <source srcset="images/schema-map.webp" type="image/webp" />
-              <img
-                src="images/schema-map.jpg"
-                alt="Schema map with foreign-key relationships between tables"
-                class="zoomable"
-                data-feature="4"
-                data-lightbox="features"
-              />
-            </picture>
-            <picture>
-              <source srcset="images/redis-home.webp" type="image/webp" />
-              <img
-                src="images/redis-home.jpg"
-                alt="Redis workspace with keyspace browser and CLI"
-                class="zoomable"
-                data-feature="5"
-                data-lightbox="features"
-              />
-            </picture>
-            <picture>
-              <source srcset="images/pg-query-history.webp" type="image/webp" />
-              <img
-                src="images/pg-query-history.jpg"
-                alt="Query history view filtered by connection"
-                class="zoomable"
-                data-feature="6"
-                data-lightbox="features"
-              />
-            </picture>
-            <picture>
-              <source srcset="images/security-page.webp" type="image/webp" />
-              <img
-                src="images/security-page.jpg"
-                alt="Security settings showing encrypted credential storage options"
-                class="zoomable"
-                data-feature="7"
-                data-lightbox="features"
-              />
-            </picture>
-          </div>
-
-          <div class="feature-caption" id="featureCaption" aria-live="polite">
-            <div class="feature-caption-head">
-              <span class="feature-caption-num">01</span>
-              <span class="feature-caption-name">SQL Editor</span>
-            </div>
-            <p class="feature-caption-desc">
-              Tabbed editor with syntax highlighting, autocomplete, and
-              one-click formatting
+        <!-- Hero -->
+        <section class="band">
+          <div class="gutter-grid" aria-hidden="true"></div>
+          <div class="inner hero">
+            <h1>Databases at native speed</h1>
+            <p>
+              dbunk is a fast, open-source database client for macOS, written
+              in Rust on GPUI, the framework behind the Zed editor.
             </p>
+            <div class="actions">
+              <a class="btn primary" href="https://github.com/imran-vz/dbunk/releases">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <path d="M8 2v8m0 0L5 7m3 3l3-3M3 13h10" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+                Download now <kbd>D</kbd>
+              </a>
+              <a class="btn" href="https://github.com/imran-vz/dbunk" data-key="c">
+                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z" />
+                </svg>
+                Clone source <kbd>C</kbd>
+              </a>
+            </div>
+            <div class="avail">Pre-alpha · macOS on Apple Silicon</div>
+          </div>
+        </section>
+
+        <section class="band" aria-label="Highlights">
+          <div class="inner pillars">
+            <div>
+              <h3>Fast</h3>
+              <p>Rust from the driver to the pixels. The UI is drawn on the GPU, so large results scroll without a stutter.</p>
+            </div>
+            <div>
+              <h3>Safe by default</h3>
+              <p>Edits are staged, reviewed as a diff with the exact SQL, and production writes need a typed confirmation.</p>
+            </div>
+            <div>
+              <h3>Every engine</h3>
+              <p>PostgreSQL, MySQL, SQLite, ClickHouse and Redis, each with its own object tree and tools.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Product showcase -->
+        <section class="band" aria-label="The app">
+          <div class="inner showcase">
+            <div class="tabs" role="tablist" aria-label="Screens">
+              <button role="tab" aria-selected="true" data-shot="0"><span class="dot" style="background: var(--ok)"></span>Query</button>
+              <button role="tab" aria-selected="false" data-shot="1"><span class="dot" style="background: var(--bad)"></span>Browse</button>
+              <button role="tab" aria-selected="false" data-shot="2"><span class="dot" style="background: var(--bad)"></span>Review</button>
+              <button role="tab" aria-selected="false" data-shot="3"><span class="dot" style="background: var(--ok)"></span>Structure</button>
+              <button role="tab" aria-selected="false" data-shot="4"><span class="dot" style="background: var(--warn)"></span>Redis</button>
+            </div>
+            <div class="stage">
+              <figure>
+                <img class="on" src="images/app-editor.webp" alt="dbunk running a SQL query against a development PostgreSQL database, with results below the editor" width="2400" height="1500" />
+                <img src="images/app-table-prod.webp" alt="Browsing 48,213 rows of an orders table on a production connection, framed in red" width="2400" height="1500" loading="lazy" />
+                <img src="images/app-review.webp" alt="Review dialog listing two updates and a delete with before and after values and the SQL that will run" width="2400" height="1500" loading="lazy" />
+                <img src="images/app-structure.webp" alt="Table structure view showing columns, keys, indexes and foreign keys" width="2400" height="1500" loading="lazy" />
+                <img src="images/app-redis.webp" alt="Redis console with a keyspace tree grouped by type, on a staging connection framed in amber" width="2400" height="1500" loading="lazy" />
+              </figure>
+              <figcaption id="shotCaption">Write SQL in Zed's editor. Results in 11 ms.</figcaption>
+            </div>
+          </div>
+        </section>
+
+        <!-- Features -->
+        <section class="band" id="features">
+          <div class="inner">
+            <div class="sec-head">
+              <div>
+                <h2>Built for real database work</h2>
+                <p>Not a query box with a grid attached. The tools you would normally open a second app for are tabs here.</p>
+              </div>
+              <div class="links">
+                <a class="btn plain" href="https://github.com/imran-vz/dbunk/blob/main/ROADMAP.md">View roadmap
+                  <svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg></a>
+                <a class="btn" href="https://github.com/imran-vz/dbunk/releases">View releases
+                  <svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg></a>
+              </div>
+            </div>
+          </div>
+          <div class="band">
+            <div class="inner grid-2">
+              <article class="card">
+                <div class="shot"><div class="clip"><img src="images/crop-staged.webp" alt="Grid with an edited status, an edited total and a row struck through for deletion" loading="lazy" /></div></div>
+                <h3>Staged edits</h3>
+                <p>Edit cells, insert and delete rows right in the grid. Nothing is written until you review it, and discarding is one click.</p>
+              </article>
+              <article class="card">
+                <div class="shot"><div class="clip"><img src="images/crop-review.webp" alt="Review dialog with a diff of each change and the parameterised SQL" loading="lazy" style="object-position: center top" /></div></div>
+                <h3>Review, then apply</h3>
+                <p>Every change as old and new values, next to the exact parameterised SQL, then applied together.</p>
+              </article>
+            </div>
+          </div>
+          <div class="band">
+            <div class="inner grid-3">
+              <article class="card">
+                <div class="shot"><div class="clip"><img src="images/crop-explain.webp" alt="EXPLAIN ANALYZE plan as a tree with costs, rows and timings" loading="lazy" /></div></div>
+                <h3>Query plans</h3>
+                <p>EXPLAIN and EXPLAIN ANALYZE as a tree with costs, row estimates and timings.</p>
+              </article>
+              <article class="card">
+                <div class="shot"><div class="clip"><img src="images/crop-schemamap.webp" alt="Schema map of four tables joined by foreign keys" loading="lazy" /></div></div>
+                <h3>Schema map</h3>
+                <p>Tables and foreign keys laid out as a diagram. Export it as SVG or PNG.</p>
+              </article>
+              <article class="card">
+                <div class="shot"><div class="clip"><img src="images/crop-structure.webp" alt="Structure view of the orders table" loading="lazy" /></div></div>
+                <h3>Structure</h3>
+                <p>Columns, keys, indexes, constraints, triggers, policies and grants for any table.</p>
+              </article>
+            </div>
+          </div>
+          <div class="band">
+            <div class="inner grid-3 text-cards">
+              <article class="card">
+                <h3>Open Anything</h3>
+                <p>⌘K jumps to any connection, schema, table, function or command.</p>
+              </article>
+              <article class="card">
+                <h3>CSV import and export</h3>
+                <p>Streamed transfers with column mapping, progress and cancel.</p>
+              </article>
+              <article class="card">
+                <h3>Backup and restore</h3>
+                <p>pg_dump and pg_restore as cancellable jobs, with a review before restore.</p>
+              </article>
+            </div>
+            <div class="inner grid-3 text-cards">
+              <article class="card">
+                <h3>Sessions and locks</h3>
+                <p>See what is running and what is blocking it. Cancel or terminate.</p>
+              </article>
+              <article class="card">
+                <h3>Schema compare</h3>
+                <p>Compare two databases object by object and field by field.</p>
+              </article>
+              <article class="card">
+                <h3>Managed servers</h3>
+                <p>Spin up a scratch PostgreSQL in Docker, start it, stop it, remove it.</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <!-- Safety -->
+        <section class="band" id="safety">
+          <div class="inner">
+            <div class="sec-head">
+              <div>
+                <h2>Production looks like production</h2>
+                <p>Every connection has an environment. You always know where you are, and the backend enforces what a write needs.</p>
+              </div>
+            </div>
+          </div>
+          <div class="band">
+            <div class="inner acc">
+              <div class="acc-list">
+                <div class="acc-item open">
+                  <button class="acc-btn" aria-expanded="true" aria-controls="acc-0" data-acc="0">Environment colours<span class="pm" aria-hidden="true">−</span></button>
+                  <div class="acc-panel" id="acc-0"><p>The window frame takes the colour of the connection: green for development, amber for staging, red for production, with a standing warning strip.</p></div>
+                </div>
+                <div class="acc-item">
+                  <button class="acc-btn" aria-expanded="false" aria-controls="acc-1" data-acc="1">Typed confirmation<span class="pm" aria-hidden="true">+</span></button>
+                  <div class="acc-panel" id="acc-1"><p>On production, applying staged changes means reading the review and typing <code>confirm</code>. Elsewhere, a review and a click.</p></div>
+                </div>
+                <div class="acc-item">
+                  <button class="acc-btn" aria-expanded="false" aria-controls="acc-2" data-acc="2">Read-only and safe modes<span class="pm" aria-hidden="true">+</span></button>
+                  <div class="acc-panel" id="acc-2"><p>Mark a connection read-only and writes are refused. Safe mode is checked where statements run, not just in the interface.</p></div>
+                </div>
+                <div class="acc-item">
+                  <button class="acc-btn" aria-expanded="false" aria-controls="acc-3" data-acc="3">Credentials stay local<span class="pm" aria-hidden="true">+</span></button>
+                  <div class="acc-panel" id="acc-3"><p>Passwords are encrypted on disk with an app password, kept in the macOS Keychain, or stored plain for throwaway setups. No account, no cloud.</p></div>
+                </div>
+              </div>
+              <div class="acc-media" aria-live="polite">
+                <img class="on" src="images/app-table-prod.webp" alt="Orders table on a production connection with a red frame and warning strip" loading="lazy" />
+                <img src="images/app-review.webp" alt="Review dialog for production changes" loading="lazy" />
+                <img src="images/app-connection-form.webp" alt="Connection form with environment, safe mode and read-only options" loading="lazy" />
+                <img src="images/app-credentials.webp" alt="First-run setup offering encrypted SQLite, the macOS Keychain or unencrypted SQLite for saved passwords" loading="lazy" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Engines -->
+        <section class="band" id="engines">
+          <div class="inner">
+            <div class="sec-head">
+              <div>
+                <h2>One window, five engines</h2>
+                <p>Each engine gets its own session, object tree and documents, so Redis looks like Redis and ClickHouse looks like ClickHouse.</p>
+              </div>
+            </div>
+            <div class="engines">
+              <article class="engine flag">
+                <div class="top"><span class="badge" style="background: #6c9bd2">PG</span><span class="note">flagship</span></div>
+                <h3>PostgreSQL</h3>
+                <p>Everything on this page.</p>
+                <ul><li>Staged edits and review</li><li>DDL, grants, RLS</li><li>Backups, CSV, compare</li></ul>
+              </article>
+              <article class="engine">
+                <div class="top"><span class="badge" style="background: #e6a23c">MY</span></div>
+                <h3>MySQL</h3>
+                <p>Databases, tables, views, routines, events and triggers.</p>
+                <ul><li>Query, data, structure</li><li>KILL QUERY on stop</li></ul>
+              </article>
+              <article class="engine">
+                <div class="top"><span class="badge" style="background: #8bb8a8">SQ</span></div>
+                <h3>SQLite</h3>
+                <p>Open a file and its attached databases.</p>
+                <ul><li>Query, data, structure</li><li>Read-only opens read-only</li></ul>
+              </article>
+              <article class="engine">
+                <div class="top"><span class="badge" style="background: #f4d03f">CH</span></div>
+                <h3>ClickHouse</h3>
+                <p>Tables, views, materialized views and dictionaries.</p>
+                <ul><li>Bounded, streamed reads</li><li>Query, data, structure</li></ul>
+              </article>
+              <article class="engine">
+                <div class="top"><span class="badge" style="background: #e5534b">RD</span></div>
+                <h3>Redis</h3>
+                <p>A console with a sampled keyspace, grouped by type.</p>
+                <ul><li>Guards on destructive commands</li><li>Key inspector tabs</li></ul>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <!-- Keyboard -->
+        <section class="band" id="keyboard">
+          <div class="inner">
+            <div class="sec-head">
+              <div>
+                <h2>Keyboard first</h2>
+                <p>Every control is reachable from the keyboard, and the common moves are one shortcut away.</p>
+              </div>
+            </div>
+          </div>
+          <div class="band">
+            <div class="inner keys">
+              <div class="keys-list">
+                <div>Open Anything <span><kbd>⌘</kbd><kbd>K</kbd></span></div>
+                <div>Open table <span><kbd>⌘</kbd><kbd>O</kbd></span></div>
+                <div>New query <span><kbd>⌘</kbd><kbd>T</kbd></span></div>
+                <div>Run statement <span><kbd>⌘</kbd><kbd>↵</kbd></span></div>
+                <div>Switch project <span><kbd>⌘</kbd><kbd>P</kbd></span></div>
+                <div>Toggle sidebar <span><kbd>⌘</kbd><kbd>\</kbd></span></div>
+              </div>
+              <div class="keys-media">
+                <img src="images/crop-palette.webp" alt="Open Anything palette listing tables, a type, a sequence, a function and a command matching ord" loading="lazy" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Open source -->
+        <section class="band">
+          <div class="inner oss">
+            <h2>Open Source</h2>
+            <p>dbunk is built in the open. Read the code, the plans and every architecture decision on GitHub.</p>
+            <div class="stats">
+              <div><b>5</b><span>Engines</span></div>
+              <div><b>33</b><span>Architecture decisions</span></div>
+              <div><b>0</b><span>Accounts required</span></div>
+              <div><b>GPL-3.0</b><span>App licence</span></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- CTA -->
+        <section class="band">
+          <div class="gutter-grid" aria-hidden="true"></div>
+          <div class="inner cta">
+            <h2>Try dbunk today</h2>
+            <p>dbunk is pre-alpha: fast and already useful, and still changing between releases. Point it at databases you can afford to lose.</p>
+            <div class="actions">
+              <a class="btn primary" href="https://github.com/imran-vz/dbunk/releases">Download for macOS <kbd>D</kbd></a>
+              <a class="btn" href="https://github.com/imran-vz/dbunk#build-from-source">Build from source</a>
+            </div>
+            <code>xattr -dr com.apple.quarantine /Applications/dbunk.app</code>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      <div class="frame">
+        <div class="band">
+          <div class="inner">
+            <div class="about">
+              <a class="logo" href="#top"><img src="images/favicon.webp" alt="" width="24" height="24" />dbunk</a>
+              <p class="fine">A native database client for macOS. The app is GPL-3.0-or-later; the backend library is MIT.</p>
+            </div>
+            <div>
+              <h4>Product</h4>
+              <ul>
+                <li><a href="https://github.com/imran-vz/dbunk/releases">Download</a></li>
+                <li><a href="https://github.com/imran-vz/dbunk/blob/main/ROADMAP.md">Roadmap</a></li>
+                <li><a href="https://github.com/imran-vz/dbunk/blob/main/CHANGELOG.md">Changelog</a></li>
+              </ul>
+            </div>
+            <div>
+              <h4>Project</h4>
+              <ul>
+                <li><a href="https://github.com/imran-vz/dbunk">Source</a></li>
+                <li><a href="https://github.com/imran-vz/dbunk/blob/main/CONTRIBUTING.md">Contributing</a></li>
+                <li><a href="https://github.com/imran-vz/dbunk/blob/main/SECURITY.md">Security</a></li>
+                <li><a href="https://github.com/imran-vz/dbunk/issues">Issues</a></li>
+              </ul>
+            </div>
           </div>
         </div>
       </div>
-    </section>
-
-    <section class="security" id="security">
-      <div class="security-container">
-        <div class="security-header">
-          <div class="security-label">SECURITY</div>
-          <div>
-            <h2 class="security-title">
-              Your credentials.<br />Your choice of vault.
-            </h2>
-            <div class="security-accent"></div>
-            <p class="security-intro">
-              Database passwords never leave your machine. Pick the storage
-              backend that fits your threat model — and if you pick encryption,
-              dbunk asks for the password on launch before any connection
-              wakes up.
-            </p>
-          </div>
-        </div>
-
-        <div class="security-grid">
-          <div class="security-modes">
-            <div class="mode-card recommended">
-              <div class="mode-card-head">
-                <div class="mode-name">Encrypted SQLite</div>
-                <div class="mode-badge">RECOMMENDED</div>
-              </div>
-              <div class="mode-desc">
-                Passwords are encrypted with a key derived from
-                <strong>your master password</strong> and stored in the local
-                SQLite vault. On launch, dbunk shows the unlock screen on the
-                right — nothing decrypts and no health checks run until you
-                enter it. Portable across machines if you copy the vault file.
-              </div>
-            </div>
-
-            <div class="mode-card">
-              <div class="mode-card-head">
-                <div class="mode-name">OS Keychain</div>
-              </div>
-              <div class="mode-desc">
-                Hands credentials to the
-                <strong>operating system's credential store</strong> —
-                Keychain on macOS, Credential Manager on Windows, Secret
-                Service on Linux. No master password to remember; the OS
-                gates access (and may prompt you the first time per session).
-                Best when you trust your logged-in OS account.
-              </div>
-            </div>
-
-            <div class="mode-card">
-              <div class="mode-card-head">
-                <div class="mode-name">Plaintext SQLite</div>
-                <div class="mode-badge">DEV ONLY</div>
-              </div>
-              <div class="mode-desc">
-                Stores passwords <strong>unencrypted</strong> in
-                <code>dbunk.sqlite</code>. Zero friction — no unlock prompt,
-                no keychain dialog — but anyone with file access reads them
-                in cleartext. Fine for throwaway local databases; avoid for
-                anything you'd be sad to leak.
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div class="security-visual">
-              <picture>
-                <source srcset="images/credentials-page.webp" type="image/webp" />
-                <img
-                  src="images/credentials-page.jpg"
-                  alt="Unlock credentials screen shown on launch when encrypted SQLite is selected"
-                  class="zoomable"
-                  data-lightbox="solo"
-                />
-              </picture>
-            </div>
-            <div class="security-caption">
-              ON LAUNCH · ENCRYPTED SQLITE MODE
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="stats">
-      <div class="stats-grid">
-        <div>
-          <div class="stat-value">5</div>
-          <div class="stat-label">Database Engines</div>
-        </div>
-        <div>
-          <div class="stat-value">0ms</div>
-          <div class="stat-label">Local Latency</div>
-        </div>
-        <div>
-          <div class="stat-value">∞</div>
-          <div class="stat-label">Row Capacity</div>
-        </div>
-        <div>
-          <div class="stat-value">MIT</div>
-          <div class="stat-label">License</div>
-        </div>
-      </div>
-    </section>
-
-    <div
-      class="lightbox"
-      id="lightbox"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Image viewer"
-    >
-      <button class="lightbox-close" id="lightboxClose" aria-label="Close">
-        ×
-      </button>
-      <button
-        class="lightbox-prev"
-        id="lightboxPrev"
-        aria-label="Previous image"
-      >
-        ‹
-      </button>
-      <button
-        class="lightbox-next"
-        id="lightboxNext"
-        aria-label="Next image"
-      >
-        ›
-      </button>
-      <img class="lightbox-img" id="lightboxImg" alt="" />
-      <div class="lightbox-counter" id="lightboxCounter"></div>
-    </div>
-
-    <footer id="download">
-      <div class="footer-title">Ready to work?</div>
-      <p>Free, open source, and always local.</p>
-      <a
-        href="https://github.com/imran-vz/dbunk"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="btn"
-        >GET DBUNK</a
-      >
-      <div class="footer-note">BUILT WITH RUST + REACT + TAURI</div>
     </footer>
 
     <script>
-      const items = document.querySelectorAll(".feature-item");
-      const viewport = document.getElementById("featureViewport");
-      const featureImages = viewport.querySelectorAll("img[data-feature]");
-      const captionNum = document.querySelector(".feature-caption-num");
-      const captionName = document.querySelector(".feature-caption-name");
-      const captionDesc = document.querySelector(".feature-caption-desc");
-      let activeIndex = 0;
-      let intervalId;
+      (() => {
+        // Showcase tabs: swap the hero screenshot.
+        const captions = [
+          "Write SQL in Zed's editor. Results in 11 ms.",
+          "48,213 orders on a production connection, framed in red.",
+          "Two updates and a delete, reviewed with the exact SQL before anything is written.",
+          "Columns, keys, indexes and foreign keys at a glance.",
+          "Redis on staging: a console and a keyspace grouped by type.",
+        ];
+        const tabs = [...document.querySelectorAll(".tabs [role=tab]")];
+        const shots = [...document.querySelectorAll(".stage img")];
+        const caption = document.getElementById("shotCaption");
+        function show(i) {
+          tabs.forEach((t, j) => {
+            t.setAttribute("aria-selected", String(i === j));
+            t.tabIndex = i === j ? 0 : -1;
+          });
+          shots.forEach((s, j) => s.classList.toggle("on", i === j));
+          caption.textContent = captions[i];
+        }
+        tabs.forEach((t, i) => {
+          t.addEventListener("click", () => show(i));
+          t.addEventListener("keydown", (e) => {
+            if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+            const next = (i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length;
+            tabs[next].focus();
+            show(next);
+          });
+        });
+        show(0);
 
-      function showFeature(index) {
-        activeIndex = index;
+        // Accordion: one item open; the image on the right follows it.
+        const items = [...document.querySelectorAll(".acc-item")];
+        const media = [...document.querySelectorAll(".acc-media img")];
         items.forEach((item, i) => {
-          item.classList.toggle("active", i === index);
+          item.querySelector(".acc-btn").addEventListener("click", () => {
+            items.forEach((other, j) => {
+              const open = i === j;
+              other.classList.toggle("open", open);
+              const btn = other.querySelector(".acc-btn");
+              btn.setAttribute("aria-expanded", String(open));
+              btn.querySelector(".pm").textContent = open ? "−" : "+";
+            });
+            media.forEach((m, j) => m.classList.toggle("on", i === j));
+          });
         });
 
-        featureImages.forEach((img, i) => {
-          img.classList.toggle("active", i === index);
+        // Single-key shortcuts, as on zed.dev: D downloads, C opens the source.
+        document.addEventListener("keydown", (e) => {
+          if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+          const el = document.activeElement;
+          if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+          const target = document.querySelector(`[data-key="${e.key.toLowerCase()}"]`);
+          if (target) {
+            e.preventDefault();
+            target.click();
+          }
         });
-
-        const active = items[index];
-        if (active && captionNum && captionName && captionDesc) {
-          captionNum.textContent = active.querySelector(".feature-num").textContent;
-          captionName.textContent = active.querySelector(".feature-name").textContent;
-          captionDesc.textContent = active.querySelector(".feature-desc").textContent.trim();
-        }
-      }
-
-      function startAutoRotate() {
-        intervalId = setInterval(() => {
-          showFeature((activeIndex + 1) % items.length);
-        }, 5000);
-      }
-
-      items.forEach((item, index) => {
-        item.addEventListener("click", () => {
-          clearInterval(intervalId);
-          showFeature(index);
-          startAutoRotate();
-        });
-      });
-
-      startAutoRotate();
-
-      // Lightbox
-      const lightbox = document.getElementById("lightbox");
-      const lightboxImg = document.getElementById("lightboxImg");
-      const lightboxClose = document.getElementById("lightboxClose");
-      const lightboxPrev = document.getElementById("lightboxPrev");
-      const lightboxNext = document.getElementById("lightboxNext");
-      const lightboxCounter = document.getElementById("lightboxCounter");
-
-      let lightboxGallery = [];
-      let lightboxIndex = 0;
-      let lightboxGroup = null;
-
-      function renderLightbox() {
-        const item = lightboxGallery[lightboxIndex];
-        if (!item) return;
-        lightboxImg.src = item.src;
-        lightboxImg.alt = item.alt || "";
-        lightboxCounter.textContent =
-          lightboxGallery.length > 1
-            ? `${lightboxIndex + 1} / ${lightboxGallery.length}`
-            : "";
-      }
-
-      function openLightbox(group, sourceImg) {
-        const groupImgs =
-          group === "features"
-            ? [...document.querySelectorAll('img[data-lightbox="features"]')]
-            : [sourceImg];
-        lightboxGallery = groupImgs.map((i) => ({
-          src: i.currentSrc || i.src,
-          alt: i.alt,
-        }));
-        lightboxIndex = Math.max(
-          0,
-          groupImgs.findIndex((i) => i === sourceImg),
-        );
-        lightboxGroup = group;
-        lightbox.classList.add("open");
-        lightbox.classList.toggle("solo", lightboxGallery.length <= 1);
-        document.body.classList.add("lightbox-open");
-        clearInterval(intervalId);
-        renderLightbox();
-      }
-
-      function closeLightbox() {
-        lightbox.classList.remove("open");
-        document.body.classList.remove("lightbox-open");
-        if (lightboxGroup === "features") {
-          showFeature(lightboxIndex);
-        }
-        startAutoRotate();
-      }
-
-      function lightboxStep(delta) {
-        if (lightboxGallery.length <= 1) return;
-        lightboxIndex =
-          (lightboxIndex + delta + lightboxGallery.length) %
-          lightboxGallery.length;
-        renderLightbox();
-      }
-
-      lightboxClose.addEventListener("click", closeLightbox);
-      lightboxPrev.addEventListener("click", () => lightboxStep(-1));
-      lightboxNext.addEventListener("click", () => lightboxStep(1));
-      lightbox.addEventListener("click", (e) => {
-        if (e.target === lightbox) closeLightbox();
-      });
-
-      document.addEventListener("keydown", (e) => {
-        if (!lightbox.classList.contains("open")) return;
-        if (e.key === "Escape") closeLightbox();
-        else if (e.key === "ArrowLeft") lightboxStep(-1);
-        else if (e.key === "ArrowRight") lightboxStep(1);
-      });
-
-      document.querySelectorAll("img.zoomable").forEach((img) => {
-        img.addEventListener("click", () => {
-          openLightbox(img.dataset.lightbox || "solo", img);
-        });
-      });
+      })();
     </script>
   </body>
 </html>
