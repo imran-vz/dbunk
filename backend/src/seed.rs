@@ -216,7 +216,7 @@ pub(crate) fn parse_generator_id(id: &str) -> Result<GenKind, String> {
 // ---------------------------------------------------------------------------
 
 /// Fold an engine's own type spelling into the PostgreSQL-flavoured
-/// vocabulary [`classify_column`] and [`max_char_length`] understand.
+/// vocabulary [`classify_column`] and [`value_bound`] understand.
 ///
 /// Every engine reports its own names for the same handful of shapes
 /// (`String` / `longtext` / `TEXT`, `UInt32` / `int unsigned` /
@@ -390,14 +390,25 @@ fn is_textual(data_type: &str) -> bool {
     t.contains("char") || t == "text" || t.starts_with("text") || t.contains("citext")
 }
 
-fn is_numericish(data_type: &str) -> bool {
+/// Types that hold fractional amounts. Integer types are left out so a
+/// `total integer` column is not handed `12.34`.
+fn is_fractional_numeric(data_type: &str) -> bool {
     let t = data_type.to_ascii_lowercase();
-    t.contains("int")
-        || t.contains("numeric")
-        || t.contains("decimal")
-        || t.contains("real")
-        || t.contains("double")
-        || t.contains("money")
+    let (base, _) = split_parameterized(t.trim());
+    matches!(
+        base.trim(),
+        "numeric"
+            | "decimal"
+            | "dec"
+            | "fixed"
+            | "real"
+            | "float"
+            | "float4"
+            | "float8"
+            | "double"
+            | "double precision"
+            | "money"
+    )
 }
 
 /// Name-based semantic inference, applied only when the column's type
@@ -449,7 +460,7 @@ fn infer_from_name(name: &str, data_type: &str) -> Option<GenKind> {
             return Some(GenKind::Sentence);
         }
     }
-    if is_numericish(data_type)
+    if is_fractional_numeric(data_type)
         && (n.contains("price")
             || n.contains("amount")
             || n.contains("cost")
@@ -510,11 +521,71 @@ pub(crate) fn classify_column(name: &str, data_type: &str) -> Option<GenKind> {
     })
 }
 
-/// Max character length parsed from types like `character varying(50)`.
-pub(crate) fn max_char_length(data_type: &str) -> Option<usize> {
-    let open = data_type.find('(')?;
-    let close = data_type[open..].find(')')? + open;
-    data_type[open + 1..close].trim().parse().ok()
+/// What a column's declared type allows a generated value to be.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ValueBound {
+    Unbounded,
+    /// `varchar(n)` / `char(n)`: at most `n` characters.
+    Chars(usize),
+    /// `numeric(p, s)`: at most `precision` digits, `scale` of them
+    /// after the decimal point.
+    Numeric {
+        precision: u32,
+        scale: u32,
+    },
+}
+
+/// Largest scale a generated decimal is rendered with. The database pads
+/// to the declared scale, and more random digits add nothing to test data.
+const MAX_GENERATED_SCALE: u32 = 4;
+
+/// The bound a normalised data type puts on generated values. Only
+/// character and fixed-point types carry one: the `(3)` in
+/// `timestamp(3)` or `time(0)` is a fractional-second precision, not a
+/// length.
+pub(crate) fn value_bound(data_type: &str) -> ValueBound {
+    let (base, args) = split_parameterized(data_type.trim());
+    let Some(args) = args else {
+        return ValueBound::Unbounded;
+    };
+    match base.trim() {
+        "character varying"
+        | "varchar"
+        | "character"
+        | "char"
+        | "nchar"
+        | "nvarchar"
+        | "national character"
+        | "national character varying"
+        | "national char"
+        | "national varchar" => match args.trim().parse() {
+            Ok(length) => ValueBound::Chars(length),
+            Err(_) => ValueBound::Unbounded,
+        },
+        "numeric" | "decimal" | "dec" | "fixed" => {
+            let mut parts = args.split(',').map(|part| part.trim().parse::<u32>());
+            let precision = match parts.next() {
+                Some(Ok(precision)) if precision > 0 => precision,
+                _ => return ValueBound::Unbounded,
+            };
+            let scale = match parts.next() {
+                None => 0,
+                Some(Ok(scale)) if scale <= precision => scale,
+                _ => return ValueBound::Unbounded,
+            };
+            if parts.next().is_some() {
+                return ValueBound::Unbounded;
+            }
+            ValueBound::Numeric { precision, scale }
+        }
+        _ => ValueBound::Unbounded,
+    }
+}
+
+/// Exclusive upper bound on the integer part of a `numeric(p, s)` value,
+/// or `None` when it exceeds every value the generators produce.
+pub(crate) fn numeric_integer_limit(precision: u32, scale: u32) -> Option<i64> {
+    10i64.checked_pow(precision - scale)
 }
 
 // ---------------------------------------------------------------------------
@@ -547,8 +618,8 @@ pub(crate) enum ColumnSource {
         /// User-supplied numeric/date range override.
         min: Option<f64>,
         max: Option<f64>,
-        /// Truncation bound from `varchar(n)`.
-        max_len: Option<usize>,
+        /// Length or precision bound from the declared type.
+        bound: ValueBound,
     },
 }
 
@@ -773,7 +844,7 @@ pub(crate) fn analyze_plan(
                 unique_base: 0,
                 min: spec.and_then(|s| s.min),
                 max: spec.and_then(|s| s.max),
-                max_len: max_char_length(&data_type),
+                bound: value_bound(&data_type),
             },
             // Unique columns skip NULL injection: a guaranteed-unique
             // column that suddenly yields NULLs is surprising even
@@ -1003,8 +1074,21 @@ fn generate_cell(
             unique_base,
             min,
             max,
-            max_len,
+            bound,
         } => {
+            let fixed_point = numeric_bound(*bound);
+            if is_fractional_kind(*kind) && (fixed_point.is_some() || *unique) {
+                return Some(generate_fixed_point(
+                    *kind,
+                    rng,
+                    row_index,
+                    *unique,
+                    *unique_base,
+                    *min,
+                    *max,
+                    fixed_point,
+                ));
+            }
             let value = generate_value(
                 *kind,
                 rng,
@@ -1016,12 +1100,87 @@ fn generate_cell(
                 plan.now_epoch_secs,
                 plan.dialect,
             );
-            Some(match max_len {
-                Some(limit) => truncate_chars(&value, *limit),
-                None => value,
+            Some(match bound {
+                ValueBound::Chars(limit) => truncate_chars(&value, *limit),
+                _ => value,
             })
         }
     }
+}
+
+fn numeric_bound(bound: ValueBound) -> Option<(u32, u32)> {
+    match bound {
+        ValueBound::Numeric { precision, scale } => Some((precision, scale)),
+        _ => None,
+    }
+}
+
+fn is_fractional_kind(kind: GenKind) -> bool {
+    matches!(kind, GenKind::Float | GenKind::Decimal | GenKind::Price)
+}
+
+/// A decimal that fits `numeric(precision, scale)` when the type declares
+/// one, built from integer units of the rendered scale so rounding can
+/// never carry it past the declared precision. Draws exactly one random
+/// value, like the unbounded decimal kinds, so other columns see the same
+/// RNG stream.
+#[allow(clippy::too_many_arguments)]
+fn generate_fixed_point(
+    kind: GenKind,
+    rng: &mut SeedRng,
+    row_index: u32,
+    unique: bool,
+    unique_base: i64,
+    min: Option<f64>,
+    max: Option<f64>,
+    fixed_point: Option<(u32, u32)>,
+) -> String {
+    let kind_scale = match kind {
+        GenKind::Price => 2,
+        _ => MAX_GENERATED_SCALE,
+    };
+    let rendered_scale = fixed_point.map_or(kind_scale, |(_, scale)| scale.min(kind_scale));
+    let unit = 10i64.pow(rendered_scale);
+    // Largest representable magnitude, in units of the rendered scale.
+    let capacity = fixed_point
+        .and_then(|(precision, scale)| numeric_integer_limit(precision, scale))
+        .and_then(|limit| limit.checked_mul(unit))
+        .map(|units| units - 1)
+        .unwrap_or(i64::MAX);
+    let (default_lo, default_hi) = match kind {
+        GenKind::Price => (1.0, 1_000.0),
+        _ => (0.0, 10_000.0),
+    };
+    // Float-to-int `as` casts saturate, so huge user bounds stay in range.
+    let to_units = |value: f64| (value * unit as f64).round() as i64;
+    let lo = to_units(min.unwrap_or(default_lo)).clamp(-capacity, capacity);
+    let hi = to_units(max.unwrap_or(default_hi)).clamp(-capacity, capacity);
+    let units = if unique {
+        // Integer part from the row sequence, fraction from the RNG: each
+        // row owns a disjoint interval, so values never collide in a run.
+        let fraction = rng.range_i64(0, unit - 1);
+        (unique_base + row_index as i64 + 1)
+            .saturating_mul(unit)
+            .saturating_add(fraction)
+    } else {
+        rng.range_i64(lo.min(hi), hi.max(lo))
+    };
+    format_units(units, rendered_scale)
+}
+
+fn format_units(units: i64, scale: u32) -> String {
+    let sign = if units < 0 { "-" } else { "" };
+    let magnitude = units.unsigned_abs();
+    if scale == 0 {
+        return format!("{sign}{magnitude}");
+    }
+    let unit = 10u64.pow(scale);
+    format!(
+        "{sign}{}.{:0width$}",
+        magnitude / unit,
+        magnitude % unit,
+        width = scale as usize
+    )
 }
 
 fn truncate_chars(value: &str, limit: usize) -> String {
@@ -1329,7 +1488,7 @@ mod tests {
                 unique_base: 0,
                 min: None,
                 max: None,
-                max_len: None,
+                bound: ValueBound::Unbounded,
             },
             null_rate: 0.0,
         }
@@ -1375,7 +1534,7 @@ mod tests {
                 unique_base: 100,
                 min: None,
                 max: None,
-                max_len: None,
+                bound: ValueBound::Unbounded,
             },
             null_rate: 0.0,
         }]);
@@ -1401,7 +1560,7 @@ mod tests {
                     unique_base: 0,
                     min: None,
                     max: None,
-                    max_len: None,
+                    bound: ValueBound::Unbounded,
                 },
                 null_rate: 0.0,
             }]);
@@ -1501,9 +1660,161 @@ mod tests {
     }
 
     #[test]
+    fn money_names_on_integer_columns_stay_integers() {
+        assert_eq!(classify_column("total", "integer"), Some(GenKind::Integer));
+        assert_eq!(classify_column("amount", "bigint"), Some(GenKind::BigInt));
+        assert_eq!(classify_column("amount", "numeric"), Some(GenKind::Price));
+        assert_eq!(
+            classify_column("total_interval", "interval"),
+            Some(GenKind::Interval)
+        );
+    }
+
+    #[test]
+    fn only_character_and_fixed_point_types_carry_a_bound() {
+        let cases = [
+            ("character varying(40)", ValueBound::Chars(40)),
+            ("character(5)", ValueBound::Chars(5)),
+            ("varchar(120)", ValueBound::Chars(120)),
+            (
+                "numeric(5,2)",
+                ValueBound::Numeric {
+                    precision: 5,
+                    scale: 2,
+                },
+            ),
+            (
+                "decimal(10, 0)",
+                ValueBound::Numeric {
+                    precision: 10,
+                    scale: 0,
+                },
+            ),
+            (
+                "numeric(4)",
+                ValueBound::Numeric {
+                    precision: 4,
+                    scale: 0,
+                },
+            ),
+            ("numeric", ValueBound::Unbounded),
+            ("numeric(2,5)", ValueBound::Unbounded),
+            ("timestamp(3) without time zone", ValueBound::Unbounded),
+            ("time(0) with time zone", ValueBound::Unbounded),
+            ("bit varying(8)", ValueBound::Unbounded),
+            ("text", ValueBound::Unbounded),
+        ];
+        for (data_type, expected) in cases {
+            assert_eq!(value_bound(data_type), expected, "{data_type}");
+        }
+    }
+
+    fn bounded(kind: GenKind, bound: ValueBound, unique: bool) -> ColumnPlan {
+        ColumnPlan {
+            name: "value".to_string(),
+            source: ColumnSource::Generated {
+                kind,
+                unique,
+                unique_base: 0,
+                min: None,
+                max: None,
+                bound,
+            },
+            null_rate: 0.0,
+        }
+    }
+
+    fn decimals(rows: &[Vec<Option<String>>]) -> Vec<String> {
+        rows.iter().map(|row| row[0].clone().unwrap()).collect()
+    }
+
+    fn assert_fits_numeric(value: &str, precision: u32, scale: u32) {
+        let digits = value.trim_start_matches('-');
+        let (integer, fraction) = digits.split_once('.').unwrap_or((digits, ""));
+        assert!(
+            fraction.len() as u32 <= scale,
+            "{value} has too many fraction digits for numeric({precision},{scale})"
+        );
+        let integer = integer.trim_start_matches('0');
+        assert!(
+            integer.len() as u32 <= precision - scale,
+            "{value} overflows numeric({precision},{scale})"
+        );
+    }
+
+    #[test]
+    fn fractional_kinds_fit_the_declared_precision_and_scale() {
+        for (precision, scale) in [(5, 2), (3, 3), (4, 0), (6, 6), (18, 4), (38, 10)] {
+            for kind in [GenKind::Float, GenKind::Decimal, GenKind::Price] {
+                let plan = plan_with(vec![bounded(
+                    kind,
+                    ValueBound::Numeric { precision, scale },
+                    false,
+                )]);
+                for value in decimals(&generate_rows(&plan, 500, &mut SeedRng::new(11))) {
+                    assert_fits_numeric(&value, precision, scale);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn user_ranges_are_clamped_to_the_declared_precision() {
+        let plan = plan_with(vec![ColumnPlan {
+            name: "value".to_string(),
+            source: ColumnSource::Generated {
+                kind: GenKind::Decimal,
+                unique: false,
+                unique_base: 0,
+                min: Some(-1e300),
+                max: Some(1e300),
+                bound: ValueBound::Numeric {
+                    precision: 4,
+                    scale: 1,
+                },
+            },
+            null_rate: 0.0,
+        }]);
+        for value in decimals(&generate_rows(&plan, 500, &mut SeedRng::new(3))) {
+            assert_fits_numeric(&value, 4, 1);
+        }
+    }
+
+    #[test]
+    fn unique_decimals_never_collide_and_keep_their_scale() {
+        for bound in [
+            ValueBound::Unbounded,
+            ValueBound::Numeric {
+                precision: 8,
+                scale: 2,
+            },
+        ] {
+            for kind in [GenKind::Decimal, GenKind::Price] {
+                let plan = plan_with(vec![bounded(kind, bound, true)]);
+                let values = decimals(&generate_rows(&plan, 2_000, &mut SeedRng::new(5)));
+                let distinct: std::collections::HashSet<_> = values.iter().collect();
+                assert_eq!(distinct.len(), values.len(), "{kind:?} {bound:?}");
+                if let ValueBound::Numeric { precision, scale } = bound {
+                    for value in &values {
+                        assert_fits_numeric(value, precision, scale);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fixed_point_rendering_is_exact() {
+        assert_eq!(format_units(12_345, 2), "123.45");
+        assert_eq!(format_units(-5, 2), "-0.05");
+        assert_eq!(format_units(7, 0), "7");
+        assert_eq!(format_units(0, 4), "0.0000");
+    }
+
+    #[test]
     fn varchar_length_is_respected() {
-        assert_eq!(max_char_length("character varying(12)"), Some(12));
-        assert_eq!(max_char_length("text"), None);
+        assert_eq!(value_bound("character varying(12)"), ValueBound::Chars(12));
+        assert_eq!(value_bound("text"), ValueBound::Unbounded);
         let plan = plan_with(vec![ColumnPlan {
             name: "code".to_string(),
             source: ColumnSource::Generated {
@@ -1512,7 +1823,7 @@ mod tests {
                 unique_base: 0,
                 min: None,
                 max: None,
-                max_len: Some(12),
+                bound: ValueBound::Chars(12),
             },
             null_rate: 0.0,
         }]);
@@ -1871,6 +2182,41 @@ mod plan_tests {
         for row in &rows {
             assert!(row[0].as_ref().unwrap().chars().count() <= 8);
         }
+    }
+
+    #[test]
+    fn precision_suffixes_on_temporal_types_do_not_truncate_values() {
+        let table = structure(vec![
+            column("created_at", "timestamp(3) without time zone"),
+            column("opens_at", "time(0) without time zone"),
+        ]);
+        let draft = run(SeedDialect::Postgres, &table);
+        let plan = finalize_plan(&table, draft, Vec::new(), &[], 1_750_000_000).expect("plan");
+        let rows = generate_rows(&plan, 20, &mut SeedRng::new(5));
+        for row in &rows {
+            assert!(row[0].as_ref().unwrap().len() >= "2025-01-01 00:00:00".len());
+            assert_eq!(row[1].as_ref().unwrap().len(), "00:00:00".len());
+        }
+    }
+
+    #[test]
+    fn mysql_decimal_columns_respect_precision() {
+        let table = structure(vec![column("unit_price", "decimal(5,2) unsigned")]);
+        let draft = run(SeedDialect::MySql, &table);
+        let plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+        for row in generate_rows(&plan, 300, &mut SeedRng::new(2)) {
+            assert_fits_numeric(row[0].as_ref().unwrap(), 5, 2);
+        }
+    }
+
+    fn assert_fits_numeric(value: &str, precision: u32, scale: u32) {
+        let digits = value.trim_start_matches('-');
+        let (integer, fraction) = digits.split_once('.').unwrap_or((digits, ""));
+        assert!(fraction.len() as u32 <= scale, "{value}");
+        assert!(
+            integer.trim_start_matches('0').len() as u32 <= precision - scale,
+            "{value}"
+        );
     }
 
     #[test]

@@ -354,10 +354,11 @@ ADR-0005 for the writes-by-default posture.
   writes to other tables. Table-adjacent like export and copy-table:
   it lives outside the Table Session. Distinct from the lightweight
   frontend mock-INSERT-SQL generator (`src/lib/mock-data.ts`), which
-  remains a copy-to-clipboard preview tool, not the engine. All four
-  relational engines seed; ClickHouse, having no transactions, gets
-  all-or-nothing from a single atomic INSERT block and caps a run
-  accordingly (ADR-0014).
+  remains a copy-to-clipboard preview tool, not the engine. The native
+  app seeds PostgreSQL; MySQL and SQLite generators exist in the backend
+  but are not yet wired to the native app. ClickHouse, having no
+  transactions, gets all-or-nothing from a single atomic INSERT block and
+  caps a run accordingly (ADR-0014).
 - **Seed Spec** — the user-authored input to one Table Seeding run:
   row count, an optional random seed (auto-picked and displayed when
   omitted, so every run is reproducible), and per-column settings —
@@ -365,6 +366,12 @@ ADR-0005 for the writes-by-default posture.
   semantic inference, e.g. `email` → emails), a NULL rate for
   nullable columns, value ranges/lists/constants, or skip-column
   (emit the database `DEFAULT`; automatic for identity columns).
+  Text-like columns also carry a **Length Range** and, where it applies,
+  locales and a realism setting (fictional-safe by default).
+- **Length Range** — the inclusive minimum and maximum character length a
+  generated value may have: the user's choice limited by the column's
+  capacity and by what the generator can produce. Values are built to a
+  length inside it, never truncated to fit.
 - **Query History Entry** — a record of one executed query (sql, connection,
   status, runtime, optional error). Capped at 200 entries, persisted in
   SQLite.

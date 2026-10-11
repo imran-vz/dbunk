@@ -104,6 +104,7 @@ pub(crate) fn plan(intent: TableSeedIntent, target: TableSeedConnection) -> Plan
         keys: vec![],
         indexes: vec![],
         serial_columns: vec![],
+        enum_labels: vec![],
     };
     let draft = planning::draft(&catalog, &intent).unwrap();
     let columns = planning::columns(&catalog, Some(&draft));
@@ -199,4 +200,98 @@ fn database_supplied_fk_columns_are_omitted_before_fk_precedence() {
             crate::seed::ColumnSource::Skip
         ));
     }
+}
+
+fn endpoint() -> TableSeedEndpoint {
+    TableSeedEndpoint {
+        connection_id: "c".into(),
+        schema: "s".into(),
+        table: "t".into(),
+    }
+}
+
+fn target() -> TableSeedConnection {
+    TableSeedConnection {
+        connection_name: "c".into(),
+        host: "localhost".into(),
+        port: 5432,
+        database: "d".into(),
+        user: "u".into(),
+        environment: "Test".into(),
+        safe_mode: "Strict".into(),
+        read_only: false,
+    }
+}
+
+fn enum_plan(columns: Vec<TableSeedColumnSpec>) -> Plan {
+    let mut p = plan(
+        TableSeedIntent::new(endpoint(), 10, Some(1), columns).unwrap(),
+        target(),
+    );
+    let column = &mut p.catalog.relation.columns[0].public;
+    column.data_type = "mood".into();
+    column.nullable = true;
+    p.catalog.enum_labels = vec![("value".into(), vec!["sad".into(), "ok".into()])];
+    p
+}
+
+#[test]
+fn auto_enum_columns_draw_from_their_declared_labels() {
+    for columns in [
+        vec![],
+        vec![TableSeedColumnSpec {
+            column: "value".into(),
+            source: TableSeedSource::Auto { generator: None },
+            null_rate: Some(0.0),
+        }],
+    ] {
+        let p = enum_plan(columns);
+        let draft = planning::draft(&p.catalog, &p.intent).unwrap();
+        match &draft.columns()[0].source {
+            crate::seed::ColumnSource::ValueList(values) => {
+                assert_eq!(values, &vec!["sad".to_string(), "ok".to_string()]);
+            }
+            other => panic!("expected enum labels, got {other:?}"),
+        }
+        assert!(matches!(
+            planning::columns(&p.catalog, Some(&draft))[0].action,
+            TableSeedColumnAction::Values
+        ));
+    }
+}
+
+#[test]
+fn explicit_enum_column_choices_are_kept() {
+    let p = enum_plan(vec![TableSeedColumnSpec {
+        column: "value".into(),
+        source: TableSeedSource::Constant { value: "ok".into() },
+        null_rate: None,
+    }]);
+    let draft = planning::draft(&p.catalog, &p.intent).unwrap();
+    assert!(matches!(
+        &draft.columns()[0].source,
+        crate::seed::ColumnSource::Constant(Some(value)) if value == "ok"
+    ));
+}
+
+#[test]
+fn unique_fixed_point_runs_must_fit_the_integer_digits() {
+    let mut p = plan(
+        TableSeedIntent::new(endpoint(), 10, Some(1), vec![]).unwrap(),
+        target(),
+    );
+    p.catalog.relation.columns[0].public.data_type = "numeric(3,2)".into();
+    p.catalog.indexes.push(catalog::Index {
+        name: "value_key".into(),
+        columns: vec!["value".into()],
+        primary: false,
+        fingerprint: "x".into(),
+    });
+    let draft = planning::draft(&p.catalog, &p.intent).unwrap();
+    // numeric(3,2) holds integer parts 0..=9, and row 10 needs 10.
+    assert_eq!(
+        planning::unique_fixed_point_fits(&draft, 10),
+        Err(TableSeedError::IntegerRange)
+    );
+    assert_eq!(planning::unique_fixed_point_fits(&draft, 9), Ok(()));
 }

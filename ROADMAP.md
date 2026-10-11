@@ -118,6 +118,7 @@ Have: CSV / XLSX import wizard with column mapping.
 - 🟡 Schema compare: bounded read-only PostgreSQL 16 ordinary-table comparison backend completed in [Plan 021](https://github.com/imran-vz/dbunk/blob/9312b41ab2d2c92f48b54d2b3229332bf74641a2/plans/021-bounded-postgres-schema-comparison.md) at `9312b41`. [Plan 022](https://github.com/imran-vz/dbunk/blob/db2dae24c504248d62f15f772bf82e4c8d1f5ff2/plans/022-postgres-schema-comparison-activation.md), completed at `db2dae2`, adds the Object inspector (mock A) workbench surface: a PostgreSQL-only Schema compare rail item with explicit source/target endpoints, paged object and field inspection, lazy value chunks, coverage metadata and session job controls. Frontend checks pass and the native fixture and WebView memory gate ran on 2026-10-01 (macOS, debug native build). Wider object coverage and migration SQL follow separately.
 - ❌ Data compare: the former sampled prototype was removed; bounded comparison remains PAR-008 follow-up.
 - ✅ Mock data generator (column-aware INSERTs from real `tableStructure`)
+- 🟡 Varied seed data (ADR-0014, "Seed data variety"): length ranges per column, libphonenumber-valid phones, multi-locale names and addresses, long text; fictional-safe by default. Phases: (1) fix length/precision/enum bugs, (2) length-targeted generators and the in-repo data pipeline, (3) phones and addresses, (4) native per-column settings with a live preview.
 
 ---
 
@@ -128,6 +129,11 @@ retired `docs/PENDING_TASKS.md`; deep detail lived in [`designs/FOLLOWUPS.md`](h
 and the ADRs cited). Treat each bullet as the seed for its own design pass.
 
 ### Postgres / relational
+
+- **Native MySQL and SQLite table seeding** — port the native PostgreSQL
+  seed flow (review, single transaction, cancellation, recovery journal) to
+  both engines so the varied generators reach them (ADR-0014). Queued after
+  the varied-seed-data phases.
 
 - **Default-value tagged-union, remaining engines** — PostgreSQL delivered
   the tagged `PgDefaultValue` (Literal/Expression) in Plan 015; the

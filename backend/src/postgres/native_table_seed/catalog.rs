@@ -27,6 +27,10 @@ pub(super) struct Catalog {
     pub keys: Vec<Key>,
     pub indexes: Vec<Index>,
     pub serial_columns: Vec<String>,
+    /// Declared labels of enum-typed columns (directly or through a
+    /// domain), in sort order. Part of the reviewed catalog, so adding a
+    /// label between review and commit reads as a changed target.
+    pub enum_labels: Vec<(String, Vec<String>)>,
 }
 impl Catalog {
     pub fn structure(&self) -> TableStructure {
@@ -234,14 +238,54 @@ pub(super) async fn inspect(
         return Err(TableSeedError::Limit.into());
     }
     let serial_columns = serial_rows.into_iter().map(|r| r.get(0)).collect();
+    let stream = connection
+        .client
+        .query_raw(
+            ENUM_LABELS,
+            [&relation.oid as &(dyn tokio_postgres::types::ToSql + Sync)],
+        )
+        .await
+        .map_err(database_error)?;
+    pin_mut!(stream);
+    let mut enum_labels = Vec::new();
+    while let Some(row) = stream.try_next().await.map_err(database_error)? {
+        let column: String = row.get(0);
+        let labels: Vec<String> = row.get(1);
+        // Enums wider than a value list may be are left to the user, as
+        // any other column without a generator is.
+        if labels.is_empty() || labels.len() > MAX_ENUM_LABELS {
+            continue;
+        }
+        bytes = labels
+            .iter()
+            .map(|label| label.capacity() + std::mem::size_of::<String>())
+            .fold(
+                bytes.saturating_add(column.len() + 64),
+                usize::saturating_add,
+            );
+        if bytes > 512 * 1024 {
+            return Err(TableSeedError::Limit.into());
+        }
+        enum_labels.push((column, labels));
+    }
     Ok(Catalog {
         database,
         relation,
         keys,
         indexes,
         serial_columns,
+        enum_labels,
     })
 }
+/// Matches the largest value list a recipe may carry.
+const MAX_ENUM_LABELS: usize = 1024;
+const ENUM_LABELS: &str = r#"SELECT a.attname::text,
+ARRAY(SELECT e.enumlabel::text FROM pg_catalog.pg_enum e WHERE e.enumtypid=et.oid ORDER BY e.enumsortorder LIMIT 1025)
+FROM pg_catalog.pg_attribute a
+JOIN pg_catalog.pg_type t ON t.oid=a.atttypid
+JOIN pg_catalog.pg_type et ON et.oid=CASE WHEN t.typtype='d' THEN t.typbasetype ELSE t.oid END
+WHERE a.attrelid=$1 AND a.attnum>0 AND NOT a.attisdropped AND et.typtype='e'
+ORDER BY a.attnum LIMIT 1601"#;
 const KEYS: &str = r#"SELECT c.conname::text,c.contype::text,
 CASE WHEN cardinality(c.conkey)<=32 OR c.conkey IS NULL THEN ARRAY(SELECT a.attname::text FROM unnest(c.conkey) WITH ORDINALITY k(n,o) JOIN pg_catalog.pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.n ORDER BY k.o) END,
 c.confrelid,coalesce(n.nspname::text,''),coalesce(p.relname::text,''),

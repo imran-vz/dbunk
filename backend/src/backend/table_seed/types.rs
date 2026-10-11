@@ -454,7 +454,7 @@ impl fmt::Display for TableSeedError {
             Self::EmptyParent => {
                 "A referenced parent has no non-NULL tuples; seed the named parent first"
             }
-            Self::IntegerRange => "Unique integer generation would exceed the column range",
+            Self::IntegerRange => "Unique value generation would exceed the column range",
             Self::PolicyBlocked => "Stored connection policy blocks seeding",
             Self::Credentials => "Connection credentials are unavailable",
             Self::Database => "PostgreSQL rejected the seed operation; inspect constraint details",

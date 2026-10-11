@@ -48,6 +48,31 @@ pub(super) fn draft(
         }
     }
     let mut specs = specs(intent);
+    // An enum's declared labels are the only values it accepts, so an
+    // Auto column draws from them instead of falling back to NULL.
+    for (column, labels) in &catalog.enum_labels {
+        match specs.iter_mut().find(|s| &s.column == column) {
+            Some(spec)
+                if !spec.skip
+                    && spec.constant.is_none()
+                    && spec.values.is_none()
+                    && spec.generator.is_none() =>
+            {
+                spec.values = Some(labels.clone());
+            }
+            Some(_) => {}
+            None => specs.push(crate::SeedColumnSpec {
+                column: column.clone(),
+                skip: false,
+                constant: None,
+                values: Some(labels.clone()),
+                generator: None,
+                min: None,
+                max: None,
+                null_rate: None,
+            }),
+        }
+    }
     for c in catalog
         .relation
         .columns
@@ -277,8 +302,32 @@ pub(super) async fn finalize(
         }
         maxes.push((name.clone(), value));
     }
+    unique_fixed_point_fits(&draft, plan.intent.row_count)?;
     seed::finalize_plan(&structure, draft, pools, &maxes, plan.clock)
         .map_err(|_| TableSeedError::InvalidRecipe.into())
+}
+/// Unique fixed-point values take their integer part from the row sequence,
+/// so a run must not need more integers than `numeric(p, s)` can hold.
+pub(super) fn unique_fixed_point_fits(
+    draft: &seed::PlanDraft,
+    row_count: u32,
+) -> Result<(), TableSeedError> {
+    for column in draft.columns() {
+        if let ColumnSource::Generated {
+            kind: GenKind::Float | GenKind::Decimal | GenKind::Price,
+            unique: true,
+            bound: seed::ValueBound::Numeric { precision, scale },
+            ..
+        } = column.source
+        {
+            if seed::numeric_integer_limit(precision, scale)
+                .is_some_and(|limit| i64::from(row_count) >= limit)
+            {
+                return Err(TableSeedError::IntegerRange);
+            }
+        }
+    }
+    Ok(())
 }
 /// Worst-case admission before generator clones any literal, list member or FK
 /// value. Includes a second copy for parameters and conservative row/SQL overhead.
