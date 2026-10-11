@@ -6,6 +6,7 @@
 //! for presence, since the server re-renders them. Untouched expressions are
 //! compared byte for byte, unless a column rename or type change in the plan
 //! makes the server re-render them too.
+use super::planner::referenced_target;
 use crate::schema_edit::{
     plan_steps, ColumnField, DefaultValue, IndexTarget, Origin, PlanStep, SchemaBaseline,
     SchemaDraft, TableModel,
@@ -213,6 +214,8 @@ impl Expectation<'_> {
         let mut used = vec![false; actual.foreign_keys.len()];
         for expected in &new.foreign_keys {
             let columns = names(new, &expected.columns);
+            // A self-reference follows the draft's table and column renames.
+            let (referenced_table, referenced_columns) = referenced_target(old, new, expected);
             let found = actual.foreign_keys.iter().enumerate().position(|(i, f)| {
                 !used[i]
                     && expected
@@ -222,8 +225,8 @@ impl Expectation<'_> {
                     && names(actual, &f.columns) == columns
                     && schema_of(&f.referenced_schema, actual)
                         == schema_of(&expected.referenced_schema, new)
-                    && f.referenced_table == expected.referenced_table
-                    && f.referenced_columns == expected.referenced_columns
+                    && f.referenced_table == referenced_table
+                    && f.referenced_columns == referenced_columns
                     && f.on_update == expected.on_update
                     && f.on_delete == expected.on_delete
                     && f.deferrable == expected.deferrable

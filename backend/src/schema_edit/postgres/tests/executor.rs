@@ -1,5 +1,5 @@
 use super::super::capture::drift_token;
-use super::super::executor::{run, Canceller, Transport, BEGIN, LOCK_TIMEOUT, LOCK_TIMEOUT_LOCAL};
+use super::super::executor::{annotate, run, Canceller, Transport, BEGIN, LOCK_TIMEOUT_LOCAL};
 use super::{review, setup};
 use crate::backend::table_ddl::WritePermit;
 use crate::schema_edit::fixtures::existing;
@@ -19,6 +19,8 @@ struct Fake {
     observed: TableModel,
     fail: Vec<(String, SchemaEditFailure)>,
     cleaned: Arc<Mutex<Option<bool>>>,
+    /// What the invalid-index probe answers.
+    invalid: Result<bool, SchemaEditFailure>,
 }
 
 impl Transport for Fake {
@@ -44,6 +46,20 @@ impl Transport for Fake {
         _: &'a str,
     ) -> BoxFuture<'a, Result<Option<u32>, SchemaEditFailure>> {
         Box::pin(async move { Ok(self.relation) })
+    }
+    fn invalid_index<'a>(
+        &'a mut self,
+        schema: &'a str,
+        index: &'a str,
+        table: u32,
+    ) -> BoxFuture<'a, Result<bool, SchemaEditFailure>> {
+        Box::pin(async move {
+            self.commands
+                .lock()
+                .unwrap()
+                .push(format!("probe {schema}.{index} on {table}"));
+            self.invalid.clone()
+        })
     }
     fn observe<'a>(
         &'a mut self,
@@ -98,6 +114,7 @@ fn fake(case: &Case) -> Fake {
         observed: case.draft.table.clone(),
         fail: Vec::new(),
         cleaned: Default::default(),
+        invalid: Ok(false),
     }
 }
 
@@ -138,7 +155,6 @@ async fn locks_rechecks_drift_runs_verifies_and_commits_once() {
     assert_eq!(
         *commands.lock().unwrap(),
         vec![
-            LOCK_TIMEOUT.to_owned(),
             BEGIN.to_owned(),
             LOCK_TIMEOUT_LOCAL.to_owned(),
             LOCK.to_owned(),
@@ -332,6 +348,85 @@ async fn concurrent_builds_run_after_commit_and_report_the_committed_prefix() {
         }
     );
 
+    let probe = format!("probe public.users_email_idx on {OID}");
+    let drop = r#"DROP INDEX CONCURRENTLY IF EXISTS "public"."users_email_idx""#;
+
+    // A failed build that left no index reports the server error as is.
+    let mut clean = fake(&case);
+    clean.observed = observed.clone();
+    clean.fail.push((index_sql.clone(), failure.clone()));
+    let commands = clean.commands.clone();
+    let permit = WritePermit::test_permit();
+    assert_eq!(
+        apply(clean, &permit, &case).await,
+        SchemaEditOutcome::Stopped {
+            committed: 1,
+            failed_statement: 1,
+            reason: failure.clone(),
+        }
+    );
+    assert_eq!(sent(&commands, &probe), 1);
+    assert_eq!(sent(&commands, drop), 0);
+
+    // A leftover invalid index is dropped, and the reason says so.
+    let mut leftover = fake(&case);
+    leftover.observed = observed.clone();
+    leftover.fail.push((index_sql.clone(), failure.clone()));
+    leftover.invalid = Ok(true);
+    let commands = leftover.commands.clone();
+    let permit = WritePermit::test_permit();
+    let outcome = apply(leftover, &permit, &case).await;
+    assert_eq!(sent(&commands, drop), 1);
+    match outcome {
+        SchemaEditOutcome::Stopped {
+            committed: 1,
+            failed_statement: 1,
+            reason: SchemaEditFailure::Database { code, message },
+        } => {
+            assert_eq!(code.as_deref(), Some("23505"));
+            assert!(
+                message.starts_with("could not create unique index"),
+                "{message}"
+            );
+            assert!(message.contains("was dropped"), "{message}");
+        }
+        other => panic!("{other:?}"),
+    }
+
+    // A cleanup that fails, or a probe that cannot answer, stays Stopped
+    // and says the invalid index may remain.
+    for (invalid, drop_fails) in [
+        (Ok(true), true),
+        (Err(SchemaEditFailure::Connection), false),
+    ] {
+        let mut stuck = fake(&case);
+        stuck.observed = observed.clone();
+        stuck
+            .fail
+            .push((index_sql.clone(), SchemaEditFailure::LockTimeout));
+        if drop_fails {
+            stuck
+                .fail
+                .push((drop.into(), SchemaEditFailure::LockTimeout));
+        }
+        stuck.invalid = invalid;
+        let permit = WritePermit::test_permit();
+        match apply(stuck, &permit, &case).await {
+            SchemaEditOutcome::Stopped {
+                committed: 1,
+                failed_statement: 1,
+                reason: SchemaEditFailure::Database { code, message },
+            } => {
+                assert_eq!(code.as_deref(), Some("55P03"));
+                assert!(
+                    message.contains("may have left the invalid index"),
+                    "{message}"
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
     let mut moved = fake(&case);
     moved.observed = observed.clone();
     moved.relation = Some(OID + 1);
@@ -387,4 +482,88 @@ async fn a_tampered_preview_or_cancelled_permit_sends_nothing() {
         }
     );
     assert_eq!(sent(&commands, &case.preview.statements[0].sql), 0);
+}
+
+#[tokio::test]
+async fn the_lock_timeout_is_transaction_local_and_absent_without_an_atomic_group() {
+    // Only the atomic group lowers lock_timeout, inside its transaction.
+    let grouped = with_concurrent_index();
+    let mut socket = fake(&grouped);
+    let mut observed = grouped.draft.table.clone();
+    observed.indexes.pop();
+    socket.observed = observed;
+    let commands = socket.commands.clone();
+    let permit = WritePermit::test_permit();
+    assert!(apply(socket, &permit, &grouped).await.applied());
+    let commands = commands.lock().unwrap().clone();
+    let begin = commands.iter().position(|c| c == BEGIN).unwrap();
+    assert_eq!(commands[begin + 1], LOCK_TIMEOUT_LOCAL);
+    assert_eq!(sent_in(&commands, LOCK_TIMEOUT_LOCAL), 1);
+    assert!(LOCK_TIMEOUT_LOCAL.ends_with(", true)"), "transaction-local");
+    assert!(
+        LOCK_TIMEOUT_LOCAL.contains("GREATEST("),
+        "a sub-millisecond inherited timeout never rounds to 0"
+    );
+
+    // A concurrent build alone runs under the inherited setting.
+    let only = case(|draft| {
+        let origin = draft.new_origin();
+        draft.table.indexes.push(IndexModel {
+            origin,
+            name: "users_email_idx".into(),
+            unique: false,
+            method: None,
+            members: vec![IndexMember::column(existing(2))],
+            include: Vec::new(),
+            predicate: None,
+        });
+        PlanOptions {
+            concurrent_indexes: vec![origin],
+            ..PlanOptions::default()
+        }
+    });
+    let mut socket = fake(&only);
+    let mut observed = only.draft.table.clone();
+    observed.indexes.pop();
+    socket.observed = observed;
+    let commands = socket.commands.clone();
+    let permit = WritePermit::test_permit();
+    assert!(apply(socket, &permit, &only).await.applied());
+    let commands = commands.lock().unwrap().clone();
+    assert_eq!(commands, vec![only.preview.statements[0].sql.clone()]);
+}
+
+fn sent_in(commands: &[String], sql: &str) -> usize {
+    commands.iter().filter(|command| *command == sql).count()
+}
+
+#[test]
+fn annotating_a_reason_keeps_its_code() {
+    assert_eq!(
+        annotate(SchemaEditFailure::LockTimeout, "note"),
+        SchemaEditFailure::Database {
+            code: Some("55P03".into()),
+            message: "Timed out waiting for a lock on the table; note".into(),
+        }
+    );
+    assert_eq!(
+        annotate(
+            SchemaEditFailure::Database {
+                code: Some("23505".into()),
+                message: "duplicate".into(),
+            },
+            "note"
+        ),
+        SchemaEditFailure::Database {
+            code: Some("23505".into()),
+            message: "duplicate; note".into(),
+        }
+    );
+    assert_eq!(
+        annotate(SchemaEditFailure::Cancelled, "note"),
+        SchemaEditFailure::Database {
+            code: None,
+            message: "Cancelled; note".into(),
+        }
+    );
 }

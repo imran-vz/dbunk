@@ -1,12 +1,13 @@
 //! Runs a reviewed plan on one owned connection.
 //!
-//! The atomic group: BEGIN, lower `lock_timeout` to 10 s, `LOCK TABLE … IN
-//! ACCESS EXCLUSIVE MODE`, recompute the drift token and compare, run the
-//! statements, re-capture the table inside the transaction and verify it
-//! against the draft, then COMMIT. Any failure rolls back. Standalone
-//! statements (`VALIDATE CONSTRAINT`, `CREATE INDEX CONCURRENTLY`) follow,
-//! each after re-checking the table OID; a failure there reports the
-//! committed prefix.
+//! The atomic group: BEGIN, lower `lock_timeout` to 10 s for that
+//! transaction only, `LOCK TABLE … IN ACCESS EXCLUSIVE MODE`, recompute the
+//! drift token and compare, run the statements, re-capture the table inside
+//! the transaction and verify it against the draft, then COMMIT. Any failure
+//! rolls back. Standalone statements (`VALIDATE CONSTRAINT`, `CREATE INDEX
+//! CONCURRENTLY`) follow under the connection's inherited settings, each
+//! after re-checking the table OID; a failure there reports the committed
+//! prefix, and a failed concurrent build's leftover invalid index is dropped.
 //!
 //! Only a real ROLLBACK acknowledgement establishes RolledBack; a lost reply
 //! after dispatch is always OutcomeUnknown.
@@ -31,12 +32,13 @@ use tokio::{sync::watch, time::Instant};
 /// statement_timeout, and cancellation is honoured throughout.
 pub(super) const OPERATION_TIMEOUT: Duration = Duration::from_secs(600);
 const CLEANUP_GRACE: Duration = Duration::from_secs(1);
-/// Lower only; never widen a shorter inherited lock timeout. Session level,
-/// so standalone statements are bounded too.
-pub(super) const LOCK_TIMEOUT: &str = "SELECT pg_catalog.set_config('lock_timeout', CASE WHEN pg_catalog.current_setting('lock_timeout')::interval=interval '0' THEN '10000' ELSE LEAST(EXTRACT(EPOCH FROM pg_catalog.current_setting('lock_timeout')::interval)*1000,10000)::bigint::text END, false)";
-/// The same, transaction-local, for a transaction pooler that does not keep
-/// session settings.
-pub(super) const LOCK_TIMEOUT_LOCAL: &str = "SELECT pg_catalog.set_config('lock_timeout', CASE WHEN pg_catalog.current_setting('lock_timeout')::interval=interval '0' THEN '10000' ELSE LEAST(EXTRACT(EPOCH FROM pg_catalog.current_setting('lock_timeout')::interval)*1000,10000)::bigint::text END, true)";
+/// Bounds one cleanup of a failed concurrent build's invalid index.
+const INDEX_CLEANUP_TIMEOUT: Duration = Duration::from_secs(30);
+/// Lowers `lock_timeout` to at most 10 s for the atomic group's transaction
+/// only (`is_local`), so it neither bounds the standalone statements nor
+/// leaks into a pooled session. Lower only: a shorter inherited timeout is
+/// kept, never widened, and never rounded down to 0 (which disables it).
+pub(super) const LOCK_TIMEOUT_LOCAL: &str = "SELECT pg_catalog.set_config('lock_timeout', CASE WHEN pg_catalog.current_setting('lock_timeout')::interval=interval '0' THEN '10000' ELSE GREATEST(LEAST(ROUND(EXTRACT(EPOCH FROM pg_catalog.current_setting('lock_timeout')::interval)*1000),10000),1)::bigint::text END, true)";
 pub(super) const BEGIN: &str = "BEGIN ISOLATION LEVEL READ COMMITTED";
 
 pub(super) type Canceller = Arc<dyn Fn() -> BoxFuture<'static, ()> + Send + Sync>;
@@ -54,6 +56,13 @@ pub(super) trait Transport: Sized + Send {
         schema: &'a str,
         table: &'a str,
     ) -> BoxFuture<'a, Result<Option<u32>, Failure>>;
+    /// True when `schema.index` exists on table `table` and is invalid.
+    fn invalid_index<'a>(
+        &'a mut self,
+        schema: &'a str,
+        index: &'a str,
+        table: u32,
+    ) -> BoxFuture<'a, Result<bool, Failure>>;
     /// Re-captures `schema.table` inside the open transaction, and the
     /// server's rendering of each draft type in `types`.
     fn observe<'a>(
@@ -100,6 +109,19 @@ impl Transport for Socket {
         table: &'a str,
     ) -> BoxFuture<'a, Result<Option<u32>, Failure>> {
         Box::pin(catalog::relation(&self.connection.client, schema, table))
+    }
+    fn invalid_index<'a>(
+        &'a mut self,
+        schema: &'a str,
+        index: &'a str,
+        table: u32,
+    ) -> BoxFuture<'a, Result<bool, Failure>> {
+        Box::pin(catalog::invalid_index(
+            &self.connection.client,
+            schema,
+            index,
+            table,
+        ))
     }
     fn observe<'a>(
         &'a mut self,
@@ -276,16 +298,6 @@ async fn apply(
     deadline: Instant,
 ) -> Outcome {
     let schema = baseline.table.schema.as_str();
-    let session = tokio::select! {
-        biased;
-        _ = interrupted(permit, cancellation) => Err(Failure::Cancelled),
-        _ = tokio::time::sleep_until(deadline) => Err(Failure::Timeout),
-        result = socket.execute(LOCK_TIMEOUT) => result,
-    };
-    if let Err(reason) = session {
-        return Outcome::NotDispatched { reason };
-    }
-
     let atomic = built.atomic_len();
     let mut committed = 0usize;
     if atomic > 0 {
@@ -361,7 +373,26 @@ async fn apply(
         match standalone(socket, cancellation, &built.statements[index].sql, deadline).await {
             Ok(()) => committed += 1,
             Err((true, reason)) => {
-                // A definite server rejection: this statement did not apply.
+                // A definite server rejection: this statement did not apply,
+                // though a concurrent build may have left an invalid index.
+                let leftover = built
+                    .concurrent_index(index)
+                    .and_then(|origin| draft.table.index(origin))
+                    .zip(oid);
+                let reason = match leftover {
+                    Some((created, table)) => {
+                        drop_invalid_index(
+                            socket,
+                            cancellation,
+                            schema,
+                            &created.name,
+                            table,
+                            reason,
+                        )
+                        .await
+                    }
+                    None => reason,
+                };
                 return Outcome::Stopped {
                     committed,
                     failed_statement: index,
@@ -372,6 +403,73 @@ async fn apply(
         }
     }
     Outcome::Applied { runtime_ms: 0 }
+}
+
+/// After a definite failure of `CREATE INDEX CONCURRENTLY`, drops the
+/// invalid index it left on `table`, if any, and says so in the reason. When
+/// the cleanup cannot be confirmed the reason says the index may remain.
+async fn drop_invalid_index(
+    socket: &mut impl Transport,
+    cancellation: &mut watch::Receiver<u64>,
+    schema: &str,
+    index: &str,
+    table: u32,
+    reason: Failure,
+) -> Failure {
+    let deadline = Instant::now() + INDEX_CLEANUP_TIMEOUT;
+    let qualified = format!("{}.{}", quote_double(schema), quote_double(index));
+    let remains = |reason: Failure| {
+        annotate(
+            reason,
+            &format!(
+                "the failed build may have left the invalid index {qualified}; drop it with DROP INDEX CONCURRENTLY"
+            ),
+        )
+    };
+    let found = tokio::select! {
+        biased;
+        _ = cancellation.changed() => Err(Failure::Cancelled),
+        _ = tokio::time::sleep_until(deadline) => Err(Failure::Timeout),
+        result = socket.invalid_index(schema, index, table) => result,
+    };
+    match found {
+        Ok(false) => return reason,
+        Ok(true) => {}
+        Err(_) => return remains(reason),
+    }
+    let sql = format!("DROP INDEX CONCURRENTLY IF EXISTS {qualified}");
+    match standalone(socket, cancellation, &sql, deadline).await {
+        // A database error carries text; other reasons stay as they are
+        // since the table is back to its committed state.
+        Ok(()) if matches!(reason, Failure::Database { .. }) => annotate(
+            reason,
+            &format!("the invalid index {qualified} left by the failed build was dropped"),
+        ),
+        Ok(()) => reason,
+        Err(_) => remains(reason),
+    }
+}
+
+/// `reason` with `note` appended. Reasons without text become a database
+/// failure that keeps the SQLSTATE they stand for.
+pub(super) fn annotate(reason: Failure, note: &str) -> Failure {
+    match reason {
+        Failure::Database { code, message } => Failure::Database {
+            code,
+            message: format!("{message}; {note}"),
+        },
+        other => {
+            let code = match &other {
+                Failure::LockTimeout => Some("55P03".to_owned()),
+                Failure::Timeout => Some("57014".to_owned()),
+                _ => None,
+            };
+            Failure::Database {
+                code,
+                message: format!("{other}; {note}"),
+            }
+        }
+    }
 }
 
 /// `Err((definite, reason))`: `definite` when the server answered with an

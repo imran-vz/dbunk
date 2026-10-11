@@ -1,4 +1,6 @@
 use super::super::capture::*;
+use super::super::catalog::{attribute_bits, declared_type};
+use super::super::planner::preserved_attributes;
 use crate::postgres::native_catalog::table_structure::*;
 use crate::schema_edit::*;
 use std::collections::HashSet;
@@ -485,6 +487,16 @@ fn constraints_the_model_cannot_represent_are_read_only() {
         "Foreign key users_org_id_fkey has options",
     );
 
+    let mut temporal = snapshot();
+    temporal
+        .constraints
+        .iter_mut()
+        .find(|c| c.kind == "foreign key")
+        .unwrap()
+        .definition =
+        "FOREIGN KEY (org_id, PERIOD valid_at) REFERENCES orgs(id, PERIOD valid_at)".into();
+    read_only_because(&temporal, "temporal (PERIOD) foreign key");
+
     let mut collation = snapshot();
     collation.columns[2].collation_schema = Some("public".into());
     collation.columns[2].collation_name = Some("german".into());
@@ -555,4 +567,56 @@ fn helpers() {
     assert_eq!(strip_outer_parens("(a + b)"), "a + b");
     assert_eq!(strip_outer_parens("(a) + (b)"), "(a) + (b)");
     assert_eq!(strip_outer_parens("lower(a)"), "lower(a)");
+}
+
+#[test]
+fn preserved_attributes_mark_only_the_objects_that_carry_them() {
+    let snapshot = snapshot();
+    let mut baseline = baseline(&snapshot);
+    let comment = attribute_bits([false, false, true, false, false, false]);
+    let replica_and_stats = attribute_bits([false, false, false, true, false, true]);
+    assert_eq!(comment, 1 << 34);
+    assert_eq!(replica_and_stats, (1 << 35) | (1 << 37));
+    assert_eq!(attribute_bits([false; 6]), 0);
+
+    let attributes = PreservedAttributes {
+        // The unique key (by constraint OID) and the expression index (by
+        // index OID); index OIDs never mark constraints, nor the reverse.
+        constraints: [(20002, comment)].into_iter().collect(),
+        indexes: [(30003, replica_and_stats), (20004, comment)]
+            .into_iter()
+            .collect(),
+    };
+    mark_preserved(&mut baseline.table, &attributes);
+    let table = &baseline.table;
+    assert_eq!(preserved_attributes(table.uniques[0].origin), vec!["a comment"]);
+    let expression = table
+        .indexes
+        .iter()
+        .find(|index| index.name == "users_lower_email_idx")
+        .unwrap();
+    assert_eq!(
+        preserved_attributes(expression.origin),
+        vec!["the replica identity", "column statistics targets"]
+    );
+    assert!(preserved_attributes(table.checks[0].origin).is_empty());
+    assert!(preserved_attributes(table.primary_key.as_ref().unwrap().origin).is_empty());
+    assert!(preserved_attributes(table.foreign_keys[0].origin).is_empty());
+
+    // An untouched draft of a marked capture still plans nothing.
+    let draft = SchemaDraft::from_baseline(&baseline);
+    assert_eq!(
+        plan_review(&baseline, &draft, &PlanOptions::default()),
+        Err(PlanError::NoChanges)
+    );
+}
+
+#[test]
+fn a_domain_type_resolves_to_the_domain_not_its_base() {
+    const VARCHAR: u32 = 1043;
+    const DOMAIN: u32 = 70001;
+    // A plain type keeps the reported OID and modifier.
+    assert_eq!(declared_type((VARCHAR, 24), VARCHAR), (VARCHAR, 24));
+    // The wire reports a domain as its base type; the domain wins, unmodified.
+    assert_eq!(declared_type((VARCHAR, 24), DOMAIN), (DOMAIN, -1));
 }

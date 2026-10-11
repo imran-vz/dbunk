@@ -4,13 +4,15 @@
 //!
 //! Baseline ids are stable across captures of an unchanged table and disjoint
 //! across kinds: a column is its `attnum`; every other object is
-//! `kind_tag << 48 | oid`.
+//! `kind_tag << 48 | oid`, plus flag bits 32..48 for attributes a re-create
+//! would lose (`mark_preserved`).
 use crate::postgres::native_catalog::table_structure::{
     StructureConstraint, StructureForeignKey, StructureGeneratedKind, StructureIdentityKind,
     StructureIndex, StructureIndexKey, StructureReferentialAction, StructureRelationKind,
     TableStructureSnapshot,
 };
 use crate::schema_edit::model::*;
+use std::collections::HashMap;
 
 pub(crate) const TAG_PRIMARY_KEY: u64 = 1;
 pub(crate) const TAG_UNIQUE: u64 = 2;
@@ -20,6 +22,44 @@ pub(crate) const TAG_INDEX: u64 = 5;
 
 pub(crate) fn object_origin(tag: u64, oid: u32) -> Origin {
     Origin::Existing(BaselineId((tag << 48) | u64::from(oid)))
+}
+
+/// Attributes a re-create would lose (see `planner::PRESERVED_ATTRIBUTES`),
+/// as flag bits by OID: constraints (keys, foreign keys, checks) by
+/// constraint OID, with a key's backing-index attributes folded in; plain
+/// indexes by index OID.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PreservedAttributes {
+    pub(crate) constraints: HashMap<u32, u64>,
+    pub(crate) indexes: HashMap<u32, u64>,
+}
+
+const PRESERVED_MASK: u64 = 0xFFFF << 32;
+
+fn flag(origin: &mut Origin, flags: &HashMap<u32, u64>) {
+    if let Origin::Existing(id) = origin {
+        let oid = (id.0 & 0xFFFF_FFFF) as u32;
+        if let Some(bits) = flags.get(&oid) {
+            id.0 |= bits & PRESERVED_MASK;
+        }
+    }
+}
+
+/// Marks every captured object that carries attributes the model cannot
+/// restate, so the planner refuses to re-create it.
+pub(crate) fn mark_preserved(table: &mut TableModel, attributes: &PreservedAttributes) {
+    for key in table.primary_key.iter_mut().chain(table.uniques.iter_mut()) {
+        flag(&mut key.origin, &attributes.constraints);
+    }
+    for key in &mut table.foreign_keys {
+        flag(&mut key.origin, &attributes.constraints);
+    }
+    for check in &mut table.checks {
+        flag(&mut check.origin, &attributes.constraints);
+    }
+    for index in &mut table.indexes {
+        flag(&mut index.origin, &attributes.indexes);
+    }
 }
 
 fn column_origin(number: i32) -> Option<Origin> {
@@ -441,6 +481,14 @@ fn foreign_key(
     if let Some(definition) = constraint_by_oid(snapshot, key.oid).map(|c| c.definition.as_str()) {
         // PostgreSQL 15 column lists for SET NULL / SET DEFAULT, and 18 NOT
         // ENFORCED, have no place in the model.
+        // PostgreSQL 18 temporal foreign keys (`PERIOD`) have range
+        // semantics the model cannot express.
+        if definition.contains("(PERIOD ") || definition.contains(", PERIOD ") {
+            reasons.push(format!(
+                "Foreign key {} is a temporal (PERIOD) foreign key",
+                key.name
+            ));
+        }
         if definition.contains("SET NULL (")
             || definition.contains("SET DEFAULT (")
             || definition.ends_with("NOT ENFORCED")
