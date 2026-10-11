@@ -8,6 +8,20 @@
 
 use crate::{ColumnInfo, SeedColumnSpec, TableStructure};
 
+pub(crate) mod data;
+pub(crate) mod text;
+
+pub use data::Locale;
+pub use text::Realism;
+
+/// Recorded with each seed run: the same seed reproduces the same rows
+/// only under the same version. Bump it whenever the data files
+/// ([`data::DATA_VERSION`]), a generator's algorithm or the order of RNG
+/// draws changes.
+pub(crate) const SEED_GENERATOR_VERSION: u32 = 1;
+use text::Persona;
+pub(crate) use text::{GenOptions, LengthPlan, MAX_GENERATED_CHARS};
+
 // ---------------------------------------------------------------------------
 // Deterministic RNG — splitmix64
 // ---------------------------------------------------------------------------
@@ -102,34 +116,70 @@ pub(crate) enum GenKind {
     Country,
     StreetAddress,
     Company,
+    MiddleName,
+    Paragraph,
 }
 
-const FIRST_NAMES: &[&str] = &[
-    "Olivia", "Liam", "Emma", "Noah", "Ava", "Elijah", "Sophia", "Lucas", "Isabella", "Mason",
-    "Mia", "Ethan", "Amelia", "Logan", "Harper", "James", "Priya", "Mateo", "Yuki", "Omar",
-    "Ingrid", "Kofi", "Lena", "Ravi", "Sofia", "Hugo", "Nadia", "Felix", "Zara", "Ivan",
-];
+impl GenKind {
+    /// Character-length limits of a text generator: the shortest value it
+    /// can build and the longest it will. `None` for kinds that are not
+    /// length-planned.
+    pub(crate) fn text_limits(self) -> Option<(usize, usize)> {
+        Some(match self {
+            GenKind::FirstName | GenKind::MiddleName | GenKind::LastName => (1, 255),
+            GenKind::FullName => (3, 255),
+            GenKind::Email => (text::MIN_EMAIL_CHARS, text::MAX_EMAIL_CHARS),
+            GenKind::UserName => (3, 255),
+            GenKind::Word | GenKind::Sentence | GenKind::Paragraph => (1, MAX_GENERATED_CHARS),
+            _ => return None,
+        })
+    }
 
-const LAST_NAMES: &[&str] = &[
-    "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Martinez",
-    "Lopez", "Wilson", "Anderson", "Taylor", "Thomas", "Moore", "Nguyen", "Patel", "Kim", "Tanaka",
-    "Schmidt", "Rossi", "Silva", "Kowalski", "Ivanov", "Haddad", "Okafor", "Larsen", "Novak",
-    "Costa", "Chen",
-];
+    /// Longest value this kind can produce under `length`, in characters,
+    /// including a unique tag. Natural values stay far below a wide window
+    /// (one sentence, not 100,000 characters), which keeps batches large.
+    pub(crate) fn worst_case_chars(self, length: LengthPlan) -> usize {
+        let natural = match self {
+            GenKind::Word => 64,
+            GenKind::Sentence => 256,
+            GenKind::Paragraph => 6 * 241,
+            _ => 255,
+        };
+        let produced = if length.uniform {
+            length.hi
+        } else {
+            length.hi.min(natural)
+        };
+        produced + 16
+    }
+
+    /// Values of these kinds come from the row's persona.
+    fn uses_persona(self) -> bool {
+        matches!(
+            self,
+            GenKind::FirstName
+                | GenKind::MiddleName
+                | GenKind::LastName
+                | GenKind::FullName
+                | GenKind::Email
+                | GenKind::UserName
+        )
+    }
+
+    /// Characters a unique tag adds beyond the row number's digits.
+    fn unique_tag_overhead(self) -> usize {
+        match self {
+            GenKind::Sentence | GenKind::Paragraph => 3,
+            _ => 1,
+        }
+    }
+}
 
 const WORDS: &[&str] = &[
     "amber", "harbor", "willow", "summit", "meadow", "lantern", "ember", "cobalt", "drift",
     "fable", "garnet", "haven", "indigo", "juniper", "kestrel", "ledger", "marble", "north",
     "orchard", "pebble", "quartz", "ripple", "sable", "tundra", "umber", "velvet", "wander",
     "yonder", "zephyr", "atlas", "breeze", "cinder", "dapple", "eddy", "fjord", "glade",
-];
-
-const EMAIL_DOMAINS: &[&str] = &[
-    "example.com",
-    "example.org",
-    "example.net",
-    "mail.test",
-    "inbox.test",
 ];
 
 const CITIES: &[&str] = &[
@@ -207,6 +257,8 @@ pub(crate) fn parse_generator_id(id: &str) -> Result<GenKind, String> {
         "country" => GenKind::Country,
         "streetAddress" => GenKind::StreetAddress,
         "company" => GenKind::Company,
+        "middleName" => GenKind::MiddleName,
+        "paragraph" => GenKind::Paragraph,
         other => return Err(format!("unknown generator id: {other}")),
     })
 }
@@ -423,6 +475,9 @@ fn infer_from_name(name: &str, data_type: &str) -> Option<GenKind> {
         if n == "first_name" || n == "firstname" || n == "given_name" {
             return Some(GenKind::FirstName);
         }
+        if n == "middle_name" || n == "middlename" {
+            return Some(GenKind::MiddleName);
+        }
         if n == "last_name" || n == "lastname" || n == "surname" || n == "family_name" {
             return Some(GenKind::LastName);
         }
@@ -432,13 +487,13 @@ fn infer_from_name(name: &str, data_type: &str) -> Option<GenKind> {
         if n.contains("username") || n == "user_name" || n == "handle" || n == "login" {
             return Some(GenKind::UserName);
         }
-        if n.ends_with("name") {
+        if n.ends_with("name") && !names_a_thing(&n) {
             return Some(GenKind::FullName);
         }
         if n.contains("url") || n.contains("website") || n.contains("homepage") {
             return Some(GenKind::Url);
         }
-        if n.contains("phone") || n.contains("mobile") || n == "tel" {
+        if n.contains("phone") || n.contains("mobile") || n == "tel" || n.contains("msisdn") {
             return Some(GenKind::Phone);
         }
         if n == "city" || n.ends_with("_city") {
@@ -450,14 +505,36 @@ fn infer_from_name(name: &str, data_type: &str) -> Option<GenKind> {
         if n.contains("address") || n.contains("street") {
             return Some(GenKind::StreetAddress);
         }
-        if n.contains("description")
-            || n.contains("summary")
-            || n.contains("bio")
-            || n.contains("notes")
-            || n.contains("comment")
-            || n.contains("title")
+        // Whole name parts only: `message_id`, `content_type` and
+        // `content_hash` are identifiers, not prose.
+        if [
+            "description",
+            "desc",
+            "bio",
+            "biography",
+            "notes",
+            "note",
+            "comment",
+            "comments",
+            "body",
+            "content",
+            "message",
+            "about",
+            "details",
+        ]
+        .iter()
+        .any(|word| ends_with_word(&n, word))
+        {
+            return Some(GenKind::Paragraph);
+        }
+        if ["summary", "title", "subject", "headline", "caption"]
+            .iter()
+            .any(|word| ends_with_word(&n, word))
         {
             return Some(GenKind::Sentence);
+        }
+        if n.ends_with("name") {
+            return Some(GenKind::Word);
         }
     }
     if is_fractional_numeric(data_type)
@@ -471,6 +548,85 @@ fn infer_from_name(name: &str, data_type: &str) -> Option<GenKind> {
         return Some(GenKind::Price);
     }
     None
+}
+
+/// `name` is `word` or ends with `_word`.
+fn ends_with_word(name: &str, word: &str) -> bool {
+    name.strip_suffix(word)
+        .is_some_and(|head| head.is_empty() || head.ends_with('_'))
+}
+
+/// A `*name` column that names an object rather than a person:
+/// `file_name`, `hostname`, `product_name`.
+fn names_a_thing(name: &str) -> bool {
+    const THINGS: &[&str] = &[
+        "file",
+        "host",
+        "domain",
+        "table",
+        "schema",
+        "column",
+        "db",
+        "database",
+        "product",
+        "brand",
+        "app",
+        "application",
+        "bucket",
+        "key",
+        "tag",
+        "class",
+        "type",
+        "event",
+        "role",
+        "group",
+        "project",
+        "team",
+        "category",
+        "item",
+        "service",
+        "queue",
+        "topic",
+        "device",
+        "branch",
+        "repo",
+        "package",
+        "module",
+        "field",
+        "index",
+        "template",
+        "plan",
+        "feature",
+        "path",
+        "dir",
+        "folder",
+        "image",
+        "model",
+        "machine",
+        "server",
+        "cluster",
+        "region",
+        "zone",
+        "env",
+        "environment",
+        "job",
+        "task",
+        "metric",
+        "setting",
+        "config",
+        "channel",
+        "street",
+        "city",
+        "country",
+        "state",
+        "store",
+        "shop",
+        "sku",
+        "variant",
+    ];
+    let head = name.trim_end_matches("name").trim_end_matches(['_', '-']);
+    let last = head.rsplit(['_', '-']).next().unwrap_or(head);
+    THINGS.contains(&last) || THINGS.contains(&head)
 }
 
 /// Pick the generator for a column from its data type, with name-based
@@ -620,6 +776,9 @@ pub(crate) enum ColumnSource {
         max: Option<f64>,
         /// Length or precision bound from the declared type.
         bound: ValueBound,
+        /// Character-length window for text kinds, already intersected
+        /// with `bound` and the generator's own limits.
+        length: Option<LengthPlan>,
     },
 }
 
@@ -646,6 +805,8 @@ pub(crate) struct SeedPlan {
     pub now_epoch_secs: i64,
     /// Target dialect — decides value *rendering* only.
     pub dialect: SeedDialect,
+    /// Locales and realism for names, emails and other contact data.
+    pub options: GenOptions,
 }
 
 /// Find the per-column spec entry, if the Seed Spec has one.
@@ -684,13 +845,213 @@ impl PlanDraft {
     }
 }
 
+/// Why a Seed Spec cannot be planned against a table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PlanError {
+    pub kind: PlanErrorKind,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlanErrorKind {
+    /// A column has no usable value source.
+    Unsupported,
+    /// A requested length range cannot fit the column or generator.
+    Length,
+}
+
+impl PlanError {
+    fn length(message: String) -> Self {
+        Self {
+            kind: PlanErrorKind::Length,
+            message,
+        }
+    }
+}
+
+impl From<String> for PlanError {
+    fn from(message: String) -> Self {
+        Self {
+            kind: PlanErrorKind::Unsupported,
+            message,
+        }
+    }
+}
+
+impl From<PlanError> for String {
+    fn from(error: PlanError) -> Self {
+        error.message
+    }
+}
+
+impl std::fmt::Display for PlanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+/// Intersect a column's requested length range with its capacity and the
+/// generator's own limits. Text kinds always get a window; an inferred
+/// generator too long for its column falls back to plain words.
+fn plan_length(
+    column: &str,
+    kind: GenKind,
+    explicit: bool,
+    bound: ValueBound,
+    spec: Option<&SeedColumnSpec>,
+) -> Result<(GenKind, Option<LengthPlan>), PlanError> {
+    let requested = spec
+        .filter(|s| s.min_length.is_some() || s.max_length.is_some())
+        .map(|s| (s.min_length, s.max_length));
+    let Some((min, max)) = kind.text_limits() else {
+        return match requested {
+            Some(_) => Err(PlanError::length(format!(
+                "column \"{column}\": a length range applies only to text generators"
+            ))),
+            None => Ok((kind, None)),
+        };
+    };
+    let capacity = match bound {
+        ValueBound::Chars(n) => n,
+        _ => usize::MAX,
+    };
+    let hi_limit = max.min(capacity);
+    if hi_limit < min {
+        if !explicit && requested.is_none() && kind != GenKind::Word {
+            return plan_length(column, GenKind::Word, false, bound, spec);
+        }
+        return Err(PlanError::length(format!(
+            "column \"{column}\" holds at most {capacity} characters, but {kind:?} values need at least {min}"
+        )));
+    }
+    let Some((lo, hi)) = requested else {
+        return Ok((kind, Some(LengthPlan::natural(min, hi_limit))));
+    };
+    let lo = lo.unwrap_or(min).max(min);
+    let hi = hi.unwrap_or(hi_limit).min(hi_limit);
+    if lo > hi {
+        return Err(PlanError::length(format!(
+            "column \"{column}\": the length range does not fit; the column and {kind:?} generator allow {min} to {hi_limit} characters"
+        )));
+    }
+    Ok((
+        kind,
+        Some(LengthPlan {
+            lo,
+            hi,
+            uniform: true,
+        }),
+    ))
+}
+
+/// A check that needs the run's row count, which a [`PlanDraft`] does
+/// not know.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CapacityError {
+    /// Unique `numeric(p, s)` values would outgrow the integer digits.
+    NumericRange,
+    /// Unique text values would outgrow the length window once tagged.
+    LengthRange,
+}
+
+impl From<CapacityError> for String {
+    fn from(error: CapacityError) -> Self {
+        match error {
+            CapacityError::NumericRange => {
+                "a unique numeric column cannot hold this many distinct values".to_string()
+            }
+            CapacityError::LengthRange => {
+                "a unique text column's length range is too short to hold this many distinct values"
+                    .to_string()
+            }
+        }
+    }
+}
+
+/// Largest size one generated value of `column` can have, in bytes. Text
+/// kinds use their length window: prose, words, emails and usernames are
+/// ASCII, names may take up to four UTF-8 bytes per character. Every other
+/// generated kind renders well under 128 bytes.
+pub(crate) fn worst_case_value_bytes(plan: &SeedPlan, column: &ColumnPlan) -> usize {
+    match &column.source {
+        ColumnSource::Skip => 0,
+        ColumnSource::Constant(value) => value.as_ref().map_or(0, String::len),
+        ColumnSource::ValueList(values) => values.iter().map(String::len).max().unwrap_or(0),
+        ColumnSource::FkPool { pool, member } => plan.fk_pools[*pool]
+            .iter()
+            .map(|row| row[*member].len())
+            .max()
+            .unwrap_or(0),
+        ColumnSource::Generated { kind, length, .. } => match (kind.text_limits(), length) {
+            (Some((min, max)), length) => {
+                let length = length.unwrap_or(LengthPlan::natural(min, max));
+                let bytes_per_char = match kind {
+                    GenKind::Word
+                    | GenKind::Sentence
+                    | GenKind::Paragraph
+                    | GenKind::Email
+                    | GenKind::UserName => 1,
+                    _ => 4,
+                };
+                kind.worst_case_chars(length).saturating_mul(bytes_per_char)
+            }
+            (None, _) => 128,
+        },
+    }
+}
+
+/// Rows whose generated values fit in `budget` bytes, at least one.
+pub(crate) fn rows_within(plan: &SeedPlan, budget: usize) -> usize {
+    let row = plan
+        .columns
+        .iter()
+        .map(|column| worst_case_value_bytes(plan, column))
+        .fold(0usize, usize::saturating_add)
+        .max(1);
+    (budget / row).max(1)
+}
+
+/// Generated bytes one INSERT batch of the bounded seed paths may carry.
+pub(crate) const BATCH_VALUE_BYTES: usize = 8 * 1024 * 1024;
+
+/// Verify unique columns can hold `row_count` distinct values.
+pub(crate) fn check_capacity(draft: &PlanDraft, row_count: u32) -> Result<(), CapacityError> {
+    let digits = row_count.max(1).to_string().len();
+    for column in &draft.columns {
+        let ColumnSource::Generated {
+            kind,
+            unique: true,
+            bound,
+            length,
+            ..
+        } = column.source
+        else {
+            continue;
+        };
+        if let (true, ValueBound::Numeric { precision, scale }) = (is_fractional_kind(kind), bound)
+        {
+            if numeric_integer_limit(precision, scale)
+                .is_some_and(|limit| i64::from(row_count) >= limit)
+            {
+                return Err(CapacityError::NumericRange);
+            }
+        }
+        if let (Some((min, _)), Some(length)) = (kind.text_limits(), length) {
+            if length.hi < min + digits + kind.unique_tag_overhead() {
+                return Err(CapacityError::LengthRange);
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Decide every column's value source from the table's structure plus
 /// the Seed Spec. Pure: no database access, no clock.
 pub(crate) fn analyze_plan(
     dialect: SeedDialect,
     structure: &TableStructure,
     specs: &[SeedColumnSpec],
-) -> Result<PlanDraft, String> {
+) -> Result<PlanDraft, PlanError> {
     // Columns guaranteed unique by a single-column unique index or PK;
     // for composite uniques, mixing the sequence into the first member
     // is enough to make the tuple unique.
@@ -750,10 +1111,7 @@ pub(crate) fn analyze_plan(
         }
         if let Some(values) = spec.and_then(|s| s.values.clone()) {
             if values.is_empty() {
-                return Err(format!(
-                    "column \"{}\" has an empty value list",
-                    column.name
-                ));
+                return Err(format!("column \"{}\" has an empty value list", column.name).into());
             }
             draft.columns.push(plain(
                 &column.name,
@@ -825,10 +1183,14 @@ pub(crate) fn analyze_plan(
                     return Err(format!(
                         "no generator for column \"{}\" of type {} — set a constant or value list",
                         column.name, column.data_type
-                    ));
+                    )
+                    .into());
                 }
             },
         };
+        let explicit = spec.and_then(|s| s.generator.as_deref()).is_some();
+        let bound = value_bound(&data_type);
+        let (kind, length) = plan_length(&column.name, kind, explicit, bound, spec)?;
 
         let unique = unique_columns.contains(&column.name);
         if unique && is_integer_kind(kind) {
@@ -844,7 +1206,8 @@ pub(crate) fn analyze_plan(
                 unique_base: 0,
                 min: spec.and_then(|s| s.min),
                 max: spec.and_then(|s| s.max),
-                bound: value_bound(&data_type),
+                bound,
+                length,
             },
             // Unique columns skip NULL injection: a guaranteed-unique
             // column that suddenly yields NULLs is surprising even
@@ -912,6 +1275,7 @@ pub(crate) fn finalize_plan(
             .collect(),
         now_epoch_secs,
         dialect: draft.dialect,
+        options: GenOptions::default(),
     })
 }
 
@@ -1012,6 +1376,10 @@ pub(crate) fn generate_rows_from(
     rng: &mut SeedRng,
 ) -> Vec<Vec<Option<String>>> {
     let mut rows = Vec::with_capacity(row_count as usize);
+    let needs_persona = plan
+        .columns
+        .iter()
+        .any(|c| matches!(c.source, ColumnSource::Generated { kind, .. } if kind.uses_persona()));
     for row_offset in 0..row_count {
         let row_index = start_row + row_offset;
         // One pool row per FK per generated row keeps composite FK
@@ -1027,6 +1395,7 @@ pub(crate) fn generate_rows_from(
                 }
             })
             .collect();
+        let persona = needs_persona.then(|| Persona::draw(rng, &plan.options));
 
         let mut row = Vec::new();
         for column in &plan.columns {
@@ -1037,7 +1406,14 @@ pub(crate) fn generate_rows_from(
                 row.push(None);
                 continue;
             }
-            row.push(generate_cell(plan, column, row_index, &pool_picks, rng));
+            row.push(generate_cell(
+                plan,
+                column,
+                row_index,
+                &pool_picks,
+                persona.as_ref(),
+                rng,
+            ));
         }
         rows.push(row);
     }
@@ -1049,6 +1425,7 @@ fn generate_cell(
     column: &ColumnPlan,
     row_index: u32,
     pool_picks: &[usize],
+    persona: Option<&Persona>,
     rng: &mut SeedRng,
 ) -> Option<String> {
     match &column.source {
@@ -1075,7 +1452,26 @@ fn generate_cell(
             min,
             max,
             bound,
+            length,
         } => {
+            if let Some((min, max)) = kind.text_limits() {
+                let length = length.unwrap_or_else(|| {
+                    let hi = match bound {
+                        ValueBound::Chars(n) => (*n).clamp(min, max),
+                        _ => max,
+                    };
+                    LengthPlan::natural(min, hi)
+                });
+                return Some(generate_text(
+                    *kind,
+                    rng,
+                    row_index,
+                    *unique,
+                    length,
+                    persona,
+                    &plan.options,
+                ));
+            }
             let fixed_point = numeric_bound(*bound);
             if is_fractional_kind(*kind) && (fixed_point.is_some() || *unique) {
                 return Some(generate_fixed_point(
@@ -1104,6 +1500,72 @@ fn generate_cell(
                 ValueBound::Chars(limit) => truncate_chars(&value, *limit),
                 _ => value,
             })
+        }
+    }
+}
+
+/// A text value inside `length`. Unique columns get the row number as a
+/// tag the base value can never end with, so tagged values cannot collide.
+/// `persona` is the row's; only name-like kinds consult it, and only they
+/// spend RNG draws on one.
+fn generate_text(
+    kind: GenKind,
+    rng: &mut SeedRng,
+    row_index: u32,
+    unique: bool,
+    length: LengthPlan,
+    persona: Option<&Persona>,
+    options: &GenOptions,
+) -> String {
+    let sequence = u64::from(row_index) + 1;
+    let tag = |format: fn(u64) -> String| {
+        if unique {
+            format(sequence)
+        } else {
+            String::new()
+        }
+    };
+    let tag = match kind {
+        GenKind::Email => tag(|n| format!(".{n}")),
+        GenKind::UserName => tag(|n| format!("_{n}")),
+        GenKind::Sentence | GenKind::Paragraph => tag(|n| format!(" ({n})")),
+        GenKind::FullName => tag(|n| format!(" {n}")),
+        _ => tag(|n| format!("-{n}")),
+    };
+    if !kind.uses_persona() {
+        let length = length.reserve(tag.chars().count(), 1);
+        let mut value = match kind {
+            GenKind::Paragraph => text::prose(rng, length, (2, 6)),
+            GenKind::Sentence => text::prose(rng, length, (1, 1)),
+            _ => text::word(rng, length),
+        };
+        value.push_str(&tag);
+        return value;
+    }
+    // Rows with a name-like column always carry a persona; drawing one
+    // here only covers callers that generate a single cell.
+    let drawn;
+    let persona = match persona {
+        Some(persona) => persona,
+        None => {
+            drawn = Persona::draw(rng, options);
+            &drawn
+        }
+    };
+    match kind {
+        // Email and usernames place the tag themselves.
+        GenKind::Email => text::email(rng, persona, options.realism, length, &tag),
+        GenKind::UserName => text::user_name(rng, persona, length, &tag),
+        _ => {
+            let length = length.reserve(tag.chars().count(), 1);
+            let mut value = match kind {
+                GenKind::FirstName => text::first_name(rng, persona, length),
+                GenKind::MiddleName => text::middle_name(rng, persona, length),
+                GenKind::LastName => text::last_name(rng, persona, length),
+                _ => text::full_name(rng, persona, length),
+            };
+            value.push_str(&tag);
+            value
         }
     }
 }
@@ -1183,7 +1645,8 @@ fn format_units(units: i64, scale: u32) -> String {
     )
 }
 
-fn truncate_chars(value: &str, limit: usize) -> String {
+/// Cut to at most `limit` characters.
+pub(crate) fn truncate_chars(value: &str, limit: usize) -> String {
     if value.chars().count() <= limit {
         return value.to_string();
     }
@@ -1340,76 +1803,15 @@ fn generate_value(
             SeedDialect::ClickHouse => "[]".to_string(),
             SeedDialect::Postgres | SeedDialect::MySql | SeedDialect::Sqlite => "{}".to_string(),
         },
-        GenKind::Word => {
-            let word = rng.pick(WORDS);
-            if unique {
-                format!("{word}-{sequence}")
-            } else {
-                (*word).to_string()
-            }
-        }
-        GenKind::Sentence => {
-            let count = rng.range_i64(6, 12) as usize;
-            let mut words: Vec<&str> = (0..count).map(|_| *rng.pick(WORDS)).collect();
-            let first = words[0];
-            let capitalized = format!(
-                "{}{}",
-                first.chars().next().unwrap_or('A').to_ascii_uppercase(),
-                &first[1..]
-            );
-            let capitalized_ref: &str = &capitalized;
-            words[0] = capitalized_ref;
-            let sentence = format!("{}.", words.join(" "));
-            if unique {
-                format!("{sentence} ({sequence})")
-            } else {
-                sentence
-            }
-        }
-        GenKind::Email => {
-            let first = rng.pick(FIRST_NAMES).to_ascii_lowercase();
-            let last = rng.pick(LAST_NAMES).to_ascii_lowercase();
-            let domain = rng.pick(EMAIL_DOMAINS);
-            if unique {
-                format!("{first}.{last}{sequence}@{domain}")
-            } else {
-                format!("{first}.{last}@{domain}")
-            }
-        }
-        GenKind::FirstName => {
-            let name = rng.pick(FIRST_NAMES);
-            if unique {
-                format!("{name}-{sequence}")
-            } else {
-                (*name).to_string()
-            }
-        }
-        GenKind::LastName => {
-            let name = rng.pick(LAST_NAMES);
-            if unique {
-                format!("{name}-{sequence}")
-            } else {
-                (*name).to_string()
-            }
-        }
-        GenKind::FullName => {
-            let first = rng.pick(FIRST_NAMES);
-            let last = rng.pick(LAST_NAMES);
-            if unique {
-                format!("{first} {last} {sequence}")
-            } else {
-                format!("{first} {last}")
-            }
-        }
-        GenKind::UserName => {
-            let first = rng.pick(FIRST_NAMES).to_ascii_lowercase();
-            let number = rng.range_i64(1, 999);
-            if unique {
-                format!("{first}{sequence}")
-            } else {
-                format!("{first}{number}")
-            }
-        }
+        GenKind::Word
+        | GenKind::Sentence
+        | GenKind::Paragraph
+        | GenKind::Email
+        | GenKind::FirstName
+        | GenKind::MiddleName
+        | GenKind::LastName
+        | GenKind::FullName
+        | GenKind::UserName => unreachable!("text kinds are built by generate_text"),
         GenKind::Url => {
             let word = rng.pick(WORDS);
             if unique {
@@ -1476,6 +1878,7 @@ mod tests {
             fk_pools: Vec::new(),
             now_epoch_secs: 1_750_000_000,
             dialect: SeedDialect::Postgres,
+            options: GenOptions::default(),
         }
     }
 
@@ -1489,6 +1892,7 @@ mod tests {
                 min: None,
                 max: None,
                 bound: ValueBound::Unbounded,
+                length: None,
             },
             null_rate: 0.0,
         }
@@ -1535,6 +1939,7 @@ mod tests {
                 min: None,
                 max: None,
                 bound: ValueBound::Unbounded,
+                length: None,
             },
             null_rate: 0.0,
         }]);
@@ -1561,6 +1966,7 @@ mod tests {
                     min: None,
                     max: None,
                     bound: ValueBound::Unbounded,
+                    length: None,
                 },
                 null_rate: 0.0,
             }]);
@@ -1611,6 +2017,7 @@ mod tests {
             ]],
             now_epoch_secs: 1_750_000_000,
             dialect: SeedDialect::Postgres,
+            options: GenOptions::default(),
         };
         let rows = generate_rows(&plan, 200, &mut SeedRng::new(11));
         for row in &rows {
@@ -1719,6 +2126,7 @@ mod tests {
                 min: None,
                 max: None,
                 bound,
+                length: None,
             },
             null_rate: 0.0,
         }
@@ -1772,6 +2180,7 @@ mod tests {
                     precision: 4,
                     scale: 1,
                 },
+                length: None,
             },
             null_rate: 0.0,
         }]);
@@ -1824,6 +2233,7 @@ mod tests {
                 min: None,
                 max: None,
                 bound: ValueBound::Chars(12),
+                length: None,
             },
             null_rate: 0.0,
         }]);
@@ -2217,6 +2627,263 @@ mod plan_tests {
             integer.trim_start_matches('0').len() as u32 <= precision - scale,
             "{value}"
         );
+    }
+
+    fn spec(
+        column: &str,
+        generator: Option<&str>,
+        length: (Option<usize>, Option<usize>),
+    ) -> SeedColumnSpec {
+        SeedColumnSpec {
+            column: column.to_string(),
+            skip: false,
+            constant: None,
+            values: None,
+            generator: generator.map(str::to_string),
+            min: None,
+            max: None,
+            min_length: length.0,
+            max_length: length.1,
+            null_rate: Some(0.0),
+        }
+    }
+
+    fn length_of(draft: &PlanDraft, name: &str) -> (GenKind, Option<LengthPlan>) {
+        match source_of(draft, name) {
+            ColumnSource::Generated { kind, length, .. } => (*kind, *length),
+            other => panic!("expected a generated column, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn requested_lengths_intersect_the_column_and_generator() {
+        let table = structure(vec![
+            column("email", "character varying(40)"),
+            column("bio", "text"),
+            column("nick", "character varying(20)"),
+        ]);
+        let specs = [
+            spec("email", None, (Some(3), Some(100))),
+            spec("bio", None, (Some(10), Some(5_000))),
+        ];
+        let draft = analyze_plan(SeedDialect::Postgres, &table, &specs).expect("plan");
+        assert_eq!(
+            length_of(&draft, "email"),
+            (
+                GenKind::Email,
+                Some(LengthPlan {
+                    lo: 8,
+                    hi: 40,
+                    uniform: true
+                })
+            )
+        );
+        assert_eq!(
+            length_of(&draft, "bio"),
+            (
+                GenKind::Paragraph,
+                Some(LengthPlan {
+                    lo: 10,
+                    hi: 5_000,
+                    uniform: true
+                })
+            )
+        );
+        // No request: natural lengths bounded by the column.
+        assert_eq!(
+            length_of(&draft, "nick").1,
+            Some(LengthPlan::natural(1, 20))
+        );
+    }
+
+    #[test]
+    fn impossible_lengths_are_length_errors() {
+        let table = structure(vec![
+            column("email", "character varying(40)"),
+            column("age", "integer"),
+        ]);
+        for specs in [
+            vec![spec("email", None, (Some(50), Some(60)))],
+            vec![spec("email", None, (Some(30), Some(20)))],
+            vec![spec("age", None, (Some(1), Some(3)))],
+        ] {
+            let error = analyze_plan(SeedDialect::Postgres, &table, &specs)
+                .err()
+                .expect("error");
+            assert_eq!(error.kind, PlanErrorKind::Length, "{}", error.message);
+        }
+    }
+
+    #[test]
+    fn an_inferred_generator_too_long_for_its_column_falls_back_to_words() {
+        let table = structure(vec![column("email", "character varying(5)")]);
+        let draft = run(SeedDialect::Postgres, &table);
+        assert_eq!(length_of(&draft, "email").0, GenKind::Word);
+        let explicit = [spec("email", Some("email"), (None, None))];
+        let error = analyze_plan(SeedDialect::Postgres, &table, &explicit)
+            .err()
+            .expect("error");
+        assert_eq!(error.kind, PlanErrorKind::Length);
+    }
+
+    #[test]
+    fn a_rows_name_and_email_describe_the_same_person() {
+        let table = structure(vec![
+            column("first_name", "text"),
+            column("last_name", "text"),
+            column("email", "text"),
+        ]);
+        let draft = run(SeedDialect::Postgres, &table);
+        let plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+        let token = |s: &str| -> String {
+            s.chars()
+                .filter(char::is_ascii_alphanumeric)
+                .collect::<String>()
+                .to_ascii_lowercase()
+        };
+        let mut matched = 0;
+        let rows = generate_rows(&plan, 200, &mut SeedRng::new(3));
+        for row in &rows {
+            let (first, last, email) = (
+                token(row[0].as_ref().unwrap()),
+                token(row[1].as_ref().unwrap()),
+                row[2].as_ref().unwrap().to_ascii_lowercase(),
+            );
+            if email.contains(&last) || email.contains(&first) {
+                matched += 1;
+            }
+        }
+        // Names with letters outside ASCII fold differently; the rest match.
+        assert!(matched >= 190, "{matched} of 200 rows agree");
+    }
+
+    #[test]
+    fn locales_choose_the_name_data() {
+        let table = structure(vec![column("first_name", "text")]);
+        let draft = run(SeedDialect::Postgres, &table);
+        let mut plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+        plan.options.locales = vec![Locale::Ja];
+        for row in generate_rows(&plan, 50, &mut SeedRng::new(1)) {
+            assert!(!row[0].as_ref().unwrap().is_ascii());
+        }
+    }
+
+    #[test]
+    fn unique_text_stays_unique_inside_its_length_window() {
+        for generator in [
+            "email",
+            "userName",
+            "firstName",
+            "lastName",
+            "fullName",
+            "word",
+            "sentence",
+            "paragraph",
+        ] {
+            let mut table = structure(vec![column("value", "character varying(60)")]);
+            table.primary_key = Some(vec!["value".to_string()]);
+            let specs = [spec("value", Some(generator), (Some(20), Some(40)))];
+            let draft = analyze_plan(SeedDialect::Postgres, &table, &specs).expect("plan");
+            check_capacity(&draft, 3_000).expect("capacity");
+            let plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+            let rows = generate_rows(&plan, 3_000, &mut SeedRng::new(9));
+            let mut seen = std::collections::HashSet::new();
+            for row in rows {
+                let value = row[0].clone().unwrap();
+                assert!(
+                    (20..=40).contains(&value.chars().count()),
+                    "{generator}: {value}"
+                );
+                assert!(seen.insert(value.clone()), "{generator} repeated {value}");
+            }
+        }
+    }
+
+    #[test]
+    fn text_without_a_name_column_spends_no_draws_on_a_persona() {
+        let table = structure(vec![column("title", "text")]);
+        let draft = run(SeedDialect::Postgres, &table);
+        let plan = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+        let mut alone = SeedRng::new(4);
+        generate_rows(&plan, 1, &mut alone);
+        let mut expected = SeedRng::new(4);
+        let words = text::prose(
+            &mut expected,
+            LengthPlan::natural(1, MAX_GENERATED_CHARS),
+            (1, 1),
+        );
+        let mut rng = SeedRng::new(4);
+        assert_eq!(
+            generate_rows(&plan, 1, &mut rng)[0][0].as_deref(),
+            Some(words.as_str())
+        );
+        assert_eq!(alone.next_u64(), expected.next_u64());
+    }
+
+    #[test]
+    fn batches_are_sized_by_the_widest_generated_values() {
+        let table = structure(vec![column("body", "text"), column("age", "integer")]);
+        let natural = finalize_plan(
+            &table,
+            run(SeedDialect::Postgres, &table),
+            Vec::new(),
+            &[],
+            0,
+        )
+        .expect("plan");
+        // Up to six natural sentences and an integer: under 2 KiB a row.
+        assert!(rows_within(&natural, BATCH_VALUE_BYTES) > 4_000);
+        let specs = [spec("body", None, (Some(50_000), Some(100_000)))];
+        let draft = analyze_plan(SeedDialect::Postgres, &table, &specs).expect("plan");
+        let long = finalize_plan(&table, draft, Vec::new(), &[], 0).expect("plan");
+        assert_eq!(
+            rows_within(&long, BATCH_VALUE_BYTES),
+            BATCH_VALUE_BYTES / (100_016 + 128)
+        );
+    }
+
+    #[test]
+    fn unique_text_needs_room_for_its_row_tag() {
+        let mut table = structure(vec![column("email", "character varying(10)")]);
+        table.primary_key = Some(vec!["email".to_string()]);
+        let draft = run(SeedDialect::Postgres, &table);
+        assert_eq!(check_capacity(&draft, 9), Ok(()));
+        assert_eq!(check_capacity(&draft, 10), Err(CapacityError::LengthRange));
+    }
+
+    #[test]
+    fn object_names_are_not_people() {
+        for (name, kind) in [
+            ("file_name", GenKind::Word),
+            ("hostname", GenKind::Word),
+            ("product_name", GenKind::Word),
+            ("customer_name", GenKind::FullName),
+            ("name", GenKind::FullName),
+            ("middle_name", GenKind::MiddleName),
+            ("bio", GenKind::Paragraph),
+            ("description", GenKind::Paragraph),
+            ("title", GenKind::Sentence),
+            ("msisdn", GenKind::Phone),
+            ("message", GenKind::Paragraph),
+            ("commit_message", GenKind::Paragraph),
+            ("details_url", GenKind::Url),
+        ] {
+            assert_eq!(classify_column(name, "text"), Some(kind), "{name}");
+        }
+        // Identifiers that merely contain a prose word stay plain text.
+        for name in [
+            "message_id",
+            "message_status",
+            "content_type",
+            "content_hash",
+            "title_id",
+        ] {
+            assert_eq!(
+                classify_column(name, "character varying(64)"),
+                Some(GenKind::Word),
+                "{name}"
+            );
+        }
     }
 
     #[test]

@@ -21,7 +21,7 @@ generators are rebuilt around these decisions:
 
 - **Lengths are planned, never truncated.** Each text-like column has a
   length range: the user's range intersected with the column's capacity and
-  the generator's own limits (an email is 6 to 254 characters). Generators
+  the generator's own limits (an email is 8 to 254 characters). Generators
   build a value of the chosen length. An empty intersection is a review
   error. Length limits apply only to character types; numeric precision and
   scale bound numeric values.
@@ -33,11 +33,12 @@ generators are rebuilt around these decisions:
   for fiction and emails use reserved domains (`example.*`, `.test`).
   Realistic, possibly assigned values are an explicit opt-in.
 - **Built-in data is generated in-repo and compiled in.** Names come from
-  CC0 and public-domain sources (Wikidata, US SSA, US Census); cities from
+  CC0 and public-domain sources (Wikidata, US Census); cities from
   GeoNames (CC BY 4.0, credited in the legal notices); postcode patterns and
   address formats from Google libaddressinput (Apache-2.0). Japanese names
-  carry a romaji form for emails and usernames. The data version is recorded
-  with each seed, because a seed reproduces its rows only on the same data.
+  carry a romaji form for emails and usernames. A generator version, covering
+  the data and the generation algorithms, is recorded with each seed, because
+  a seed reproduces its rows only under the same version.
 - **First locales:** en-US, en-GB, en-IN, de, fr, es, pt-BR and ja.
 
 ### Considered options

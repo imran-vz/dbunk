@@ -1540,6 +1540,12 @@ pub(crate) struct SeedColumnSpec {
     pub min: Option<f64>,
     #[serde(default)]
     pub max: Option<f64>,
+    /// Inclusive character-length range for text generators. Either end
+    /// may be omitted; values are built to fit, never truncated.
+    #[serde(default)]
+    pub min_length: Option<usize>,
+    #[serde(default)]
+    pub max_length: Option<usize>,
     /// Probability `[0, 1]` of NULL for nullable columns.
     #[serde(default)]
     pub null_rate: Option<f64>,

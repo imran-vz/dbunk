@@ -11,6 +11,10 @@ pub const MAX_TABLE_SEED_DESCRIPTION_BYTES: usize = 16 * 1024;
 pub const MAX_TABLE_SEED_LIST_BYTES: usize = 1024 * 1024;
 pub const MAX_TABLE_SEED_EXECUTION_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_TABLE_SEED_EXECUTION_POOL_BYTES: usize = 128 * 1024 * 1024;
+/// Longest text value a length range may request, in characters.
+pub const MAX_TABLE_SEED_TEXT_CHARS: u32 = crate::seed::MAX_GENERATED_CHARS as u32;
+/// Most locales one run may mix.
+pub const MAX_TABLE_SEED_LOCALES: usize = 8;
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TableSeedAttemptId(pub(super) uuid::Uuid);
 impl TableSeedAttemptId {
@@ -145,6 +149,8 @@ pub enum TableSeedGenerator {
     Time,
     Timestamp,
     Json,
+    MiddleName,
+    Paragraph,
 }
 impl TableSeedGenerator {
     pub fn id(self) -> &'static str {
@@ -175,6 +181,8 @@ impl TableSeedGenerator {
             Self::Time => "time",
             Self::Timestamp => "timestamp",
             Self::Json => "json",
+            Self::MiddleName => "middleName",
+            Self::Paragraph => "paragraph",
         }
     }
 }
@@ -192,19 +200,50 @@ pub enum TableSeedSource {
         values: Vec<String>,
     },
 }
+/// Inclusive character-length range for an Auto text column. Either end
+/// may be left to the column and generator; the backend intersects the
+/// rest with both and builds values to fit (ADR-0014).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TableSeedLength {
+    pub min: Option<u32>,
+    pub max: Option<u32>,
+}
+impl TableSeedLength {
+    fn valid(self) -> bool {
+        let in_bounds =
+            |v: Option<u32>| v.is_none_or(|v| (1..=MAX_TABLE_SEED_TEXT_CHARS).contains(&v));
+        (self.min.is_some() || self.max.is_some())
+            && in_bounds(self.min)
+            && in_bounds(self.max)
+            && match (self.min, self.max) {
+                (Some(min), Some(max)) => min <= max,
+                _ => true,
+            }
+    }
+}
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TableSeedColumnSpec {
     pub column: String,
     pub source: TableSeedSource,
     pub null_rate: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length: Option<TableSeedLength>,
 }
+/// A locale the built-in name and address data covers.
+pub use crate::seed::Locale as TableSeedLocale;
+/// Whether contact details may look like real, assigned ones.
+pub use crate::seed::Realism as TableSeedRealism;
 #[derive(Clone)]
 pub struct TableSeedIntent {
     pub endpoint: TableSeedEndpoint,
     pub row_count: u32,
     pub seed: Option<u64>,
     pub columns: Vec<TableSeedColumnSpec>,
+    /// Never empty; each generated row draws one.
+    pub locales: Vec<TableSeedLocale>,
+    pub realism: TableSeedRealism,
 }
 impl TableSeedIntent {
     pub fn new(
@@ -218,19 +257,46 @@ impl TableSeedIntent {
             row_count,
             seed,
             columns,
+            locales: vec![TableSeedLocale::EnUs],
+            realism: TableSeedRealism::default(),
         };
         value
             .checked_heap_bytes()
             .ok_or(TableSeedError::InvalidRequest)?;
         Ok(value)
     }
+    /// Choose the locales rows are drawn from and whether contact details
+    /// may look real.
+    pub fn with_generation(
+        mut self,
+        locales: Vec<TableSeedLocale>,
+        realism: TableSeedRealism,
+    ) -> Result<Self, TableSeedError> {
+        self.locales = locales;
+        self.realism = realism;
+        self.checked_heap_bytes()
+            .ok_or(TableSeedError::InvalidRequest)?;
+        Ok(self)
+    }
     pub fn checked_heap_bytes(&self) -> Option<usize> {
         if !(1..=MAX_TABLE_SEED_ROWS).contains(&self.row_count)
             || self.columns.len() > MAX_TABLE_SEED_COLUMNS
+            || self.locales.is_empty()
+            || self.locales.len() > MAX_TABLE_SEED_LOCALES
+            || self
+                .locales
+                .iter()
+                .enumerate()
+                .any(|(i, l)| self.locales[..i].contains(l))
         {
             return None;
         }
         let mut n = size_of::<Self>()
+            .checked_add(
+                self.locales
+                    .capacity()
+                    .checked_mul(size_of::<TableSeedLocale>())?,
+            )?
             .checked_add(self.endpoint.checked_heap_bytes()?)?
             .checked_add(
                 self.columns
@@ -242,6 +308,9 @@ impl TableSeedIntent {
                 || self.columns[..i].iter().any(|p| p.column == c.column)
                 || c.null_rate
                     .is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v))
+                || c.length.is_some_and(|l| {
+                    !l.valid() || !matches!(c.source, TableSeedSource::Auto { .. })
+                })
             {
                 return None;
             }
@@ -300,6 +369,10 @@ pub struct TableSeedDescription {
     pub recipe_summary_truncated: bool,
     pub inserted_columns: u16,
     pub defaulted_columns: u16,
+    /// Generator version (data and algorithms) the rows were produced by;
+    /// a seed reproduces its rows only on the same version. 0 predates
+    /// versioning.
+    pub generator_version: u32,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -316,6 +389,8 @@ struct DescriptionFields {
     recipe_summary_truncated: bool,
     inserted_columns: u16,
     defaulted_columns: u16,
+    #[serde(default)]
+    generator_version: u32,
 }
 impl TryFrom<DescriptionFields> for TableSeedDescription {
     type Error = TableSeedError;
@@ -333,6 +408,7 @@ impl TryFrom<DescriptionFields> for TableSeedDescription {
             recipe_summary_truncated: f.recipe_summary_truncated,
             inserted_columns: f.inserted_columns,
             defaulted_columns: f.defaulted_columns,
+            generator_version: f.generator_version,
         };
         value.validate()?;
         Ok(value)
@@ -428,6 +504,7 @@ pub enum TableSeedError {
     UnsupportedColumn,
     EmptyParent,
     IntegerRange,
+    LengthRange,
     PolicyBlocked,
     Credentials,
     Database,
@@ -455,6 +532,9 @@ impl fmt::Display for TableSeedError {
                 "A referenced parent has no non-NULL tuples; seed the named parent first"
             }
             Self::IntegerRange => "Unique value generation would exceed the column range",
+            Self::LengthRange => {
+                "A column's length range does not fit the column, its generator or the row count"
+            }
             Self::PolicyBlocked => "Stored connection policy blocks seeding",
             Self::Credentials => "Connection credentials are unavailable",
             Self::Database => "PostgreSQL rejected the seed operation; inspect constraint details",

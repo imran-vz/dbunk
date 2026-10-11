@@ -96,7 +96,12 @@ pub(crate) async fn inspect(
             .await
             .map_err(database_error)?;
         let catalog = catalog::inspect(&c, &intent.endpoint).await?;
-        let draft = planning::draft(&catalog, &intent);
+        // Capacity needs the row count, so it is checked here as well as
+        // at execution: a recipe that cannot fit fails at review.
+        let draft = planning::draft(&catalog, &intent).and_then(|draft| {
+            planning::capacity(&draft, intent.row_count)?;
+            Ok(draft)
+        });
         let columns = planning::columns(&catalog, draft.as_ref().ok());
         let inserted = columns
             .iter()
@@ -112,7 +117,8 @@ pub(crate) async fn inspect(
         let clock = chrono::Utc::now().timestamp();
         let description = if issue.is_none() {
             let encoded =
-                serde_json::to_string(&intent.columns).map_err(|_| TableSeedError::Limit)?;
+                serde_json::to_string(&(&intent.columns, &intent.locales, intent.realism))
+                    .map_err(|_| TableSeedError::Limit)?;
             let recipe_sha256:String=c.client.query_one("SELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to($1::text,'UTF8')),'hex')",&[&encoded]).await.map_err(database_error)?.get(0);
             let (recipe_summary, recipe_summary_truncated) = planning::summary(&intent);
             let d = TableSeedDescription {
@@ -128,6 +134,7 @@ pub(crate) async fn inspect(
                 recipe_summary_truncated,
                 inserted_columns: inserted as u16,
                 defaulted_columns: (columns.len() - inserted) as u16,
+                generator_version: crate::seed::SEED_GENERATOR_VERSION,
             };
             d.validate()?;
             Some(d)

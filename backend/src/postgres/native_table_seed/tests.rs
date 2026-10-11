@@ -55,7 +55,8 @@ fn exact_seed_and_recipe_bounds() {
             source: TableSeedSource::Constant {
                 value: "x".repeat(8193)
             },
-            null_rate: None
+            null_rate: None,
+            length: None
         }]
     )
     .is_err());
@@ -66,7 +67,8 @@ fn exact_seed_and_recipe_bounds() {
         vec![TableSeedColumnSpec {
             column: "value".into(),
             source: TableSeedSource::Auto { generator: None },
-            null_rate: Some(f64::NAN)
+            null_rate: Some(f64::NAN),
+            length: None
         }]
     )
     .is_err());
@@ -122,6 +124,7 @@ pub(crate) fn plan(intent: TableSeedIntent, target: TableSeedConnection) -> Plan
         recipe_summary_truncated: truncated,
         inserted_columns: 1,
         defaulted_columns: 0,
+        generator_version: 1,
     };
     Plan {
         seed_used: description.seed_used,
@@ -147,6 +150,7 @@ fn batch_budget_accounts_for_literal_expansion_and_parameter_count() {
         fk_pools: vec![],
         now_epoch_secs: 0,
         dialect: SeedDialect::Postgres,
+        options: Default::default(),
     };
     assert_eq!(
         planning::batch_size(&plan, &vec!["text".into(); 1600], 100),
@@ -243,6 +247,7 @@ fn auto_enum_columns_draw_from_their_declared_labels() {
             column: "value".into(),
             source: TableSeedSource::Auto { generator: None },
             null_rate: Some(0.0),
+            length: None,
         }],
     ] {
         let p = enum_plan(columns);
@@ -266,6 +271,7 @@ fn explicit_enum_column_choices_are_kept() {
         column: "value".into(),
         source: TableSeedSource::Constant { value: "ok".into() },
         null_rate: None,
+        length: None,
     }]);
     let draft = planning::draft(&p.catalog, &p.intent).unwrap();
     assert!(matches!(
@@ -290,8 +296,124 @@ fn unique_fixed_point_runs_must_fit_the_integer_digits() {
     let draft = planning::draft(&p.catalog, &p.intent).unwrap();
     // numeric(3,2) holds integer parts 0..=9, and row 10 needs 10.
     assert_eq!(
-        planning::unique_fixed_point_fits(&draft, 10),
+        planning::capacity(&draft, 10),
         Err(TableSeedError::IntegerRange)
     );
-    assert_eq!(planning::unique_fixed_point_fits(&draft, 9), Ok(()));
+    assert_eq!(planning::capacity(&draft, 9), Ok(()));
+}
+
+fn auto(column: &str, length: Option<TableSeedLength>) -> TableSeedColumnSpec {
+    TableSeedColumnSpec {
+        column: column.into(),
+        source: TableSeedSource::Auto { generator: None },
+        null_rate: None,
+        length,
+    }
+}
+
+#[test]
+fn intents_validate_lengths_and_locales() {
+    let length = |min, max| Some(TableSeedLength { min, max });
+    for bad in [
+        length(None, None),
+        length(Some(0), Some(5)),
+        length(Some(9), Some(3)),
+        length(None, Some(MAX_TABLE_SEED_TEXT_CHARS + 1)),
+    ] {
+        assert!(TableSeedIntent::new(endpoint(), 1, None, vec![auto("value", bad)]).is_err());
+    }
+    assert!(TableSeedIntent::new(
+        endpoint(),
+        1,
+        None,
+        vec![auto("value", length(Some(3), None))]
+    )
+    .is_ok());
+    let constant_with_length = TableSeedColumnSpec {
+        source: TableSeedSource::Constant { value: "x".into() },
+        ..auto("value", length(Some(1), Some(2)))
+    };
+    assert!(TableSeedIntent::new(endpoint(), 1, None, vec![constant_with_length]).is_err());
+
+    let intent = TableSeedIntent::new(endpoint(), 1, None, vec![]).unwrap();
+    assert_eq!(intent.locales, vec![TableSeedLocale::EnUs]);
+    assert_eq!(intent.realism, TableSeedRealism::FictionalSafe);
+    for locales in [vec![], vec![TableSeedLocale::De, TableSeedLocale::De]] {
+        assert!(intent
+            .clone()
+            .with_generation(locales, TableSeedRealism::Realistic)
+            .is_err());
+    }
+}
+
+#[test]
+fn impossible_length_ranges_fail_review_as_length_errors() {
+    let mut p = plan(
+        TableSeedIntent::new(
+            endpoint(),
+            10,
+            Some(1),
+            vec![auto(
+                "value",
+                Some(TableSeedLength {
+                    min: Some(50),
+                    max: Some(60),
+                }),
+            )],
+        )
+        .unwrap(),
+        target(),
+    );
+    p.catalog.relation.columns[0].public.data_type = "character varying(20)".into();
+    assert!(matches!(
+        planning::draft(&p.catalog, &p.intent),
+        Err(TableSeedError::LengthRange)
+    ));
+}
+
+#[test]
+fn generation_options_and_lengths_reach_the_plan_and_summary() {
+    let intent = TableSeedIntent::new(
+        endpoint(),
+        10,
+        Some(1),
+        vec![auto(
+            "value",
+            Some(TableSeedLength {
+                min: Some(30),
+                max: None,
+            }),
+        )],
+    )
+    .unwrap()
+    .with_generation(
+        vec![TableSeedLocale::Ja, TableSeedLocale::PtBr],
+        TableSeedRealism::Realistic,
+    )
+    .unwrap();
+    let options = planning::options(&intent);
+    assert_eq!(
+        options.locales,
+        vec![crate::seed::Locale::Ja, crate::seed::Locale::PtBr]
+    );
+    assert_eq!(options.realism, crate::seed::Realism::Realistic);
+    let p = plan(intent, target());
+    let draft = planning::draft(&p.catalog, &p.intent).unwrap();
+    assert!(matches!(
+        draft.columns()[0].source,
+        crate::seed::ColumnSource::Generated {
+            length: Some(crate::seed::LengthPlan {
+                lo: 30,
+                uniform: true,
+                ..
+            }),
+            ..
+        }
+    ));
+    let (summary, _) = planning::summary(&p.intent);
+    assert!(summary.contains("length 30..auto"), "{summary}");
+    assert!(
+        summary.contains("Locales ja, pt-BR; realistic"),
+        "{summary}"
+    );
 }

@@ -27,7 +27,8 @@ fn all_generator_choices_have_stable_exact_mapping() {
             *label
         );
     }
-    assert!(recipe::mode_at(30).is_none());
+    assert!(recipe::mode_at(recipe::MODE_COUNT).is_none());
+    assert!(recipe::mode_at(recipe::MODE_COUNT - 1).is_some());
 }
 #[test]
 fn column_navigation_never_wraps_or_invents_a_selection() {

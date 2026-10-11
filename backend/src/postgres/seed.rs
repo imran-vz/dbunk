@@ -11,7 +11,8 @@ use std::time::Instant;
 use sqlx::Acquire;
 
 use crate::seed::{
-    analyze_plan, finalize_plan, generate_rows_from, insert_columns, SeedDialect, SeedRng,
+    analyze_plan, check_capacity, finalize_plan, generate_rows_from, insert_columns, rows_within,
+    SeedDialect, SeedRng, BATCH_VALUE_BYTES,
 };
 use crate::{quote_double, SeedColumnSpec, SeedTableResult, StoredConnection};
 
@@ -44,6 +45,7 @@ where
     let start = Instant::now();
 
     let draft = analyze_plan(SeedDialect::Postgres, &structure, specs)?;
+    check_capacity(&draft, row_count)?;
 
     // Only the foreign keys the plan actually draws from get sampled.
     let mut fk_pools: Vec<Option<Vec<Vec<String>>>> = vec![None; structure.foreign_keys.len()];
@@ -87,7 +89,9 @@ where
         .collect();
     let mut rng = SeedRng::new(seed);
 
-    let chunk_size = (MAX_PARAMS_PER_STATEMENT / columns.len()).clamp(1, 500);
+    let chunk_size = (MAX_PARAMS_PER_STATEMENT / columns.len())
+        .clamp(1, 500)
+        .min(rows_within(&plan, BATCH_VALUE_BYTES));
     let mut conn = connect(connection).await?;
     let mut tx = conn.begin().await.map_err(|error| error.to_string())?;
     let mut rows_inserted: u64 = 0;
@@ -358,6 +362,8 @@ mod live_tests {
                 generator: None,
                 min: None,
                 max: None,
+                min_length: None,
+                max_length: None,
                 null_rate: Some(0.0),
             },
             SeedColumnSpec {
@@ -368,6 +374,8 @@ mod live_tests {
                 generator: None,
                 min: None,
                 max: None,
+                min_length: None,
+                max_length: None,
                 null_rate: Some(0.0),
             },
         ];

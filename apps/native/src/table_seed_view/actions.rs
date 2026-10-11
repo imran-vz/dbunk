@@ -208,7 +208,8 @@ impl TableSeedView {
             }
             Action::Mode => {
                 self.choosing_mode = true;
-                self.mode_choice = (0..30).find(|index| recipe::mode_at(*index) == Some(self.mode));
+                self.mode_choice = (0..recipe::MODE_COUNT)
+                    .find(|index| recipe::mode_at(*index) == Some(self.mode));
                 window.focus(&self.mode_focus, cx);
             }
             Action::SaveColumn => {

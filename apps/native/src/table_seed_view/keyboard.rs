@@ -76,7 +76,7 @@ impl TableSeedView {
                 return;
             }
         } else if self.choosing_mode && self.mode_focus.is_focused(window) {
-            if let Some(index) = move_index(self.mode_choice, 30, key) {
+            if let Some(index) = move_index(self.mode_choice, recipe::MODE_COUNT, key) {
                 self.mode_choice = Some(index);
                 self.modes_scroll
                     .scroll_to_item(index, ScrollStrategy::Nearest);

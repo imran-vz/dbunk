@@ -34,6 +34,7 @@ fn journal() -> WorkspaceTableSeed {
             recipe_summary_truncated: false,
             inserted_columns: 1,
             defaulted_columns: 2,
+            generator_version: 1,
         },
         state: WorkspaceTableSeedState::Applying,
         failure: None,

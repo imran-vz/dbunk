@@ -21,6 +21,8 @@ pub(super) fn specs(intent: &TableSeedIntent) -> Vec<crate::SeedColumnSpec> {
                 generator,
                 min: None,
                 max: None,
+                min_length: s.length.and_then(|l| l.min).map(|v| v as usize),
+                max_length: s.length.and_then(|l| l.max).map(|v| v as usize),
                 null_rate: s.null_rate,
             }
         })
@@ -69,6 +71,8 @@ pub(super) fn draft(
                 generator: None,
                 min: None,
                 max: None,
+                min_length: None,
+                max_length: None,
                 null_rate: None,
             }),
         }
@@ -90,12 +94,25 @@ pub(super) fn draft(
                 generator: None,
                 min: None,
                 max: None,
+                min_length: None,
+                max_length: None,
                 null_rate: None,
             });
         }
     }
-    seed::analyze_plan(SeedDialect::Postgres, &catalog.structure(), &specs)
-        .map_err(|_| TableSeedError::UnsupportedColumn)
+    seed::analyze_plan(SeedDialect::Postgres, &catalog.structure(), &specs).map_err(|e| {
+        match e.kind {
+            seed::PlanErrorKind::Length => TableSeedError::LengthRange,
+            seed::PlanErrorKind::Unsupported => TableSeedError::UnsupportedColumn,
+        }
+    })
+}
+/// Generation options carried by the intent.
+pub(super) fn options(intent: &TableSeedIntent) -> seed::GenOptions {
+    seed::GenOptions {
+        locales: intent.locales.clone(),
+        realism: intent.realism,
+    }
 }
 pub(super) fn columns(
     catalog: &catalog::Catalog,
@@ -164,7 +181,18 @@ pub(super) fn summary(intent: &TableSeedIntent) -> (String, bool) {
                 values[0].chars().take(64).collect::<String>()
             ),
         };
-        let line = format!("{}: {}; NULL rate {:?}\n", s.column, source, s.null_rate);
+        let length = match s.length {
+            Some(l) => format!(
+                "; length {}..{}",
+                l.min.map_or("auto".into(), |v| v.to_string()),
+                l.max.map_or("auto".into(), |v| v.to_string())
+            ),
+            None => String::new(),
+        };
+        let line = format!(
+            "{}: {}; NULL rate {:?}{length}\n",
+            s.column, source, s.null_rate
+        );
         if out.len() + line.len() > 8192 {
             truncated = true;
             break;
@@ -172,7 +200,23 @@ pub(super) fn summary(intent: &TableSeedIntent) -> (String, bool) {
         let _ = out.write_str(&line);
     }
     if out.is_empty() {
-        out.push_str("All columns Auto; database-supplied columns omitted");
+        out.push_str("All columns Auto; database-supplied columns omitted\n");
+    }
+    let locales = intent
+        .locales
+        .iter()
+        .map(|l| l.id())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let realism = match intent.realism {
+        TableSeedRealism::FictionalSafe => "fictional-safe",
+        TableSeedRealism::Realistic => "realistic",
+    };
+    let line = format!("Locales {locales}; {realism} contact details\n");
+    if out.len() + line.len() > 8192 {
+        truncated = true;
+    } else {
+        out.push_str(&line);
     }
     (out, truncated)
 }
@@ -302,32 +346,19 @@ pub(super) async fn finalize(
         }
         maxes.push((name.clone(), value));
     }
-    unique_fixed_point_fits(&draft, plan.intent.row_count)?;
-    seed::finalize_plan(&structure, draft, pools, &maxes, plan.clock)
-        .map_err(|_| TableSeedError::InvalidRecipe.into())
+    capacity(&draft, plan.intent.row_count)?;
+    let mut seed_plan = seed::finalize_plan(&structure, draft, pools, &maxes, plan.clock)
+        .map_err(|_| TableSeedError::InvalidRecipe)?;
+    seed_plan.options = options(&plan.intent);
+    Ok(seed_plan)
 }
-/// Unique fixed-point values take their integer part from the row sequence,
-/// so a run must not need more integers than `numeric(p, s)` can hold.
-pub(super) fn unique_fixed_point_fits(
-    draft: &seed::PlanDraft,
-    row_count: u32,
-) -> Result<(), TableSeedError> {
-    for column in draft.columns() {
-        if let ColumnSource::Generated {
-            kind: GenKind::Float | GenKind::Decimal | GenKind::Price,
-            unique: true,
-            bound: seed::ValueBound::Numeric { precision, scale },
-            ..
-        } = column.source
-        {
-            if seed::numeric_integer_limit(precision, scale)
-                .is_some_and(|limit| i64::from(row_count) >= limit)
-            {
-                return Err(TableSeedError::IntegerRange);
-            }
-        }
-    }
-    Ok(())
+/// Unique columns must have room for `row_count` distinct values: integer
+/// digits for fixed-point numbers, characters for tagged text.
+pub(super) fn capacity(draft: &seed::PlanDraft, row_count: u32) -> Result<(), TableSeedError> {
+    seed::check_capacity(draft, row_count).map_err(|e| match e {
+        seed::CapacityError::NumericRange => TableSeedError::IntegerRange,
+        seed::CapacityError::LengthRange => TableSeedError::LengthRange,
+    })
 }
 /// Worst-case admission before generator clones any literal, list member or FK
 /// value. Includes a second copy for parameters and conservative row/SQL overhead.
@@ -338,20 +369,10 @@ pub(super) fn batch_size(
 ) -> Result<u32, TableSeedError> {
     let mut row = 0usize;
     for c in &plan.columns {
-        let bytes = match &c.source {
-            ColumnSource::Skip => continue,
-            ColumnSource::Constant(s) => s.as_ref().map_or(0, String::len),
-            ColumnSource::ValueList(v) => v.iter().map(String::len).max().unwrap_or(0),
-            ColumnSource::FkPool { pool, member } => plan.fk_pools[*pool]
-                .iter()
-                .map(|r| r[*member].len())
-                .max()
-                .unwrap_or(0),
-            ColumnSource::Generated { kind, .. } => match kind {
-                GenKind::Sentence => 1024,
-                _ => 512,
-            },
-        };
+        if matches!(c.source, ColumnSource::Skip) {
+            continue;
+        }
+        let bytes = seed::worst_case_value_bytes(plan, c);
         row = row
             .checked_add(bytes.saturating_mul(4) + 128)
             .ok_or(TableSeedError::Limit)?;

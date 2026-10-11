@@ -2,9 +2,10 @@
 //! authority; the backend resolves and binds it to an observed target.
 use dbunk_lib::backend::table_seed::{TableSeedColumnSpec, TableSeedGenerator, TableSeedSource};
 
-pub const GENERATORS: [(TableSeedGenerator, &str); 26] = [
+pub const GENERATORS: [(TableSeedGenerator, &str); 28] = [
     (TableSeedGenerator::Email, "Email"),
     (TableSeedGenerator::FirstName, "First name"),
+    (TableSeedGenerator::MiddleName, "Middle name"),
     (TableSeedGenerator::LastName, "Last name"),
     (TableSeedGenerator::FullName, "Full name"),
     (TableSeedGenerator::UserName, "Username"),
@@ -16,6 +17,7 @@ pub const GENERATORS: [(TableSeedGenerator, &str); 26] = [
     (TableSeedGenerator::StreetAddress, "Street address"),
     (TableSeedGenerator::Word, "Word"),
     (TableSeedGenerator::Sentence, "Sentence"),
+    (TableSeedGenerator::Paragraph, "Paragraph"),
     (TableSeedGenerator::Boolean, "Boolean"),
     (TableSeedGenerator::TinyInt, "Tiny integer"),
     (TableSeedGenerator::SmallInt, "Small integer"),
@@ -100,6 +102,7 @@ impl ColumnDraft {
             column: column.to_owned(),
             source,
             null_rate,
+            length: None,
         })
     }
 }

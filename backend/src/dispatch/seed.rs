@@ -14,7 +14,8 @@ use std::time::Instant;
 use sqlx::{Any, AnyConnection, Connection};
 
 use crate::seed::{
-    analyze_plan, finalize_plan, generate_rows_from, insert_columns, SeedDialect, SeedRng,
+    analyze_plan, check_capacity, finalize_plan, generate_rows_from, insert_columns, rows_within,
+    SeedDialect, SeedRng, BATCH_VALUE_BYTES,
 };
 use crate::{
     qualified_table_name, quote_backtick, quote_double, DatabaseEngine, ForeignKeyInfo,
@@ -87,6 +88,7 @@ where
     let start = Instant::now();
 
     let draft = analyze_plan(dialect, &structure, specs)?;
+    check_capacity(&draft, row_count)?;
 
     let mut conn = sqlx_connect(connection).await?;
     let mut fk_pools: Vec<Option<Vec<Vec<String>>>> = vec![None; structure.foreign_keys.len()];
@@ -122,7 +124,9 @@ where
     }
 
     let mut rng = SeedRng::new(seed);
-    let chunk_size = (max_params(&engine) / columns.len()).clamp(1, 500);
+    let chunk_size = (max_params(&engine) / columns.len())
+        .clamp(1, 500)
+        .min(rows_within(&plan, BATCH_VALUE_BYTES));
     let mut tx = conn.begin().await.map_err(|error| error.to_string())?;
     let mut rows_inserted: u64 = 0;
     let mut rows_generated: u32 = 0;
@@ -378,6 +382,8 @@ mod sqlite_live_tests {
             generator: None,
             min: None,
             max: None,
+            min_length: None,
+            max_length: None,
             null_rate: None,
         }
     }
@@ -470,6 +476,53 @@ mod sqlite_live_tests {
             .await,
             "0"
         );
+    }
+
+    #[tokio::test]
+    async fn unique_text_that_cannot_fit_its_tag_fails_before_writing() {
+        let (_file, connection) = fixture().await;
+        exec(
+            &connection,
+            "CREATE TABLE handles (email VARCHAR(10) NOT NULL UNIQUE)",
+        )
+        .await;
+        let error = seed_table(&connection, "main", "handles", 1_000, 1, &[], |_| {})
+            .await
+            .expect_err("1000 tagged emails cannot fit in 10 characters");
+        assert!(error.contains("length range"), "{error}");
+        let rows = column_values(&connection, "SELECT email FROM handles").await;
+        assert!(rows.is_empty());
+
+        seed_table(&connection, "main", "handles", 9, 1, &[], |_| {})
+            .await
+            .expect("nine tagged emails fit");
+        for email in column_values(&connection, "SELECT email FROM handles").await {
+            assert!(email.len() <= 10, "{email}");
+        }
+    }
+
+    #[tokio::test]
+    async fn long_length_ranges_shrink_the_insert_batches() {
+        let (_file, connection) = fixture().await;
+        exec(&connection, "CREATE TABLE essays (body TEXT NOT NULL)").await;
+        let specs = [SeedColumnSpec {
+            min_length: Some(90_000),
+            max_length: Some(100_000),
+            null_rate: Some(0.0),
+            ..spec("body")
+        }];
+        let reports = std::sync::Mutex::new(Vec::new());
+        seed_table(&connection, "main", "essays", 200, 1, &specs, |n| {
+            reports.lock().unwrap().push(n)
+        })
+        .await
+        .expect("seed long text");
+        let reports = reports.into_inner().unwrap();
+        // 8 MiB of generated text per batch holds at most 83 such rows.
+        assert!(reports.len() >= 3, "{reports:?}");
+        for body in column_values(&connection, "SELECT body FROM essays").await {
+            assert!((90_000..=100_000).contains(&body.len()));
+        }
     }
 
     #[tokio::test]

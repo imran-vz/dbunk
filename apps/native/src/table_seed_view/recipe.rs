@@ -194,6 +194,8 @@ impl Recipe {
 fn draft_bytes(draft: &ColumnDraft) -> usize {
     draft.constant.capacity() + draft.values_text.capacity() + draft.null_percent.capacity()
 }
+/// Auto, Default, Constant and Values, then one mode per generator.
+pub(super) const MODE_COUNT: usize = 4 + GENERATORS.len();
 pub(super) fn mode_at(index: usize) -> Option<ColumnMode> {
     match index {
         0 => Some(ColumnMode::Auto),
