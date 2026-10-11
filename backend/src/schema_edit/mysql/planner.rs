@@ -207,7 +207,9 @@ pub(super) fn plan(
             PlanStep::RenameTable => {
                 rename_table = Some(
                     Clause::new(
-                        format!("RENAME TO {}", ident(&new.name)),
+                        // Qualified: an unqualified target resolves in the connection's
+                        // default database, which may be another database or none.
+                        format!("RENAME TO {}", qualified(&new.schema, &new.name)),
                         format!("rename table to {}", new.name),
                     )
                     .instant(true),

@@ -178,16 +178,24 @@ impl Worker {
                 self.tracker.lock().await.finish(id);
                 continue;
             }
-            let outcome = tokio::select! {
-                biased;
-                // Abandoning a statement leaves the protocol state unknown,
-                // so the connection is dropped rather than closed politely.
-                _ = retired.wait_for(|retired| *retired) => {
-                    self.status.send_replace(MySqlSessionStatus::Closed(None));
-                    let _ = reply.send(Err(MySqlSessionError::Closed(None)));
-                    return;
+            // A schema apply runs on its own connection and its DDL may
+            // already be committing; abandoning it would skip the audit and
+            // hide the outcome, so it always runs to completion (its own
+            // timeouts bound it) and retirement takes effect afterwards.
+            let outcome = if matches!(request, Request::SchemaApply(_)) {
+                self.handle(request).await
+            } else {
+                tokio::select! {
+                    biased;
+                    // Abandoning a statement leaves the protocol state unknown,
+                    // so the connection is dropped rather than closed politely.
+                    _ = retired.wait_for(|retired| *retired) => {
+                        self.status.send_replace(MySqlSessionStatus::Closed(None));
+                        let _ = reply.send(Err(MySqlSessionError::Closed(None)));
+                        return;
+                    }
+                    outcome = self.handle(request) => outcome,
                 }
-                outcome = self.handle(request) => outcome,
             };
             // A cancel holds this lock while it sends `KILL QUERY`, so the
             // next request cannot start under a kill meant for this one.

@@ -510,3 +510,23 @@ fn defaults_render_bare_only_when_sqlite_accepts_them() {
         Some("(1 -- one\n)")
     );
 }
+
+#[test]
+fn a_rebuild_with_a_rename_is_refused_when_other_tables_refer_to_it() {
+    let mut baseline = users(SchemaEngine::Sqlite);
+    baseline.inbound.push(crate::schema_edit::InboundReference {
+        schema: "main".into(),
+        table: "sessions".into(),
+        name: "fk0".into(),
+        columns: vec!["id".into()],
+    });
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.name = "people".into();
+    draft.table.column_mut(existing(3)).unwrap().nullable = false;
+    let error = plan_review(&baseline, &draft, &PlanOptions::default()).unwrap_err();
+    assert!(error.to_string().contains("refer to this table"), "{error}");
+    // The rename alone takes the fast path, where SQLite rewrites references.
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.name = "people".into();
+    assert!(plan_review(&baseline, &draft, &PlanOptions::default()).is_ok());
+}
