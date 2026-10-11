@@ -21,9 +21,8 @@ use crate::schema_edit::{
     normalize_type, BaselineId, CheckModel, ColumnExtra, ColumnModel, DefaultValue, Deferrable,
     Dependent, DriftToken, Editability, ForeignKeyModel, Generated, Identity, InboundReference,
     IndexMember, IndexModel, IndexTarget, KeyModel, Origin, ReferentialAction, SchemaBaseline,
-    SchemaEngine,
-    SqlFragment, TableModel, TableOptions, MAX_SCHEMA_EDIT_COLUMNS, MAX_SCHEMA_EDIT_MEMBERS,
-    MAX_SCHEMA_EDIT_OBJECTS,
+    SchemaEngine, SqlFragment, TableModel, TableOptions, MAX_SCHEMA_EDIT_COLUMNS,
+    MAX_SCHEMA_EDIT_MEMBERS, MAX_SCHEMA_EDIT_OBJECTS,
 };
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -272,7 +271,9 @@ pub(super) fn baseline(
         }
     }
     if groups.len() > MAX_SCHEMA_EDIT_OBJECTS
-        || groups.iter().any(|(_, rows)| rows.len() > MAX_SCHEMA_EDIT_MEMBERS)
+        || groups
+            .iter()
+            .any(|(_, rows)| rows.len() > MAX_SCHEMA_EDIT_MEMBERS)
     {
         problems.push("The table has more indexes than the editor supports");
     }
@@ -298,7 +299,9 @@ pub(super) fn baseline(
             }
         }
         if rows.iter().any(|row| !row.comment.is_empty()) {
-            problems.push(format!("Index {name} has a comment, which is not supported"));
+            problems.push(format!(
+                "Index {name} has a comment, which is not supported"
+            ));
         }
         if rows.iter().any(|row| !row.visible) {
             problems.push(format!("Index {name} is invisible, which is not supported"));
@@ -349,8 +352,9 @@ pub(super) fn baseline(
                         columns,
                     })
                 }
-                None => problems
-                    .push("A primary key with prefix or descending parts is not supported"),
+                None => {
+                    problems.push("A primary key with prefix or descending parts is not supported")
+                }
             }
             continue;
         }
@@ -553,18 +557,21 @@ fn column_model(
     version: Option<&Version>,
 ) -> ColumnModel {
     let extra = extra_lower(&row.extra);
-    let generated = match defined {
-        Some(defined) => defined.generated.as_ref().map(|(expression, stored)| Generated {
-            expression: SqlFragment::new(expression.clone()),
-            stored: *stored,
-        }),
-        None => (extra.contains("virtual generated") || extra.contains("stored generated")).then(
-            || Generated {
-                expression: SqlFragment::new(row.generation.clone().unwrap_or_default()),
-                stored: extra.contains("stored generated"),
-            },
-        ),
-    };
+    let generated =
+        match defined {
+            Some(defined) => defined
+                .generated
+                .as_ref()
+                .map(|(expression, stored)| Generated {
+                    expression: SqlFragment::new(expression.clone()),
+                    stored: *stored,
+                }),
+            None => (extra.contains("virtual generated") || extra.contains("stored generated"))
+                .then(|| Generated {
+                    expression: SqlFragment::new(row.generation.clone().unwrap_or_default()),
+                    stored: extra.contains("stored generated"),
+                }),
+        };
     let default = match defined {
         Some(defined) => default_from_definition(&defined.default),
         None => match catalog_default(row, version) {
@@ -711,9 +718,11 @@ fn key_problems(problems: &mut Problems, name: &str, rows: &[&IndexRow], defined
             _ => false,
         };
         // Full-text and spatial parts report no prefix in either source.
-        let same_prefix = row.sub_part == part.prefix
-            || matches!(kind, KeyKind::Fulltext | KeyKind::Spatial);
-        if !same_column || !same_prefix || (row.collation.as_deref() == Some("D")) != part.descending
+        let same_prefix =
+            row.sub_part == part.prefix || matches!(kind, KeyKind::Fulltext | KeyKind::Spatial);
+        if !same_column
+            || !same_prefix
+            || (row.collation.as_deref() == Some("D")) != part.descending
         {
             disagree("parts");
             return;

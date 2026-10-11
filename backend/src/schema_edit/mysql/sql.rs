@@ -57,7 +57,7 @@ fn checked_word<'a>(what: &str, value: &'a str) -> Result<&'a str, PlanError> {
 pub(super) fn type_base(data_type: &str) -> String {
     let normalized = normalize_type(data_type);
     normalized
-        .split(|c: char| c == '(' || c == ' ')
+        .split(['(', ' '])
         .next()
         .unwrap_or_default()
         .to_owned()
@@ -151,12 +151,7 @@ fn bare_default(text: &str) -> bool {
     if lower.starts_with('\'') && lower.ends_with('\'') && lower.len() >= 2 {
         return true;
     }
-    for name in [
-        "current_timestamp",
-        "localtimestamp",
-        "localtime",
-        "now",
-    ] {
+    for name in ["current_timestamp", "localtimestamp", "localtime", "now"] {
         if let Some(rest) = lower.strip_prefix(name) {
             if rest.is_empty() {
                 return name != "now";
@@ -201,10 +196,18 @@ pub(super) fn column_definition(column: &ColumnModel) -> Result<String, PlanErro
         sql.push_str(&format!(
             " GENERATED ALWAYS AS ({}) {}",
             generated.expression.as_str().trim(),
-            if generated.stored { "STORED" } else { "VIRTUAL" }
+            if generated.stored {
+                "STORED"
+            } else {
+                "VIRTUAL"
+            }
         ));
     }
-    sql.push_str(if column.nullable { " NULL" } else { " NOT NULL" });
+    sql.push_str(if column.nullable {
+        " NULL"
+    } else {
+        " NOT NULL"
+    });
     if column.generated.is_none() {
         match &column.default {
             DefaultValue::None => {}
@@ -378,7 +381,10 @@ mod tests {
             default_expression("CURRENT_TIMESTAMP(3)"),
             "CURRENT_TIMESTAMP(3)"
         );
-        assert_eq!(default_expression("current_timestamp()"), "current_timestamp()");
+        assert_eq!(
+            default_expression("current_timestamp()"),
+            "current_timestamp()"
+        );
         assert_eq!(default_expression("(uuid())"), "(uuid())");
         assert_eq!(default_expression("uuid()"), "(uuid())");
         assert_eq!(default_expression("b'1'"), "b'1'");
@@ -401,7 +407,10 @@ mod tests {
         assert_eq!(canonical_type("DECIMAL(8, 2)"), "decimal(8,2)");
         assert_eq!(canonical_type("char"), "char(1)");
         assert_eq!(canonical_type("varchar(20)"), "varchar(20)");
-        assert_eq!(canonical_type("int(5) zerofill"), "int(5) unsigned zerofill");
+        assert_eq!(
+            canonical_type("int(5) zerofill"),
+            "int(5) unsigned zerofill"
+        );
         assert_eq!(canonical_type("ENUM('a', 'b')"), "enum('a','b')");
     }
 

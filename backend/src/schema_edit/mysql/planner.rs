@@ -15,10 +15,10 @@
 use super::sql::{column_definition, ident, plain_word, qualified, string_literal};
 use crate::schema_edit::{
     columns_reordered, group_statements, is_widening, plan_steps, CheckModel, ColumnField,
-    ColumnModel, Deferrable, EngineNote, EnginePlan, Field, ForeignKeyModel, Identity,
-    IndexModel, IndexTarget, KeyModel, NoteKind, Origin, PlanError, PlanOptions, PlanStep,
-    PreviewStatement, ReferentialAction, SchemaBaseline, SchemaChangeSet, SchemaDraft,
-    SchemaEngine, SchemaObject, ServerFeatures, ServerFlavor, TableModel,
+    ColumnModel, Deferrable, EngineNote, EnginePlan, Field, ForeignKeyModel, Identity, IndexModel,
+    IndexTarget, KeyModel, NoteKind, Origin, PlanError, PlanOptions, PlanStep, PreviewStatement,
+    ReferentialAction, SchemaBaseline, SchemaChangeSet, SchemaDraft, SchemaEngine, SchemaObject,
+    ServerFeatures, ServerFlavor, TableModel,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -131,7 +131,9 @@ pub(super) fn plan(
             PlanStep::DropForeignKey { id } => {
                 foreign_drops.push(drop_foreign_key(old, Origin::Existing(id))?);
             }
-            PlanStep::DropCheck { id } => drops.push(drop_check(old, Origin::Existing(id), mariadb)?),
+            PlanStep::DropCheck { id } => {
+                drops.push(drop_check(old, Origin::Existing(id), mariadb)?)
+            }
             PlanStep::DropUnique { id } => {
                 let name = old
                     .key(Origin::Existing(id))
@@ -525,9 +527,20 @@ fn add_index(index: &IndexModel, table: &TableModel) -> Result<Clause, PlanError
     }
     let method = index.method.as_deref().map(str::to_ascii_uppercase);
     let (kind, using) = match method.as_deref() {
-        None => (if index.unique { "UNIQUE INDEX" } else { "INDEX" }, None),
+        None => (
+            if index.unique {
+                "UNIQUE INDEX"
+            } else {
+                "INDEX"
+            },
+            None,
+        ),
         Some("BTREE" | "HASH") => (
-            if index.unique { "UNIQUE INDEX" } else { "INDEX" },
+            if index.unique {
+                "UNIQUE INDEX"
+            } else {
+                "INDEX"
+            },
             method.clone(),
         ),
         Some("FULLTEXT") if !index.unique => ("FULLTEXT INDEX", None),
@@ -580,7 +593,9 @@ fn add_foreign_key(key: &ForeignKeyModel, table: &TableModel) -> Result<Clause, 
         return Err(unsupported("MySQL foreign keys cannot be deferred"));
     }
     if key.referenced_columns.is_empty() {
-        return Err(unsupported("A MySQL foreign key needs its referenced columns"));
+        return Err(unsupported(
+            "A MySQL foreign key needs its referenced columns",
+        ));
     }
     let referenced = qualified(
         key.referenced_schema.as_deref().unwrap_or(&table.schema),
@@ -710,7 +725,10 @@ fn positioned_columns(old: &TableModel, new: &TableModel) -> HashSet<Origin> {
             positioned.insert(*origin);
         }
     }
-    let last_existing = new.columns.iter().rposition(|column| !column.origin.is_new());
+    let last_existing = new
+        .columns
+        .iter()
+        .rposition(|column| !column.origin.is_new());
     for (index, column) in new.columns.iter().enumerate() {
         if column.origin.is_new() && last_existing.is_some_and(|last| index < last) {
             positioned.insert(column.origin);
@@ -735,7 +753,10 @@ fn column_clauses(
                 format!(" AFTER {}", ident(&new.columns[index - 1].name))
             }
         });
-        let clause = match old.column(column.origin).filter(|_| !column.origin.is_new()) {
+        let clause = match old
+            .column(column.origin)
+            .filter(|_| !column.origin.is_new())
+        {
             None => add_column(column, position, features)?,
             Some(previous) => match alter_column(previous, column, position, features)? {
                 Some(clause) => clause,
@@ -832,7 +853,10 @@ fn alter_column(
         )
     } else {
         (
-            format!("MODIFY COLUMN {} {definition}{position}", ident(&column.name)),
+            format!(
+                "MODIFY COLUMN {} {definition}{position}",
+                ident(&column.name)
+            ),
             format!("modify column {}", column.name),
         )
     };

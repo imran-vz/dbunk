@@ -3,8 +3,7 @@
 //! fixture rows; live round trips belong to the native fixture suite.
 use super::build::{self, object_id, CHECK_TAG, FOREIGN_KEY_TAG, INDEX_TAG, UNIQUE_TAG};
 use super::catalog::{
-    Catalog, CheckRow, ColumnRow, ConstraintRow, IndexRow, KeyColumnRow, ReferentialRow,
-    TableRow,
+    Catalog, CheckRow, ColumnRow, ConstraintRow, IndexRow, KeyColumnRow, ReferentialRow, TableRow,
 };
 use super::definition::{self, DefDefault};
 use super::executor::verify;
@@ -92,7 +91,14 @@ fn mysql_catalog() -> Catalog {
     );
     email.comment = "Login".into();
     let mut display = text_column(
-        column("display", 9, "varchar(201)", true, None, "VIRTUAL GENERATED"),
+        column(
+            "display",
+            9,
+            "varchar(201)",
+            true,
+            None,
+            "VIRTUAL GENERATED",
+        ),
         "utf8mb4",
         general,
     );
@@ -115,7 +121,11 @@ fn mysql_catalog() -> Catalog {
         columns: vec![
             column("id", 1, "bigint unsigned", false, None, "auto_increment"),
             email,
-            text_column(column("name", 3, "text", true, None, ""), "utf8mb4", general),
+            text_column(
+                column("name", 3, "text", true, None, ""),
+                "utf8mb4",
+                general,
+            ),
             column("org_id", 4, "bigint unsigned", true, None, ""),
             text_column(
                 column(
@@ -231,7 +241,14 @@ fn mariadb_catalog() -> Catalog {
             create_options: String::new(),
         },
         columns: vec![
-            column("id", 1, "bigint(20) unsigned", false, None, "auto_increment"),
+            column(
+                "id",
+                1,
+                "bigint(20) unsigned",
+                false,
+                None,
+                "auto_increment",
+            ),
             text_column(
                 column("email", 2, "varchar(100)", false, None, ""),
                 "utf8mb4",
@@ -279,7 +296,9 @@ fn reasons(baseline: &SchemaBaseline) -> Vec<String> {
 }
 
 fn has_reason(baseline: &SchemaBaseline, needle: &str) -> bool {
-    reasons(baseline).iter().any(|reason| reason.contains(needle))
+    reasons(baseline)
+        .iter()
+        .any(|reason| reason.contains(needle))
 }
 
 #[test]
@@ -295,7 +314,10 @@ fn versions_parse_and_gate() {
     assert_eq!((mariadb.major, mariadb.minor, mariadb.patch), (10, 6, 12));
     assert_eq!(mariadb.gate(), None);
     let prefixed = Version::parse("5.5.5-10.11.6-MariaDB").unwrap();
-    assert_eq!((prefixed.flavor, prefixed.major), (ServerFlavor::MariaDb, 10));
+    assert_eq!(
+        (prefixed.flavor, prefixed.major),
+        (ServerFlavor::MariaDb, 10)
+    );
     assert_eq!(Version::parse("garbage"), None);
 
     assert!(Version::parse("5.7.44").unwrap().gate().is_some());
@@ -360,7 +382,10 @@ fn literal_and_expression_defaults_are_told_apart() {
             Some(DefDefault::String("it's \\ x".into())),
         ]
     );
-    assert_eq!(parsed.columns[6].on_update.as_deref(), Some("current_timestamp()"));
+    assert_eq!(
+        parsed.columns[6].on_update.as_deref(),
+        Some("current_timestamp()")
+    );
     assert_eq!(parsed.columns[8].comment.as_deref(), Some("c"));
     assert!(parsed.unsupported.is_empty(), "{:?}", parsed.unsupported);
 
@@ -374,7 +399,10 @@ fn literal_and_expression_defaults_are_told_apart() {
         model[2],
         DefaultValue::Expression(SqlFragment::new("CURRENT_TIMESTAMP"))
     );
-    assert_eq!(model[3], DefaultValue::Expression(SqlFragment::new("(uuid())")));
+    assert_eq!(
+        model[3],
+        DefaultValue::Expression(SqlFragment::new("(uuid())"))
+    );
     assert_eq!(model[4], DefaultValue::None);
 }
 
@@ -407,7 +435,10 @@ fn show_create_parses_keys_constraints_and_options() {
         .iter()
         .find(|k| k.name.as_deref() == Some("users_lower_email"))
         .unwrap();
-    assert_eq!(functional.parts[0].expression.as_deref(), Some("lower(`email`)"));
+    assert_eq!(
+        functional.parts[0].expression.as_deref(),
+        Some("lower(`email`)")
+    );
     assert_eq!(parsed.foreign_keys[0].on_delete.as_deref(), Some("CASCADE"));
     assert_eq!(parsed.foreign_keys[0].on_update, None);
     assert_eq!(parsed.checks[0].expression, "(length(`email`) > 3)");
@@ -423,7 +454,12 @@ fn show_create_parses_keys_constraints_and_options() {
 #[test]
 fn mysql_capture_is_editable_and_complete() {
     let baseline = build::baseline("8.0.36", "app", "users", &mysql_catalog());
-    assert_eq!(baseline.editable, Editability::Editable, "{:?}", reasons(&baseline));
+    assert_eq!(
+        baseline.editable,
+        Editability::Editable,
+        "{:?}",
+        reasons(&baseline)
+    );
     assert_eq!(baseline.server.flavor, ServerFlavor::MySql);
     let table = &baseline.table;
     assert_eq!(table.columns.len(), 9);
@@ -434,7 +470,10 @@ fn mysql_capture_is_editable_and_complete() {
     assert_eq!(email.collation.as_deref(), Some("utf8mb4_bin"));
     assert_eq!(email.extra.charset.as_deref(), Some("utf8mb4"));
     assert_eq!(email.comment.as_deref(), Some("Login"));
-    assert_eq!(table.columns[4].default, DefaultValue::Literal("active".into()));
+    assert_eq!(
+        table.columns[4].default,
+        DefaultValue::Literal("active".into())
+    );
     assert_eq!(
         table.columns[5].default,
         DefaultValue::Expression(SqlFragment::new("CURRENT_TIMESTAMP"))
@@ -445,7 +484,10 @@ fn mysql_capture_is_editable_and_complete() {
     );
     let token = &table.columns[7];
     assert!(token.extra.invisible);
-    assert_eq!(token.default, DefaultValue::Expression(SqlFragment::new("(uuid())")));
+    assert_eq!(
+        token.default,
+        DefaultValue::Expression(SqlFragment::new("(uuid())"))
+    );
     let display = &table.columns[8];
     assert_eq!(
         display.generated,
@@ -455,7 +497,10 @@ fn mysql_capture_is_editable_and_complete() {
         })
     );
 
-    assert_eq!(table.primary_key.as_ref().unwrap().columns, vec![existing(1)]);
+    assert_eq!(
+        table.primary_key.as_ref().unwrap().columns,
+        vec![existing(1)]
+    );
     assert_eq!(table.uniques.len(), 1);
     assert_eq!(table.uniques[0].origin, object_id(UNIQUE_TAG, 1));
     assert_eq!(table.uniques[0].columns, vec![existing(2)]);
@@ -486,7 +531,10 @@ fn mysql_capture_is_editable_and_complete() {
 
     assert_eq!(table.options.engine.as_deref(), Some("InnoDB"));
     assert_eq!(table.options.charset.as_deref(), Some("utf8mb4"));
-    assert_eq!(table.options.collation.as_deref(), Some("utf8mb4_0900_ai_ci"));
+    assert_eq!(
+        table.options.collation.as_deref(),
+        Some("utf8mb4_0900_ai_ci")
+    );
     assert_eq!(table.options.row_format.as_deref(), Some("DYNAMIC"));
     assert_eq!(table.comment.as_deref(), Some("People"));
     assert_eq!(baseline.estimated_rows, Some(10));
@@ -501,7 +549,12 @@ fn mariadb_capture_is_editable() {
         "users",
         &mariadb_catalog(),
     );
-    assert_eq!(baseline.editable, Editability::Editable, "{:?}", reasons(&baseline));
+    assert_eq!(
+        baseline.editable,
+        Editability::Editable,
+        "{:?}",
+        reasons(&baseline)
+    );
     assert_eq!(baseline.server.flavor, ServerFlavor::MariaDb);
     assert!(!baseline.server.features.instant_add_column);
     let table = &baseline.table;
@@ -515,7 +568,10 @@ fn mariadb_capture_is_editable() {
         table.columns[3].extra.on_update,
         Some(SqlFragment::new("current_timestamp()"))
     );
-    assert_eq!(table.columns[4].default, DefaultValue::Literal("it's".into()));
+    assert_eq!(
+        table.columns[4].default,
+        DefaultValue::Literal("it's".into())
+    );
     assert_eq!(table.checks[0].expression, SqlFragment::new("`score` >= 0"));
     assert_eq!(table.options.row_format, None);
 }
@@ -540,9 +596,8 @@ fn disagreements_and_unsupported_features_make_the_baseline_read_only() {
 
     // Partitioning.
     let mut catalog = mysql_catalog();
-    catalog.create_table = format!(
-        "{MYSQL_DEFINITION}\n/*!50100 PARTITION BY HASH (`id`)\nPARTITIONS 4 */"
-    );
+    catalog.create_table =
+        format!("{MYSQL_DEFINITION}\n/*!50100 PARTITION BY HASH (`id`)\nPARTITIONS 4 */");
     catalog.table.create_options = "partitioned".into();
     let baseline = build::baseline("8.0.36", "app", "users", &catalog);
     assert!(has_reason(&baseline, "Partitioned"));
@@ -574,7 +629,11 @@ fn disagreements_and_unsupported_features_make_the_baseline_read_only() {
         level: "Column".into(),
     });
     let baseline = build::baseline("10.6.12-MariaDB", "app", "users", &catalog);
-    assert!(has_reason(&baseline, "Column-level CHECK"), "{:?}", reasons(&baseline));
+    assert!(
+        has_reason(&baseline, "Column-level CHECK"),
+        "{:?}",
+        reasons(&baseline)
+    );
 
     // Unparseable definition.
     let mut catalog = mysql_catalog();
@@ -606,14 +665,24 @@ fn drift_token_tracks_structure_not_row_counts() {
 
     let mut rows = mysql_catalog();
     rows.table.rows = Some(1_000_000);
-    rows.create_table = rows.create_table.replace("AUTO_INCREMENT=42", "AUTO_INCREMENT=99");
-    assert_eq!(build::baseline("8.0.36", "app", "users", &rows).drift, first.drift);
+    rows.create_table = rows
+        .create_table
+        .replace("AUTO_INCREMENT=42", "AUTO_INCREMENT=99");
+    assert_eq!(
+        build::baseline("8.0.36", "app", "users", &rows).drift,
+        first.drift
+    );
 
     let mut changed = mysql_catalog();
     changed.columns[1].comment = "Sign-in".into();
     changed.create_table = changed.create_table.replace("'Login'", "'Sign-in'");
     let changed = build::baseline("8.0.36", "app", "users", &changed);
-    assert_eq!(changed.editable, Editability::Editable, "{:?}", reasons(&changed));
+    assert_eq!(
+        changed.editable,
+        Editability::Editable,
+        "{:?}",
+        reasons(&changed)
+    );
     assert_ne!(changed.drift, first.drift);
 }
 
@@ -707,7 +776,10 @@ fn verification_reports_structural_mismatches() {
     captured.table.uniques.clear();
     let problems = verify(&baseline, &draft, &captured);
     assert!(problems.iter().any(|p| p.contains("email")), "{problems:?}");
-    assert!(problems.iter().any(|p| p.contains("users_email_key")), "{problems:?}");
+    assert!(
+        problems.iter().any(|p| p.contains("users_email_key")),
+        "{problems:?}"
+    );
 
     let mut captured = baseline.clone();
     captured.table.columns.swap(1, 2);

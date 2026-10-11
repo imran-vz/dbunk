@@ -349,33 +349,35 @@ fn shapes(table: &TableModel) -> Vec<IndexShape> {
             parts: key.columns.iter().map(|origin| column(*origin)).collect(),
         })
         .collect();
-    shapes.extend(table.indexes.iter().map(|index| IndexShape {
-        name: Some(index.name.clone()),
-        unique: index.unique,
-        method: index
-            .method
-            .clone()
-            .unwrap_or_else(|| "BTREE".into())
-            .to_ascii_uppercase(),
-        parts: index
-            .members
-            .iter()
-            .map(|member| {
-                let mut part = match &member.target {
-                    IndexTarget::Column(origin) => column(*origin),
-                    IndexTarget::Expression(expression) => {
-                        format!("({})", loose_expression(expression.as_str()))
+    shapes.extend(table.indexes.iter().map(|index| {
+        IndexShape {
+            name: Some(index.name.clone()),
+            unique: index.unique,
+            method: index
+                .method
+                .clone()
+                .unwrap_or_else(|| "BTREE".into())
+                .to_ascii_uppercase(),
+            parts: index
+                .members
+                .iter()
+                .map(|member| {
+                    let mut part = match &member.target {
+                        IndexTarget::Column(origin) => column(*origin),
+                        IndexTarget::Expression(expression) => {
+                            format!("({})", loose_expression(expression.as_str()))
+                        }
+                    };
+                    if let Some(length) = member.prefix_length {
+                        part.push_str(&format!("({length})"));
                     }
-                };
-                if let Some(length) = member.prefix_length {
-                    part.push_str(&format!("({length})"));
-                }
-                if member.descending {
-                    part.push_str(" desc");
-                }
-                part
-            })
-            .collect(),
+                    if member.descending {
+                        part.push_str(" desc");
+                    }
+                    part
+                })
+                .collect(),
+        }
     }));
     shapes
 }
@@ -404,10 +406,30 @@ pub(super) fn verify(
         problems.push("table comment differs".into());
     }
     for (what, before, wanted, found) in [
-        ("engine", &old.options.engine, &want.options.engine, &got.options.engine),
-        ("character set", &old.options.charset, &want.options.charset, &got.options.charset),
-        ("collation", &old.options.collation, &want.options.collation, &got.options.collation),
-        ("row format", &old.options.row_format, &want.options.row_format, &got.options.row_format),
+        (
+            "engine",
+            &old.options.engine,
+            &want.options.engine,
+            &got.options.engine,
+        ),
+        (
+            "character set",
+            &old.options.charset,
+            &want.options.charset,
+            &got.options.charset,
+        ),
+        (
+            "collation",
+            &old.options.collation,
+            &want.options.collation,
+            &got.options.collation,
+        ),
+        (
+            "row format",
+            &old.options.row_format,
+            &want.options.row_format,
+            &got.options.row_format,
+        ),
     ] {
         if wanted != before
             && !wanted
@@ -434,7 +456,9 @@ pub(super) fn verify(
         ));
     } else {
         for (wanted, found) in want.columns.iter().zip(&got.columns) {
-            let before = old.column(wanted.origin).filter(|_| !wanted.origin.is_new());
+            let before = old
+                .column(wanted.origin)
+                .filter(|_| !wanted.origin.is_new());
             column_problems(&mut problems, before, wanted, found);
         }
     }
@@ -568,8 +592,10 @@ pub(super) fn verify(
         let position = found_checks.iter().position(|found| {
             found.is_some_and(|found| match &check.name {
                 Some(name) => found.name.as_deref().is_some_and(|n| same_name(n, name)),
-                None => loose_expression(found.expression.as_str())
-                    == loose_expression(check.expression.as_str()),
+                None => {
+                    loose_expression(found.expression.as_str())
+                        == loose_expression(check.expression.as_str())
+                }
             })
         });
         let Some(found) = position.and_then(|position| found_checks[position].take()) else {
