@@ -277,7 +277,7 @@ fn within_budget(snapshot: &WorkspaceSnapshot) -> Result<(), WorkspaceError> {
         Count(0),
         &Envelope {
             // Matches the backend envelope; only its encoded width matters.
-            version: 16,
+            version: 17,
             snapshot,
         },
     )
