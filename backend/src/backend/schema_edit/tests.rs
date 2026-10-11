@@ -163,3 +163,24 @@ fn apply_errors_after_queueing_are_unknown_outcomes() {
         SchemaEditError::OutcomeUnavailable
     );
 }
+
+/// Native spawns these on the tokio runtime and inside `BoxFuture`s, so they
+/// must be `Send + 'static` for every engine. Compile-time only.
+#[allow(dead_code, clippy::extra_unused_type_parameters)]
+fn facade_futures_are_send() {
+    fn send<T: Send + 'static>(_: T) {}
+    fn check(
+        backend: Backend,
+        source: SchemaEditSource,
+        review: SchemaEditReview,
+        confirmation: SchemaEditConfirmation,
+    ) {
+        let request = SchemaEditRequest::new("s", "t");
+        let b = backend.clone();
+        send(async move { b.observe_schema_edit(source, request).await });
+        let b = backend.clone();
+        send(async move { b.apply_schema_edit(review).await });
+        send(async move { backend.confirm_schema_edit(confirmation).await });
+    }
+    let _ = check;
+}
