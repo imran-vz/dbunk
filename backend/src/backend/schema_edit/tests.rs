@@ -68,12 +68,21 @@ fn journal_validates_preview_structure_but_not_its_rendering() {
 }
 
 fn session_config(path: &str, read_only: bool, safe_mode: SafeMode) -> SqliteSessionConfig {
+    session_config_in(path, read_only, safe_mode, Environment::Development)
+}
+
+fn session_config_in(
+    path: &str,
+    read_only: bool,
+    safe_mode: SafeMode,
+    environment: Environment,
+) -> SqliteSessionConfig {
     SqliteSessionConfig {
         connection_id: "schema-edit-test".into(),
         path: path.into(),
         read_only,
         policy: resolve_policy(ConnectionPolicy {
-            environment: Environment::Development,
+            environment,
             safe_mode,
             read_only,
         }),
@@ -126,6 +135,101 @@ async fn read_only_sqlite_session_refuses_apply_before_dispatch() {
         .await
         .unwrap();
     assert_eq!(structure.columns.len(), 2);
+    session
+        .close(std::time::Duration::from_secs(5))
+        .await
+        .unwrap();
+}
+
+async fn backend() -> (tempfile::TempDir, Backend) {
+    let directory = crate::backend::profile::directory();
+    let backend = Backend::open_fixture(&directory.path().canonicalize().unwrap())
+        .await
+        .unwrap();
+    (directory, backend)
+}
+
+/// Observes `users` through the facade and reviews adding a column.
+async fn review_add_column(backend: &Backend, session: &Arc<SqliteSession>) -> SchemaEditReview {
+    let target = backend
+        .observe_schema_edit(
+            SchemaEditSource::Sqlite(session.clone()),
+            SchemaEditRequest::new("main", "users"),
+        )
+        .await
+        .unwrap();
+    let mut draft = SchemaDraft::from_baseline(&target.baseline);
+    draft.add_column("nickname", "TEXT");
+    backend
+        .review_schema_edit(target, draft, PlanOptions::default())
+        .unwrap_or_else(|refusal| panic!("{:?}", refusal.error))
+}
+
+async fn column_count(session: &SqliteSession) -> usize {
+    session
+        .structure(session.ticket(), "main".into(), "users".into())
+        .await
+        .unwrap()
+        .columns
+        .len()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn strict_policy_needs_confirmation_before_dispatch_then_applies() {
+    let (_profile, backend) = backend().await;
+    for (safe_mode, environment) in [
+        (SafeMode::Inherit, Environment::Production),
+        (SafeMode::Strict, Environment::Development),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = database(&dir).await;
+        let session = Arc::new(
+            SqliteSession::open(session_config_in(&path, false, safe_mode, environment))
+                .await
+                .unwrap(),
+        );
+        let review = review_add_column(&backend, &session).await;
+        let confirmation = match backend.apply_schema_edit(review).await.unwrap() {
+            SchemaEditSubmission::NeedsConfirmation(confirmation) => confirmation,
+            SchemaEditSubmission::Finished(receipt) => {
+                panic!(
+                    "{safe_mode:?}: applied without confirmation: {:?}",
+                    receipt.outcome
+                )
+            }
+        };
+        assert_eq!(column_count(&session).await, 2, "{safe_mode:?}");
+        match backend.confirm_schema_edit(*confirmation).await.unwrap() {
+            SchemaEditSubmission::Finished(receipt) => {
+                assert!(receipt.outcome.applied(), "{:?}", receipt.outcome)
+            }
+            SchemaEditSubmission::NeedsConfirmation(_) => panic!("confirmed apply asked again"),
+        }
+        assert_eq!(column_count(&session).await, 3);
+        session
+            .close(std::time::Duration::from_secs(5))
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_review_whose_preview_no_longer_renders_the_same_is_refused() {
+    let (_profile, backend) = backend().await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = database(&dir).await;
+    let session = Arc::new(
+        SqliteSession::open(session_config(&path, false, SafeMode::Inherit))
+            .await
+            .unwrap(),
+    );
+    let mut review = review_add_column(&backend, &session).await;
+    review.preview.statements[0].sql = "DROP TABLE \"main\".\"users\"".into();
+    assert!(matches!(
+        backend.apply_schema_edit(review).await,
+        Err(SchemaEditError::PreviewChanged)
+    ));
+    assert_eq!(column_count(&session).await, 2);
     session
         .close(std::time::Duration::from_secs(5))
         .await
