@@ -1133,3 +1133,35 @@ fn row_view_data_is_precomputed_per_edit() {
         "an empty check expression is a problem"
     );
 }
+
+#[test]
+fn using_text_reaches_review_only_for_a_retyped_existing_postgres_column() {
+    let mut pg = model(PG);
+    let name = Target::Column(existing(3));
+    assert!(pg.inputs(name).contains(&Input::Using));
+    // A planner option: typing it leaves the draft unchanged.
+    assert_eq!(
+        pg.set_input(name, Input::Using, " trim(name)::integer "),
+        Ok(false)
+    );
+    assert_eq!(pg.input_value(name, Input::Using), "trim(name)::integer");
+    // Not sent while the type is unchanged.
+    assert!(pg.plan_options().type_conversions.is_empty());
+    assert_eq!(pg.set_input(name, Input::DataType, "integer"), Ok(true));
+    assert_eq!(
+        pg.plan_options().type_conversions,
+        vec![TypeConversion {
+            column: existing(3),
+            using: SqlFragment::new("trim(name)::integer"),
+        }]
+    );
+    // Clearing the text removes it.
+    pg.set_input(name, Input::Using, "  ").unwrap();
+    assert!(pg.plan_options().type_conversions.is_empty());
+
+    // New columns and other engines never offer it.
+    let added = pg.add_column();
+    assert!(!pg.inputs(added).contains(&Input::Using));
+    let mysql = model(SchemaEngine::MySql);
+    assert!(!mysql.inputs(name).contains(&Input::Using));
+}

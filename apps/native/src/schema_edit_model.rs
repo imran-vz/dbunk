@@ -7,9 +7,9 @@
 use dbunk_lib::backend::schema_edit::{
     ChangeGroup, ChangeKind, CheckModel, ColumnModel, DefaultValue, Deferrable, Destructive,
     DraftIssue, Editability, Field, ForeignKeyModel, Generated, Identity, IndexModel, KeyModel,
-    Origin, RebaseConflict, ReferentialAction, SchemaBaseline, SchemaChange, SchemaChangeSet,
-    SchemaDraft, SchemaEditRequest, SchemaEngine, SchemaObject, SqlFragment, TableModel, diff,
-    rebase as rebase_draft, same_name, validate,
+    Origin, PlanOptions, RebaseConflict, ReferentialAction, SchemaBaseline, SchemaChange,
+    SchemaChangeSet, SchemaDraft, SchemaEditRequest, SchemaEngine, SchemaObject, SqlFragment,
+    TableModel, TypeConversion, diff, rebase as rebase_draft, same_name, types_equal, validate,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -269,6 +269,8 @@ pub struct Capabilities {
     pub sqlite_options: bool,
     /// MySQL engine, character set, collation and row format.
     pub mysql_options: bool,
+    /// PostgreSQL `USING` for a type change.
+    pub using: bool,
 }
 
 impl Capabilities {
@@ -292,6 +294,7 @@ impl Capabilities {
             referenced_schema: !sqlite,
             sqlite_options: sqlite,
             mysql_options: mysql,
+            using: postgres,
         }
     }
     /// Identity kinds per engine: PostgreSQL identity columns, MySQL
@@ -370,6 +373,9 @@ pub enum Input {
     Predicate,
     Engine,
     RowFormat,
+    /// PostgreSQL `USING` for an existing column's type change. A planner
+    /// option, not part of the draft.
+    Using,
 }
 
 impl Input {
@@ -394,6 +400,7 @@ impl Input {
             Self::Predicate => "Predicate (WHERE)",
             Self::Engine => "Engine",
             Self::RowFormat => "Row format",
+            Self::Using => "Convert values (USING)",
         }
     }
     /// Multi-line editors for expressions and comments.
@@ -410,6 +417,7 @@ impl Input {
             Self::ReferencedColumns => Some("Names in the referenced table, comma separated"),
             Self::Members => Some("Columns or (expression), optional DESC"),
             Self::ReferencedSchema => Some("Empty means this table's schema"),
+            Self::Using => Some("Used when the type changes, e.g. trim(name)::integer"),
             _ => None,
         }
     }
@@ -418,7 +426,7 @@ impl Input {
         Attr::Field(match self {
             Self::Name => return Attr::Name,
             Self::Comment => Field::Comment,
-            Self::DataType => Field::DataType,
+            Self::DataType | Self::Using => Field::DataType,
             Self::Default => Field::Default,
             Self::Generated => Field::Generated,
             Self::Collation => Field::Collation,
@@ -509,6 +517,9 @@ pub struct SchemaEditModel {
     /// draft's value was kept. Informational: they never block review.
     conflicts: Vec<RebaseConflict>,
     view: View,
+    /// `USING` text by column, offered to review for columns whose type
+    /// the draft changes. In memory only; not journaled with the draft.
+    conversions: HashMap<Origin, String>,
 }
 
 impl SchemaEditModel {
@@ -533,6 +544,7 @@ impl SchemaEditModel {
             issues: Vec::new(),
             conflicts: Vec::new(),
             view: View::default(),
+            conversions: HashMap::new(),
         };
         model.recompute();
         model
@@ -968,13 +980,12 @@ impl SchemaEditModel {
                     ]);
                 }
             }
-            Target::Column(_) => {
-                inputs.extend([
-                    Input::DataType,
-                    Input::Default,
-                    Input::Generated,
-                    Input::Collation,
-                ]);
+            Target::Column(origin) => {
+                inputs.push(Input::DataType);
+                if caps.using && !origin.is_new() {
+                    inputs.push(Input::Using);
+                }
+                inputs.extend([Input::Default, Input::Generated, Input::Collation]);
                 if caps.charset {
                     inputs.push(Input::Charset);
                 }
@@ -1068,6 +1079,7 @@ impl SchemaEditModel {
                         .map(|sql| sql.0.clone())
                         .unwrap_or_default(),
                     Input::Comment => text(&column.comment),
+                    Input::Using => self.conversions.get(&o).cloned().unwrap_or_default(),
                     _ => String::new(),
                 }
             }
@@ -1137,6 +1149,17 @@ impl SchemaEditModel {
         }
         if !self.in_draft(target) {
             return Err("Restore this object before editing it".into());
+        }
+        if input == Input::Using {
+            let Target::Column(origin) = target else {
+                return Err("USING applies to a column".into());
+            };
+            match text.trim() {
+                "" => self.conversions.remove(&origin),
+                using => self.conversions.insert(origin, using.to_owned()),
+            };
+            // A planner option: the draft is unchanged.
+            return Ok(false);
         }
         let engine = self.caps.engine;
         let before = self.draft.table.clone();
@@ -1269,6 +1292,37 @@ impl SchemaEditModel {
             self.recompute();
         }
         Ok(changed)
+    }
+
+    /// Options review starts from: the `USING` text of every existing
+    /// column whose type the draft changes. Text left on a column whose type
+    /// is back to the captured one is not sent.
+    pub fn plan_options(&self) -> PlanOptions {
+        let type_conversions = if self.caps.using {
+            self.draft
+                .table
+                .columns
+                .iter()
+                .filter_map(|column| {
+                    let using = self.conversions.get(&column.origin)?;
+                    let before = self
+                        .baseline
+                        .table
+                        .column(column.origin)
+                        .filter(|_| !column.origin.is_new())?;
+                    (!types_equal(&before.data_type, &column.data_type)).then(|| TypeConversion {
+                        column: column.origin,
+                        using: SqlFragment::new(using.clone()),
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        PlanOptions {
+            type_conversions,
+            ..PlanOptions::default()
+        }
     }
 
     // -- Choices -------------------------------------------------------------

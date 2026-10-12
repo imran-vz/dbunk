@@ -122,13 +122,17 @@ impl SchemaEditView {
         }
         // The journal is coalesced while editing; never review ahead of it.
         self.flush_journal(cx);
-        let Some(draft) = self.model.as_ref().map(|model| model.draft().clone()) else {
+        let Some((draft, options)) = self
+            .model
+            .as_ref()
+            .map(|model| (model.draft().clone(), model.plan_options()))
+        else {
             return;
         };
         let Some(target) = self.target.take() else {
             return;
         };
-        self.review_with(target, draft, PlanOptions::default(), window, cx);
+        self.review_with(target, draft, options, window, cx);
     }
 
     fn review_with(

@@ -1,6 +1,6 @@
 # Plan 033: Schema editor and schema change diff (PostgreSQL, MySQL, SQLite)
 
-**Status:** Phases 0 and 1 implemented on `t3/schema-editor-diff`; phase 2's code is merged but its verification (`just check-native`, native lint and tests, the `just dev-native` walkthrough, MariaDB live runs) waits for the merge to main. Phase 3 in part: rebase on drift, OutcomeUnknown recovery for PostgreSQL drafts, large-table notes; no dedicated keyboard and accessibility pass yet. Not done: `USING` for PostgreSQL type changes, cancellation during apply (#45), MySQL/SQLite draft persistence (#46), MariaDB live tests (#47), phase 4 (#48).
+**Status:** Phases 0 and 1 implemented on `t3/schema-editor-diff`; phase 2's code is merged but its verification (`just check-native`, native lint and tests, the `just dev-native` walkthrough, MariaDB live runs) waits for the merge to main. Phase 3 in part: rebase on drift, OutcomeUnknown recovery for PostgreSQL drafts, large-table notes; no dedicated keyboard and accessibility pass yet. PostgreSQL type changes take an optional reviewed `USING` (inspector field, planner option, not journaled with the draft). Not done: cancellation during apply (#45), MySQL/SQLite draft persistence (#46), MariaDB live tests (#47), phase 4 (#48).
 **Decisions taken:** `sqlparser-rs` is approved as a backend dependency. MySQL
 8.0+ and MariaDB 10.6+ are editable; older servers stay read-only. Build the
 shared base first, then implement all three engines in parallel.
