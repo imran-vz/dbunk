@@ -716,6 +716,64 @@ async fn foreign_key_violations_roll_back_and_foreign_keys_are_restored() {
 }
 
 #[tokio::test]
+async fn new_foreign_keys_are_checked_even_when_keys_are_not_enforced() {
+    let mut db = open(
+        "CREATE TABLE parent (id INTEGER PRIMARY KEY);
+         CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER, other_id INTEGER REFERENCES parent(id), note TEXT);
+         INSERT INTO parent VALUES (1);
+         INSERT INTO child VALUES (1, 1, 1, 'ok'), (2, 99, 98, 'orphan');",
+    )
+    .await;
+    assert_eq!(db.pragma("foreign_keys").await, 0);
+    let add_key = |draft: &mut SchemaDraft| {
+        let origin = draft.new_origin();
+        let parent_id = column(draft, "parent_id");
+        draft.table.foreign_keys.push(ForeignKeyModel {
+            origin,
+            name: None,
+            columns: vec![parent_id],
+            referenced_schema: None,
+            referenced_table: "parent".into(),
+            referenced_columns: vec!["id".into()],
+            on_update: ReferentialAction::NoAction,
+            on_delete: ReferentialAction::NoAction,
+            deferrable: Deferrable::Never,
+        });
+    };
+
+    // The new key does not hold for the orphan row.
+    let baseline = db.capture("child").await;
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    add_key(&mut draft);
+    let outcome = db.apply(&baseline, &draft).await;
+    assert_eq!(
+        outcome,
+        SchemaEditOutcome::RolledBack {
+            reason: SchemaEditFailure::ForeignKeyViolation
+        }
+    );
+    db.unchanged(&baseline).await;
+    assert_eq!(db.pragma("foreign_keys").await, 0);
+
+    // A rebuild that keeps the existing, already violated key as it was
+    // is not blocked by it.
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft
+        .table
+        .column_mut(column(&draft, "note"))
+        .unwrap()
+        .data_type = "varchar(20)".into();
+    let baseline = db.round_trip(&baseline, &draft).await;
+
+    // Once the parent row exists, the key is added.
+    db.run("INSERT INTO parent VALUES (99)").await;
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    add_key(&mut draft);
+    db.round_trip(&baseline, &draft).await;
+    assert_eq!(db.pragma("foreign_keys").await, 0);
+}
+
+#[tokio::test]
 async fn an_open_user_transaction_is_refused_and_left_open() {
     let mut db = open(ITEMS).await;
     let baseline = db.capture("items").await;

@@ -8,7 +8,8 @@
 //!    whatever the outcome.
 //! 3. `BEGIN IMMEDIATE`, then recheck the drift token.
 //! 4. Run the statements in order.
-//! 5. Verify before COMMIT: `foreign_key_check` when keys were enforced,
+//! 5. Verify before COMMIT: `foreign_key_check` when keys were enforced (or,
+//!    when they were not, for the keys the draft adds or changes),
 //!    `quick_check` on the table, and a re-capture compared with the draft.
 //! 6. COMMIT. Any failure rolls back; the table is unchanged.
 //!
@@ -20,8 +21,8 @@ use super::planner::{expected_table, is_rebuild};
 use super::verify::compare_tables;
 use super::{parse_version, quote};
 use crate::schema_edit::{
-    Editability, SchemaBaseline, SchemaDraft, SchemaEditFailure, SchemaEditOutcome,
-    SchemaEditPreview,
+    Editability, ForeignKeyModel, Origin, SchemaBaseline, SchemaDraft, SchemaEditFailure,
+    SchemaEditOutcome, SchemaEditPreview, TableModel,
 };
 use futures_util::future::BoxFuture;
 use sqlx::{Row, SqliteConnection};
@@ -286,6 +287,121 @@ fn read_failure(error: sqlx::Error) -> SchemaEditFailure {
     }
 }
 
+/// A foreign key as `foreign_key_list` names it: referenced table, local
+/// columns, referenced columns (empty for the primary key), case-folded.
+type KeySignature = (String, Vec<String>, Vec<String>);
+
+fn signature(table: &str, from: &[String], to: &[String]) -> KeySignature {
+    let fold = |names: &[String]| names.iter().map(|n| n.to_ascii_lowercase()).collect();
+    (table.to_ascii_lowercase(), fold(from), fold(to))
+}
+
+/// Signatures of the keys the draft carries over unchanged, or `None` when
+/// it keeps every key that way. A key is unchanged when its columns and
+/// target are as captured and none of its columns changed type (a new
+/// affinity can convert the copied values).
+fn kept_keys(
+    baseline: &SchemaBaseline,
+    draft: &SchemaDraft,
+    expected: &TableModel,
+) -> Option<Vec<KeySignature>> {
+    let old = &baseline.table;
+    let unchanged = |key: &ForeignKeyModel| {
+        let drafted = draft.table.foreign_key(key.origin);
+        let before = old.foreign_key(key.origin);
+        match (drafted, before) {
+            (Some(drafted), Some(before)) => {
+                drafted.columns == before.columns
+                    && drafted.referenced_table == before.referenced_table
+                    && drafted.referenced_columns == before.referenced_columns
+                    && drafted.columns.iter().all(|origin| {
+                        match (draft.table.column(*origin), old.column(*origin)) {
+                            (Some(now), Some(then)) => now.data_type == then.data_type,
+                            _ => false,
+                        }
+                    })
+            }
+            _ => false,
+        }
+    };
+    if expected.foreign_keys.iter().all(unchanged) {
+        return None;
+    }
+    let names = |origins: &[Origin]| -> Vec<String> {
+        origins
+            .iter()
+            .filter_map(|origin| expected.column(*origin).map(|c| c.name.clone()))
+            .collect()
+    };
+    Some(
+        expected
+            .foreign_keys
+            .iter()
+            .filter(|key| unchanged(key))
+            .map(|key| {
+                signature(
+                    &key.referenced_table,
+                    &names(&key.columns),
+                    &key.referenced_columns,
+                )
+            })
+            .collect(),
+    )
+}
+
+/// `foreign_key_check` on the rebuilt table, failing on a violation of any
+/// key not in `kept`.
+async fn new_key_violations(
+    connection: &mut SqliteConnection,
+    schema: &str,
+    table: &str,
+    kept: &[KeySignature],
+) -> Result<(), SchemaEditFailure> {
+    type KeyRow = (i64, String, String, Option<String>);
+    let rows = sqlx::query_as::<_, KeyRow>(
+        "SELECT id, \"table\", \"from\", \"to\" \
+         FROM pragma_foreign_key_list(?1, ?2) ORDER BY id, seq",
+    )
+    .persistent(false)
+    .bind(table)
+    .bind(schema)
+    .fetch_all(&mut *connection)
+    .await
+    .map_err(read_failure)?;
+    let mut keys: Vec<(i64, String, Vec<String>, Vec<String>)> = Vec::new();
+    for (id, referenced, from, to) in rows {
+        match keys.last_mut() {
+            Some((last, _, froms, tos)) if *last == id => {
+                froms.push(from);
+                tos.extend(to);
+            }
+            _ => keys.push((id, referenced, vec![from], to.into_iter().collect())),
+        }
+    }
+    let violated = sqlx::query(&format!(
+        "PRAGMA {}.foreign_key_check({})",
+        quote(schema),
+        quote(table)
+    ))
+    .persistent(false)
+    .fetch_all(&mut *connection)
+    .await
+    .map_err(read_failure)?;
+    for row in violated {
+        let fkid: i64 = row.try_get(3).map_err(read_failure)?;
+        let known =
+            keys.iter()
+                .find(|(id, ..)| *id == fkid)
+                .is_some_and(|(_, referenced, from, to)| {
+                    kept.contains(&signature(referenced, from, to))
+                });
+        if !known {
+            return Err(SchemaEditFailure::ForeignKeyViolation);
+        }
+    }
+    Ok(())
+}
+
 /// Step 5, inside the transaction.
 async fn verify(
     connection: &mut SqliteConnection,
@@ -295,6 +411,7 @@ async fn verify(
 ) -> Result<(), SchemaEditFailure> {
     let schema = baseline.table.schema.as_str();
     let table = draft.table.name.as_str();
+    let expected = expected_table(baseline, draft);
     if foreign_keys {
         // This table's own keys, and every table whose keys reference it.
         let mut checked: Vec<&str> = vec![table];
@@ -320,6 +437,11 @@ async fn verify(
                 return Err(SchemaEditFailure::ForeignKeyViolation);
             }
         }
+    } else if let Some(kept) = kept_keys(baseline, draft, &expected) {
+        // Unenforced keys are the user's choice, but a key this edit adds or
+        // changes must hold for the rows it copied. Keys carried over as they
+        // were keep whatever rows they already had.
+        new_key_violations(connection, schema, table, &kept).await?;
     }
     // `quick_check(table)` exists from SQLite 3.33.
     if parse_version(&baseline.server.version) >= (3, 33, 0) {
@@ -358,7 +480,6 @@ async fn verify(
             reasons.join("; ")
         )));
     }
-    let expected = expected_table(baseline, draft);
     compare_tables(&expected, &recaptured.table).map_err(verification)?;
     // A rebuild must leave no trace of its temporary table.
     let leftover = sqlx::query_scalar::<_, i64>(&format!(
