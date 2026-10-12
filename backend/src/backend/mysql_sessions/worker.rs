@@ -180,10 +180,24 @@ impl Worker {
             }
             // A schema apply runs on its own connection and its DDL may
             // already be committing; abandoning it would skip the audit and
-            // hide the outcome, so it always runs to completion (its own
-            // timeouts bound it) and retirement takes effect afterwards.
-            let outcome = if matches!(request, Request::SchemaApply(_)) {
-                self.handle(request).await
+            // hide the outcome, so it always runs to completion. Retirement
+            // (and a cancel, through the tracker) stops it instead: the
+            // running statement gets `KILL QUERY` and no further one runs,
+            // and retirement takes effect once it reports.
+            let outcome = if let Request::SchemaApply(edit) = request {
+                let (stop, stopped) = watch::channel(false);
+                self.tracker.lock().await.stop_apply = Some(stop.clone());
+                let work = self.schema_apply(*edit, stopped);
+                tokio::pin!(work);
+                let applied = tokio::select! {
+                    biased;
+                    applied = &mut work => applied,
+                    _ = retired.wait_for(|retired| *retired) => {
+                        stop.send_replace(true);
+                        work.await
+                    }
+                };
+                Ok(Reply::SchemaApply(applied))
             } else {
                 tokio::select! {
                     biased;
@@ -251,7 +265,7 @@ impl Worker {
                     ))),
                 }
             }
-            Request::SchemaApply(edit) => Ok(Reply::SchemaApply(self.schema_apply(*edit).await)),
+            Request::SchemaApply(_) => unreachable!("handled by the run loop"),
             request => self.bounded_metadata(request).await,
         }
     }
@@ -259,7 +273,11 @@ impl Worker {
     /// Plan 033: policy first (nothing runs on a refusal), then the engine
     /// executor on its own connection. Confirmed overrides are audited once
     /// the change may have run.
-    async fn schema_apply(&mut self, edit: super::SchemaApplyRequest) -> SessionApply {
+    async fn schema_apply(
+        &mut self,
+        edit: super::SchemaApplyRequest,
+        stop: watch::Receiver<bool>,
+    ) -> SessionApply {
         let policy = crate::safety::gate::resolved_policy(&self.resolved);
         let authorization = match assert_permitted(&policy, &WriteIntent::Ddl, edit.confirmed) {
             Ok(authorization) => authorization,
@@ -268,11 +286,12 @@ impl Worker {
             }
             Err(SafetyRefusal::NeedsConfirmation { .. }) => return SessionApply::NeedsConfirmation,
         };
-        let outcome = crate::schema_edit::mysql::execute(
+        let outcome = crate::schema_edit::mysql::execute_until(
             &self.kill.0,
             &edit.baseline,
             &edit.draft,
             &edit.preview,
+            stop,
         )
         .await;
         if outcome.may_have_changed() {
@@ -1038,11 +1057,19 @@ pub(super) async fn cancel(
     tracker: &Mutex<Tracker>,
     id: u64,
 ) -> Result<MySqlCancel, String> {
-    let target = tracker.lock().await.cancel(id);
-    match target {
-        Target::Queued => return Ok(MySqlCancel::Withdrawn),
-        Target::Idle => return Ok(MySqlCancel::Finished),
-        Target::Running => {}
+    let stop_apply = {
+        let mut tracker = tracker.lock().await;
+        match tracker.cancel(id) {
+            Target::Queued => return Ok(MySqlCancel::Withdrawn),
+            Target::Idle => return Ok(MySqlCancel::Finished),
+            Target::Running => tracker.stop_apply.clone(),
+        }
+    };
+    // A schema apply's statement runs on its own connection; its executor
+    // sends the `KILL QUERY` to that thread.
+    if let Some(stop) = stop_apply {
+        stop.send_replace(true);
+        return Ok(MySqlCancel::Interrupted);
     }
     if thread == 0 {
         return Err(UNKNOWN_THREAD.into());

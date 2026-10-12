@@ -570,6 +570,20 @@ fn definite(reason: &Failure) -> bool {
     )
 }
 
+/// A COMMIT the server refused with an error reply (a deferred constraint,
+/// a serialization failure): PostgreSQL has rolled the transaction back.
+/// Connection-class and shutdown errors (`08`, `57P`) are excluded: the
+/// connection is ending and nothing proves the commit did not happen.
+fn commit_refused(reason: &Failure) -> bool {
+    match reason {
+        Failure::Database { code, .. } => !code
+            .as_deref()
+            .is_some_and(|code| code.starts_with("08") || code.starts_with("57P")),
+        Failure::LockTimeout | Failure::Timeout => true,
+        _ => false,
+    }
+}
+
 async fn atomic_group(
     socket: &mut impl Transport,
     permit: &WritePermit,
@@ -618,7 +632,8 @@ async fn atomic_group(
     }
 }
 
-/// `Err((true, _))` means COMMIT was sent and its result is unknown.
+/// `Err((true, _))` means COMMIT was sent and its result is unknown. A COMMIT
+/// the server refused is `Err((false, _))`: it rolled back.
 #[allow(clippy::too_many_arguments)]
 async fn transaction(
     socket: &mut impl Transport,
@@ -678,14 +693,17 @@ async fn transaction(
     if !permit.admit_commit() {
         return Err((false, Failure::Cancelled));
     }
+    let committed = |result: Result<(), Failure>| {
+        result.map_err(|failure| (!commit_refused(&failure), failure))
+    };
     let commit = socket.execute("COMMIT");
     tokio::pin!(commit);
     tokio::select! {
         biased;
-        result = &mut commit => result.map_err(|failure| (true, failure)),
+        result = &mut commit => committed(result),
         _ = tokio::time::sleep_until(deadline) => Err((true, Failure::Timeout)),
         _ = cancellation.changed() => match tokio::time::timeout_at(Instant::now() + CLEANUP_GRACE, &mut commit).await {
-            Ok(result) => result.map_err(|failure| (true, failure)),
+            Ok(result) => committed(result),
             Err(_) => Err((true, Failure::Cancelled)),
         }
     }

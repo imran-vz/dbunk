@@ -102,14 +102,46 @@ pub(super) async fn drift_token(
     Ok(DriftToken(format!("schema_version:{version}")))
 }
 
+/// Captures read again when the schema changed mid-read.
+const CAPTURE_ATTEMPTS: usize = 3;
+
 /// Captures `schema.table`. `estimate_rows` bounds a row count for the
 /// large-table note (skipped by the executor's in-transaction re-capture).
+///
+/// The reads are separate statements (outside the executor, autocommit), so
+/// the drift token brackets them: a DDL commit between the first and last
+/// read would otherwise pair an old definition with the new token, and the
+/// drift recheck could not catch it.
 pub(super) async fn capture_table(
     connection: &mut SqliteConnection,
     schema: &str,
     table: &str,
     sqlite_version: &str,
     estimate_rows: bool,
+) -> Result<SchemaBaseline, String> {
+    for _ in 0..CAPTURE_ATTEMPTS {
+        let before = drift_token(connection, schema).await.map_err(db_error)?;
+        let mut baseline =
+            capture_once(connection, schema, table, sqlite_version, before).await?;
+        let after = drift_token(connection, schema).await.map_err(db_error)?;
+        if after == baseline.drift {
+            if estimate_rows && baseline.editable == Editability::Editable {
+                baseline.estimated_rows = Some(count_rows(connection, schema, table).await?);
+            }
+            return Ok(baseline);
+        }
+    }
+    Err(format!(
+        "The schema of {schema} kept changing while {table} was read; try again"
+    ))
+}
+
+async fn capture_once(
+    connection: &mut SqliteConnection,
+    schema: &str,
+    table: &str,
+    sqlite_version: &str,
+    drift: DriftToken,
 ) -> Result<SchemaBaseline, String> {
     let master = format!("{}.sqlite_master", quote(schema));
     let (kind, sql) = sqlx::query_as::<_, (String, Option<String>)>(&format!(
@@ -121,7 +153,6 @@ pub(super) async fn capture_table(
     .await
     .map_err(db_error)?
     .ok_or_else(|| format!("{schema}.{table} no longer exists"))?;
-    let drift = drift_token(connection, schema).await.map_err(db_error)?;
     let version = parse_version(sqlite_version);
 
     let columns = read_columns(connection, schema, table).await?;
@@ -220,11 +251,6 @@ pub(super) async fn capture_table(
             catalog_model(schema, table, &catalog, listing.as_ref())
         }
     };
-    let estimated_rows = if estimate_rows && kind == "table" && reasons.is_empty() {
-        Some(count_rows(connection, schema, table).await?)
-    } else {
-        None
-    };
     Ok(SchemaBaseline {
         engine: SchemaEngine::Sqlite,
         server: ServerFacts {
@@ -241,7 +267,7 @@ pub(super) async fn capture_table(
         },
         inbound,
         dependents,
-        estimated_rows,
+        estimated_rows: None,
     })
 }
 

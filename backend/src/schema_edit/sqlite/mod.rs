@@ -22,7 +22,7 @@ mod verify;
 
 use super::{
     BaselineId, EnginePlan, Origin, PlanError, PlanOptions, SchemaBaseline, SchemaChangeSet,
-    SchemaDraft, SchemaEditOutcome, SchemaEditPreview, ServerFeatures,
+    SchemaDraft, SchemaEditPreview, ServerFeatures,
 };
 use futures_util::future::BoxFuture;
 use sqlx::SqliteConnection;
@@ -125,14 +125,17 @@ pub(crate) fn capture<'a>(
     ))
 }
 
+pub(crate) use executor::Executed;
+
 /// Runs a reviewed plan on the session connection. The caller has already
-/// re-planned and compared `preview` and checked the policy.
+/// re-planned and compared `preview` and checked the policy, and must close
+/// the connection when it comes back unsound.
 pub(crate) fn execute<'a>(
     connection: &'a mut SqliteConnection,
     baseline: &'a SchemaBaseline,
     draft: &'a SchemaDraft,
     preview: &'a SchemaEditPreview,
-) -> BoxFuture<'a, SchemaEditOutcome> {
+) -> BoxFuture<'a, Executed> {
     Box::pin(executor::execute(connection, baseline, draft, preview))
 }
 

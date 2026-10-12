@@ -127,6 +127,15 @@ fn renders_constraint_and_index_renames() {
         })])
         .is_err()
     );
+    assert!(
+        generate_object_ddl(&[PgObjectOp::RenameConstraint(RenameConstraintOp {
+            schema: "s".into(),
+            table: "t".into(),
+            name: "t_pkey".into(),
+            new_name: "x".repeat(64),
+        })])
+        .is_err()
+    );
 }
 
 #[test]

@@ -229,7 +229,12 @@ impl ObjectOperation for RenameConstraintOp {
     fn validate(&self, op_index: usize) -> Result<(), PgObjectError> {
         require_table(op_index, &self.schema, &self.table)?;
         require_name(op_index, "constraint", &self.name)?;
-        require_name(op_index, "new constraint name", &self.new_name)
+        require_name(op_index, "new constraint name", &self.new_name)?;
+        // PostgreSQL truncates a longer name with only a NOTICE.
+        if self.new_name.len() > 63 {
+            return invalid(op_index, "constraint name exceeds PostgreSQL's 63-byte limit");
+        }
+        Ok(())
     }
 
     fn fragments(&self) -> Vec<&str> {

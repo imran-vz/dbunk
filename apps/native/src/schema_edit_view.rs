@@ -24,7 +24,12 @@ use gpui::{
     AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable, Subscription, Task,
     UniformListScrollHandle, Window,
 };
-use std::{cell::Cell, rc::Rc, sync::Arc, time::Duration};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    sync::Arc,
+    time::Duration,
+};
 
 mod render;
 
@@ -97,6 +102,9 @@ pub struct SchemaEditView {
     pub(crate) scroll: UniformListScrollHandle,
     /// An edit is not journaled yet (PostgreSQL).
     journal_dirty: bool,
+    /// The record `pending_draft` builds and its encoded size, kept until
+    /// the next edit: workspace saves read it several times per snapshot.
+    pending: RefCell<Option<Option<(WorkspaceSchemaEdit, usize)>>>,
     journal_scheduled: bool,
     _journal_timer: Option<Task<()>>,
     tasks: Vec<Task<()>>,
@@ -159,6 +167,7 @@ impl SchemaEditView {
             focus_request: true,
             scroll: UniformListScrollHandle::new(),
             journal_dirty: false,
+            pending: RefCell::new(None),
             journal_scheduled: false,
             _journal_timer: None,
             tasks: Vec::new(),
@@ -190,40 +199,47 @@ impl SchemaEditView {
     /// still waiting for the journal timer is included, so a save taken in
     /// between (quit, close) never loses it.
     pub fn snapshot(&self) -> Option<WorkspaceSchemaEdit> {
-        match self.pending_draft() {
-            Some(record) => record,
-            None => self.recovery.record().cloned(),
-        }
+        self.pending_draft(|pending| pending.map(|(record, _)| record.clone()))
+            .unwrap_or_else(|| self.recovery.record().cloned())
     }
 
     pub fn snapshot_bytes(&self) -> usize {
-        match self.pending_draft() {
-            Some(record) => record.as_ref().map_or(0, crate::results::encoded_size),
-            None => self
-                .recovery
-                .record()
-                .map_or(0, crate::results::encoded_size),
-        }
+        self.pending_draft(|pending| pending.map_or(0, |(_, bytes)| *bytes))
+            .unwrap_or_else(|| {
+                self.recovery
+                    .record()
+                    .map_or(0, crate::results::encoded_size)
+            })
     }
 
-    /// What `journal` would store for an edit not journaled yet: `Some(None)`
-    /// clears the record (unchanged or too large), `None` keeps the stored one.
-    fn pending_draft(&self) -> Option<Option<WorkspaceSchemaEdit>> {
+    /// Reads what `journal` would store for an edit not journaled yet:
+    /// `Some(read(None))` clears the record (unchanged or too large), `None`
+    /// keeps the stored one. Built once per edit (see `pending`).
+    fn pending_draft<R>(
+        &self,
+        read: impl FnOnce(Option<&(WorkspaceSchemaEdit, usize)>) -> R,
+    ) -> Option<R> {
         if !self.journal_dirty || !self.persist || self.recovery.unknown() {
             return None;
         }
         let model = self.model.as_ref().filter(|model| model.editable())?;
-        if model.draft().table == model.baseline().table {
-            return Some(None);
-        }
-        Some(
+        let mut cache = self.pending.borrow_mut();
+        let pending = cache.get_or_insert_with(|| {
+            if model.draft().table == model.baseline().table {
+                return None;
+            }
             WorkspaceSchemaEdit::draft(
                 model.request().clone(),
                 model.baseline().clone(),
                 model.draft().clone(),
             )
-            .ok(),
-        )
+            .ok()
+            .map(|record| {
+                let bytes = crate::results::encoded_size(&record);
+                (record, bytes)
+            })
+        });
+        Some(read(pending.as_ref()))
     }
 
     /// A draft, an attempt or a request is outstanding.
@@ -515,6 +531,7 @@ impl SchemaEditView {
     /// MySQL and SQLite journal nothing: the model holds the draft.
     pub(crate) fn journal(&mut self) {
         self.journal_dirty = false;
+        *self.pending.get_mut() = None;
         let Some(model) = &self.model else {
             return;
         };
@@ -570,6 +587,8 @@ impl SchemaEditView {
         if self.message.is_empty() || self.failure.shown(&self.message).is_some() {
             self.message = String::new();
         }
+        // Every draft change lands here; the pending record is stale.
+        *self.pending.get_mut() = None;
         if self.persist {
             // Journaling clones and encodes the whole table: coalesce it.
             self.journal_dirty = true;
