@@ -105,8 +105,8 @@ Have: CSV / XLSX import wizard with column mapping.
 - ✅ PostgreSQL CSV uses bounded file-backed COPY jobs (Plan 020, `7745946`). XLSX and other engines retain their buffered paths.
 
 ### 8. Other Postgres-shaped tooling
-- ✅ Create table designer — live typed preview and reviewed apply
-- 🟡 Schema editor and change diff ([Plan 033](plans/033-schema-editor-and-diff.md), ADR-0016) — in-place table structure edits on PostgreSQL, MySQL and SQLite with a structural diff, impact notes and the exact SQL, applied through the safety gate. Backend complete with unit tests and live round trips (PostgreSQL 16, MySQL 8.4, SQLite files); native editor and review written but not yet built (pending `just check-native` and a `just dev-native` pass on main). Open: MariaDB live coverage, cancellation during apply, MySQL/SQLite draft persistence, and phase 4 (create/drop table, definition diff, Copy SQL).
+- 🟡 Create table — the typed `createTable` operation exists in the backend, but the Tauri table designer was retired and the native app has no create-table UI yet (Plan 033 phase 4)
+- 🟡 Schema editor and change diff ([Plan 033](plans/033-schema-editor-and-diff.md), ADR-0016) — in-place table structure edits on PostgreSQL, MySQL and SQLite with a structural diff, impact notes and the exact SQL, applied through the safety gate. Backend complete with unit tests and live round trips of representative changes (PostgreSQL 16, MySQL 8.4, SQLite files); not every operation kind has a live round trip yet; native editor and review written but not yet built (pending `just check-native` and a `just dev-native` pass on main). Open: MariaDB live coverage, cancellation during apply, MySQL/SQLite draft persistence, and phase 4 (create/drop table, definition diff, Copy SQL).
 - ✅ Function / procedure editor — typed reviewed create and edit flows in the navigator and Object Viewer
 - ✅ Permissions / GRANT editor — typed reviewed Structure and Specialized flows
 - ✅ Row-Level Security policies UI — typed reviewed Structure and Specialized flows

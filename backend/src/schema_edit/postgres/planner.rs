@@ -19,10 +19,10 @@ use crate::postgres::objects::{PgObjectKind, PgObjectRef};
 use crate::postgres::sql_lex::{lex_sql, SqlToken};
 use crate::quote_double;
 use crate::schema_edit::{
-    normalize_type, plan_steps, BaselineId, ColumnField, ColumnModel, DefaultValue, Deferrable,
-    EngineNote, EnginePlan, ForeignKeyModel, Identity, IndexTarget, NoteKind, Origin, PlanError,
-    PlanOptions, PlanStep, PreviewGroup, PreviewStatement, ReferentialAction, SchemaBaseline,
-    SchemaDraft, SchemaObject, TableModel,
+    is_widening, normalize_type, plan_steps, BaselineId, ColumnField, ColumnModel, DefaultValue,
+    Deferrable, EngineNote, EnginePlan, ForeignKeyModel, Identity, IndexTarget, NoteKind, Origin,
+    PlanError, PlanOptions, PlanStep, PreviewGroup, PreviewStatement, ReferentialAction,
+    SchemaBaseline, SchemaDraft, SchemaObject, TableModel,
 };
 
 /// PostgreSQL identifiers are at most 63 bytes.
@@ -259,10 +259,11 @@ pub(crate) fn build(
     let statements: Vec<PreviewStatement> = rendered
         .statements
         .into_iter()
-        .map(|statement| PreviewStatement {
+        .zip(&ops)
+        .map(|(statement, op)| PreviewStatement {
             sql: statement.sql,
             summary: statement.summary,
-            destructive: statement.destructive,
+            destructive: statement.destructive && !widening_retype(baseline, draft, op),
         })
         .collect();
     let mut built = Built {
@@ -273,6 +274,35 @@ pub(crate) fn build(
     };
     built.notes = notes(baseline, draft, &steps, &built, options);
     Ok(built)
+}
+
+/// The object DDL flows mark every `ALTER COLUMN … TYPE` destructive. A
+/// provably widening change without `USING` loses nothing, matching the
+/// change set's classification.
+fn widening_retype(baseline: &SchemaBaseline, draft: &SchemaDraft, op: &PgObjectOp) -> bool {
+    let (name, data_type) = match op {
+        PgObjectOp::AlterColumnType(AlterColumnTypeOp {
+            name,
+            new_type,
+            using: None,
+            ..
+        }) => (name, new_type),
+        PgObjectOp::AlterColumnCollation(AlterColumnCollationOp {
+            name,
+            data_type,
+            using: None,
+            ..
+        }) => (name, data_type),
+        _ => return false,
+    };
+    // Renames run first, so the statement names the column by its new name.
+    draft
+        .table
+        .columns
+        .iter()
+        .find(|column| column.name == *name)
+        .and_then(|column| baseline.table.column(column.origin))
+        .is_some_and(|before| is_widening(baseline.engine, &before.data_type, data_type))
 }
 
 fn object_error(error: PgObjectError) -> PlanError {
