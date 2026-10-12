@@ -12,7 +12,7 @@ use crate::schema_edit::{
 };
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Connection;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 struct Db {
@@ -747,32 +747,53 @@ async fn cancellation_through_the_progress_handler_rolls_back() {
          INSERT INTO big (v) SELECT 'row ' || x FROM n;",
     )
     .await;
-    let cancel = Arc::new(AtomicBool::new(false));
-    {
-        let flag = cancel.clone();
-        let mut handle = db.connection.lock_handle().await.unwrap();
-        handle.set_progress_handler(1_000, move || !flag.load(Ordering::Acquire));
-    }
     let baseline = db.capture("big").await;
     let mut draft = SchemaDraft::from_baseline(&baseline);
     draft.table.column_mut(column_origin(1)).unwrap().data_type = "varchar(20)".into();
     let preview = plan_review(&baseline, &draft, &PlanOptions::default()).unwrap();
-    cancel.store(true, Ordering::Release);
+    // Interrupt once the copy of 20,000 rows is well under way: the setup
+    // statements before it each run far fewer than 50 * 100 instructions.
+    let ticks = Arc::new(AtomicUsize::new(0));
+    {
+        let ticks = ticks.clone();
+        let mut handle = db.connection.lock_handle().await.unwrap();
+        handle.set_progress_handler(100, move || ticks.fetch_add(1, Ordering::AcqRel) < 50);
+    }
     let outcome = execute(&mut db.connection, &baseline, &draft, &preview).await;
-    cancel.store(false, Ordering::Release);
-    assert!(
-        matches!(
-            outcome,
-            SchemaEditOutcome::RolledBack {
-                reason: SchemaEditFailure::Cancelled
-            } | SchemaEditOutcome::NotDispatched {
-                reason: SchemaEditFailure::Cancelled
-            }
-        ),
-        "{outcome:?}"
+    db.connection
+        .lock_handle()
+        .await
+        .unwrap()
+        .remove_progress_handler();
+    assert_eq!(
+        outcome,
+        SchemaEditOutcome::RolledBack {
+            reason: SchemaEditFailure::Cancelled
+        }
     );
     db.unchanged(&baseline).await;
     assert_eq!(db.number("SELECT count(*) FROM big").await, 20_000);
+}
+
+#[tokio::test]
+async fn a_result_that_does_not_match_the_draft_rolls_back() {
+    let mut db = open(ITEMS).await;
+    let baseline = db.capture("items").await;
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.add_column("qty", "INTEGER");
+    let mut preview = plan_review(&baseline, &draft, &PlanOptions::default()).unwrap();
+    // The executor runs the reviewed SQL as given (the facade re-plans and
+    // compares first); a statement that does something else is caught by
+    // the re-capture before COMMIT.
+    preview.statements[0].sql = preview.statements[0].sql.replace("INTEGER", "TEXT");
+    let outcome = execute(&mut db.connection, &baseline, &draft, &preview).await;
+    match &outcome {
+        SchemaEditOutcome::RolledBack {
+            reason: SchemaEditFailure::VerificationFailed { detail },
+        } => assert!(detail.contains("qty"), "{detail}"),
+        other => panic!("expected a verification rollback, got {other:?}"),
+    }
+    db.unchanged(&baseline).await;
 }
 
 #[tokio::test]
