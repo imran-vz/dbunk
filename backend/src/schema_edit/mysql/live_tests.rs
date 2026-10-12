@@ -418,3 +418,166 @@ async fn a_declared_row_format_captures_editable_and_round_trips() {
     assert_eq!(after.table.options.row_format.as_deref(), Some("DYNAMIC"));
     connection.close().await.unwrap();
 }
+
+/// Applies `draft` (verified by the executor's re-capture), then checks the
+/// new capture is editable and its own fixed point.
+async fn step(
+    connection: &mut MySqlConnection,
+    server: &str,
+    table: &str,
+    baseline: &SchemaBaseline,
+    draft: &SchemaDraft,
+    plan: &PlanOptions,
+) -> SchemaBaseline {
+    let preview = plan_review(baseline, draft, plan).unwrap();
+    let outcome = execute(&options(), baseline, draft, &preview).await;
+    assert!(outcome.applied(), "{outcome:?}\n{}", preview.sql_text());
+    let after = capture(connection, server, "dbunk_demo", table)
+        .await
+        .unwrap();
+    assert_eq!(
+        after.editable,
+        Editability::Editable,
+        "{:?}",
+        after.editable
+    );
+    assert_eq!(
+        plan_review(
+            &after,
+            &SchemaDraft::from_baseline(&after),
+            &PlanOptions::default()
+        ),
+        Err(PlanError::NoChanges)
+    );
+    after
+}
+
+fn named<'a>(table: &'a TableModel, name: &str) -> &'a ColumnModel {
+    table
+        .columns
+        .iter()
+        .find(|c| c.name == name)
+        .unwrap_or_else(|| panic!("column {name}"))
+}
+
+#[tokio::test]
+#[ignore = "requires make -C infrastructure/test-db mysql"]
+async fn drops_checks_keys_generated_columns_and_charsets_round_trip() {
+    let table = "schema_edit_kinds";
+    let mut connection = connect().await;
+    let server = version(&mut connection).await;
+    fresh(&mut connection, table).await;
+    let baseline = capture(&mut connection, &server, "dbunk_demo", table)
+        .await
+        .unwrap();
+
+    // Drop a column with its check, a unique key and an index; move an
+    // existing column; change a charset; add a check and a generated column.
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.checks.clear();
+    assert!(draft.remove_column(origin(&draft, "score")));
+    draft.table.uniques.clear();
+    draft.table.indexes.clear();
+    let org = origin(&draft, "org_id");
+    draft.move_column(org, 1);
+    let name = origin(&draft, "name");
+    let column = draft.table.column_mut(name).unwrap();
+    column.extra.charset = Some("latin1".into());
+    column.collation = Some("latin1_swedish_ci".into());
+    let check = draft.new_origin();
+    draft.table.checks.push(CheckModel {
+        origin: check,
+        name: Some(format!("{table}_name_check")),
+        expression: SqlFragment::new("name <> ''"),
+        enforced: true,
+    });
+    let length = draft.add_column("email_length", "int");
+    draft.table.column_mut(length).unwrap().generated = Some(Generated {
+        expression: SqlFragment::new("char_length(email)"),
+        stored: false,
+    });
+    let after = step(
+        &mut connection,
+        &server,
+        table,
+        &baseline,
+        &draft,
+        &PlanOptions::default(),
+    )
+    .await;
+    let t = &after.table;
+    let names: Vec<&str> = t.columns.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "id",
+            "org_id",
+            "email",
+            "name",
+            "updated_at",
+            "email_length"
+        ]
+    );
+    assert!(t.uniques.is_empty() && t.indexes.is_empty());
+    assert_eq!(t.checks.len(), 1);
+    assert_eq!(named(t, "name").extra.charset.as_deref(), Some("latin1"));
+    assert!(named(t, "email_length").generated.is_some());
+
+    // Drop the primary key (and AUTO_INCREMENT, which needs a key) and the
+    // generated column.
+    let mut draft = SchemaDraft::from_baseline(&after);
+    draft.table.primary_key = None;
+    let id = origin(&draft, "id");
+    draft.table.column_mut(id).unwrap().identity = Identity::None;
+    assert!(draft.remove_column(origin(&draft, "email_length")));
+    let after = step(
+        &mut connection,
+        &server,
+        table,
+        &after,
+        &draft,
+        &PlanOptions::default(),
+    )
+    .await;
+    assert!(after.table.primary_key.is_none());
+    assert_eq!(named(&after.table, "id").identity, Identity::None);
+
+    // A composite primary key, with the online-only guard on an add the
+    // server can do in place.
+    let mut draft = SchemaDraft::from_baseline(&after);
+    let id = origin(&draft, "id");
+    let email = origin(&draft, "email");
+    let key = draft.new_origin();
+    draft.table.primary_key = Some(KeyModel {
+        origin: key,
+        name: None,
+        columns: vec![id, email],
+    });
+    let after = step(
+        &mut connection,
+        &server,
+        table,
+        &after,
+        &draft,
+        &PlanOptions::default(),
+    )
+    .await;
+    let pk = after.table.primary_key.as_ref().unwrap();
+    assert_eq!(after.table.column_names(&pk.columns), ["id", "email"]);
+
+    let mut draft = SchemaDraft::from_baseline(&after);
+    draft.add_column("note", "varchar(10)");
+    let online = PlanOptions {
+        online_only: true,
+        ..PlanOptions::default()
+    };
+    let after = step(&mut connection, &server, table, &after, &draft, &online).await;
+    assert_eq!(after.table.columns.last().unwrap().name, "note");
+
+    let rows: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM `{table}`"))
+        .fetch_one(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(rows, 2);
+    connection.close().await.unwrap();
+}
