@@ -6,12 +6,39 @@ The backend generates seed rows from the table's catalog
 (`backend/src/seed.rs`, `backend/src/backend/table_seed/`): NOT NULL, foreign
 keys and uniqueness are guaranteed, CHECK constraints are attempted, and a run
 is all-or-nothing. A seed fails fast when a referenced parent table is empty.
-The native app seeds PostgreSQL; other engines' generators remain in
-`backend/src/dispatch/seed.rs`.
+The native app seeds PostgreSQL, MySQL and SQLite; ClickHouse keeps the older
+path in `backend/src/clickhouse.rs`.
+
+## Engines (2026-10-12)
+
+One engine-neutral planner (`table_seed/engine.rs`) decides what to generate
+from each engine's inspected catalog; each runner only reads parent rows and
+current maxima and inserts, inside one transaction, comparing the reviewed
+catalog before and after.
+
+- **PostgreSQL:** `LOCK TABLE ... IN SHARE ROW EXCLUSIVE MODE` on the target,
+  `ACCESS SHARE` on parents.
+- **MySQL:** InnoDB tables only; a table without transactions (MyISAM,
+  MEMORY) is refused, since a failed seed could not be rolled back. The
+  transaction's metadata lock holds off DDL; unique maxima are read `FOR
+  UPDATE` and parent rows `LOCK IN SHARE MODE`. Strict `sql_mode` and UTC.
+  Cancel sends `KILL QUERY` from a side connection. The reviewed table is
+  identified by a hash of `SHOW CREATE TABLE` without its `AUTO_INCREMENT`
+  counter.
+- **SQLite:** `BEGIN IMMEDIATE` holds the write lock for the whole run, and
+  foreign keys are enforced (unlike the interactive session, which matches
+  the sqlite3 shell). Only `main` is seeded. Cancel interrupts through the
+  progress handler. The reviewed table is identified by a hash of its
+  `CREATE` text with its indexes and triggers.
+
+PostgreSQL receipts keep their saved shape; MySQL and SQLite receipts add the
+engine and the table hash in place of OIDs.
 
 ## Considered options
 
 - **Parsing CHECK expressions.** Rejected.
+- **`LOCK TABLES` on MySQL.** Rejected: it ends the open transaction
+  implicitly, so the seed would no longer be all-or-nothing.
 - **Cascading seeds into parent tables.** Rejected.
 
 ## Seed data variety (2026-10-11)

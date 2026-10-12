@@ -856,6 +856,13 @@ impl DocumentView {
             view.update(cx, |view, cx| view.describe_context(reference, cx));
         }
     }
+    /// Points the seed tool at a MySQL or SQLite destination, whose own
+    /// surface cannot host the tool.
+    pub fn seed_destination(&mut self, connection: String, cx: &mut Context<Self>) {
+        if let Content::TableSeed(view) = &self.content {
+            view.update(cx, |view, cx| view.bind_connection(connection, cx));
+        }
+    }
     pub fn seed_context(&mut self, schema: String, table: String, cx: &mut Context<Self>) {
         if let Content::TableSeed(view) = &self.content {
             view.update(cx, |view, cx| view.set_target(schema, table, cx));

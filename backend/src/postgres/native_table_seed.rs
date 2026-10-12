@@ -12,8 +12,8 @@ mod planning;
 mod retention;
 #[cfg(test)]
 pub(crate) mod tests;
-pub(crate) use catalog::Catalog;
 use crate::backend::table_seed::engine::{self, EngineCatalog, Execution, Failure, Identity, Plan};
+pub(crate) use catalog::Catalog;
 fn database_error(error: tokio_postgres::Error) -> Failure {
     match error.as_db_error() {
         Some(e) => Failure::database(Some(e.code().code()), e.constraint(), e.column()),

@@ -6,7 +6,6 @@
 use super::*;
 use crate::seed::{self, ColumnSource, SeedDialect};
 use crate::TableStructure;
-use std::sync::Arc;
 use tokio::time::{Duration, Instant};
 
 /// Seed used to preview a recipe that leaves its seed to review.
@@ -73,7 +72,10 @@ pub(crate) struct Plan {
 
 /// How the reviewed table is identified in its description.
 pub(crate) enum Identity {
-    Postgres { database_oid: u32, relation_oid: u32 },
+    Postgres {
+        database_oid: u32,
+        relation_oid: u32,
+    },
     /// SHA-256 of the table's definition.
     Fingerprint(String),
 }
@@ -262,7 +264,8 @@ impl Failure {
         let code = code
             .filter(|c| {
                 (1..=8).contains(&c.len())
-                    && c.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+                    && c.bytes()
+                        .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
             })
             .map(str::to_owned);
         let diagnostic = (code.is_some() || constraint.is_some() || column.is_some()).then(|| {
@@ -637,6 +640,3 @@ pub(crate) fn batch_size(
 pub(crate) fn deadline() -> Instant {
     Instant::now() + EXECUTION_DEADLINE
 }
-
-/// Keeps the plan alive across an engine runner's async work.
-pub(crate) type SharedPlan = Arc<Plan>;

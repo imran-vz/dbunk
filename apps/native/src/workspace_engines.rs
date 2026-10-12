@@ -644,6 +644,19 @@ impl Workspace {
             Operation::OpenTable => {
                 self.message = Some("Open tables from the sidebar tree".into());
             }
+            // The seed tool seeds MySQL and SQLite too. It lives in the
+            // workspace's document area, so it opens there with this
+            // connection as its destination.
+            Operation::Library(WorkspaceTool::TableSeed) => {
+                let destination = self.selected_connection.take();
+                if let Some(index) = self.open_library(WorkspaceTool::TableSeed, window, cx)
+                    && let Some(destination) = destination
+                {
+                    self.documents[index]
+                        .view
+                        .update(cx, |view, cx| view.seed_destination(destination, cx));
+                }
+            }
             Operation::Rename
             | Operation::Pin
             | Operation::Move(_)

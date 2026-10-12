@@ -282,12 +282,7 @@ pub(super) async fn execute(
     }
     finish(&inner, id, &review, execution);
 }
-fn finish(
-    inner: &Inner,
-    id: TableSeedAttemptId,
-    review: &TableSeedReview,
-    execution: Execution,
-) {
+fn finish(inner: &Inner, id: TableSeedAttemptId, review: &TableSeedReview, execution: Execution) {
     let mut state = inner.table_seed.state.lock().unwrap();
     let changed = matches!(
         execution.outcome,
@@ -356,7 +351,9 @@ async fn inspect(
     }
     match specs {
         Target::Postgres(spec) => runner::inspect(spec, intent, targets, drivers, control).await,
-        Target::MySql(stored) => super::mysql::inspect(inner, stored, intent, targets, control).await,
+        Target::MySql(stored) => {
+            super::mysql::inspect(inner, stored, intent, targets, control).await
+        }
         Target::Sqlite(stored) => super::sqlite::inspect(stored, intent, targets, control).await,
     }
 }

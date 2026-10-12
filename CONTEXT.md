@@ -355,8 +355,7 @@ ADR-0005 for the writes-by-default posture.
   it lives outside the Table Session. Distinct from the lightweight
   frontend mock-INSERT-SQL generator (`src/lib/mock-data.ts`), which
   remains a copy-to-clipboard preview tool, not the engine. The native
-  app seeds PostgreSQL; MySQL and SQLite generators exist in the backend
-  but are not yet wired to the native app. ClickHouse, having no
+  app seeds PostgreSQL, MySQL (InnoDB) and SQLite tables. ClickHouse, having no
   transactions, gets all-or-nothing from a single atomic INSERT block and
   caps a run accordingly (ADR-0014).
 - **Seed Spec** — the user-authored input to one Table Seeding run:

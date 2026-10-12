@@ -1,8 +1,6 @@
+use super::engine::Execution;
 use super::*;
-use crate::{
-    backend::profile,
-    postgres::native_table_seed::{self, Execution},
-};
+use crate::{backend::profile, postgres::native_table_seed};
 use futures_util::FutureExt;
 use std::time::Duration;
 fn intent() -> TableSeedIntent {
@@ -343,4 +341,46 @@ async fn inspection_refuses_oversized_retained_capacity_before_publication() {
     assert_eq!(failure.failure, Some(TableSeedError::Limit));
     assert!(backend.inspect_table_seed(id).is_err());
     backend.shutdown().await.unwrap();
+}
+
+#[test]
+fn postgres_receipts_keep_their_saved_shape_and_other_engines_add_identity() {
+    let intent = TableSeedIntent::new(
+        TableSeedEndpoint {
+            connection_id: "c".into(),
+            schema: "public".into(),
+            table: "t".into(),
+        },
+        10,
+        Some(1),
+        vec![],
+    )
+    .unwrap();
+    let postgres = native_table_seed::tests::plan(intent, native_table_seed::tests::target())
+        .description
+        .unwrap();
+    let saved = serde_json::to_value(&postgres).unwrap();
+    assert!(saved.get("tableFingerprint").is_none(), "{saved}");
+    assert!(saved["connection"].get("engine").is_none(), "{saved}");
+    let read: TableSeedDescription = serde_json::from_value(saved.clone()).unwrap();
+    assert!(read == postgres);
+
+    let mut sqlite = postgres.clone();
+    sqlite.connection.engine = TableSeedEngine::Sqlite;
+    sqlite.connection.port = 0;
+    sqlite.database_oid = 0;
+    sqlite.relation_oid = 0;
+    sqlite.table_fingerprint = Some("f".repeat(64));
+    let saved = serde_json::to_value(&sqlite).unwrap();
+    assert_eq!(saved["connection"]["engine"], "Sqlite");
+    let read: TableSeedDescription = serde_json::from_value(saved).unwrap();
+    assert!(read == sqlite);
+
+    // An identity that does not match its engine is refused on load.
+    let mut mixed = sqlite.clone();
+    mixed.table_fingerprint = None;
+    assert!(mixed.validate().is_err());
+    let mut mixed = postgres;
+    mixed.table_fingerprint = Some("f".repeat(64));
+    assert!(mixed.validate().is_err());
 }

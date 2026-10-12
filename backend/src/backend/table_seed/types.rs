@@ -478,9 +478,10 @@ impl TableSeedDescription {
             TableSeedEngine::MySql | TableSeedEngine::Sqlite => {
                 self.database_oid == 0
                     && self.relation_oid == 0
-                    && self.table_fingerprint.as_ref().is_some_and(|f| {
-                        f.len() == 64 && f.bytes().all(|c| c.is_ascii_hexdigit())
-                    })
+                    && self
+                        .table_fingerprint
+                        .as_ref()
+                        .is_some_and(|f| f.len() == 64 && f.bytes().all(|c| c.is_ascii_hexdigit()))
             }
         };
         if !identified
@@ -510,7 +511,7 @@ impl TableSeedDescription {
             .ok_or(TableSeedError::InvalidRequest)
     }
 }
-#[derive(Clone, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum TableSeedColumnAction {
     Default,
     Constant,
@@ -671,7 +672,9 @@ impl fmt::Display for TableSeedError {
             }
             Self::PolicyBlocked => "Stored connection policy blocks seeding",
             Self::Credentials => "Connection credentials are unavailable",
-            Self::Database => "The database rejected the seed operation; inspect constraint details",
+            Self::Database => {
+                "The database rejected the seed operation; inspect constraint details"
+            }
             Self::StaleReview => "Seed review or connection changed; prepare a new attempt",
             Self::TargetChanged => "Table or constraints changed since review",
             Self::Missing => "Seed attempt is unavailable",

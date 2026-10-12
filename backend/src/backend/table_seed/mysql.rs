@@ -151,7 +151,11 @@ impl Catalog {
 
     pub(crate) fn heap_bytes(&self) -> Option<usize> {
         use std::mem::size_of;
-        let strings = |v: &[String]| v.iter().map(|s| s.capacity() + size_of::<String>()).sum::<usize>();
+        let strings = |v: &[String]| {
+            v.iter()
+                .map(|s| s.capacity() + size_of::<String>())
+                .sum::<usize>()
+        };
         let mut n = self.database.capacity() + self.table.capacity() + self.definition.capacity();
         for c in &self.columns {
             n += size_of::<Column>() + c.name.capacity() + c.column_type.capacity();
@@ -360,16 +364,16 @@ async fn inspect_catalog(
 /// type checking and bounded lock waits.
 struct Session {
     connection: MySqlConnection,
-    options: MySqlConnectOptions,
     thread: u64,
-    _route: crate::backend::bastions::ProbeRoute,
 }
 
-async fn connect(
+/// Connect options through the stored connection's SSH route, which stays
+/// open while the returned guard lives.
+async fn route(
     inner: &crate::backend::Inner,
     stored: &crate::MySqlStoredConnection,
     deadline: Instant,
-) -> Result<Session, Failure> {
+) -> Result<(crate::backend::bastions::ProbeRoute, MySqlConnectOptions), Failure> {
     let (route, resolved) = crate::backend::bastions::route_probe(
         &inner.state,
         crate::StoredConnection::MySQL(stored.clone()),
@@ -382,6 +386,10 @@ async fn connect(
     };
     let options = crate::backend::mysql_sessions::connect_options(resolved)
         .map_err(|_| TableSeedError::UnsupportedTarget)?;
+    Ok((route, options))
+}
+
+async fn connect(options: &MySqlConnectOptions, deadline: Instant) -> Result<Session, Failure> {
     let mut connection = tokio::time::timeout_at(deadline, options.connect())
         .await
         .map_err(|_| TableSeedError::Timeout)?
@@ -408,12 +416,7 @@ async fn connect(
         .try_get::<u64, _>(0)
         .or_else(|_| row.try_get::<i64, _>(0).map(|t| t as u64))
         .unwrap_or_default();
-    Ok(Session {
-        connection,
-        options,
-        thread,
-        _route: route,
-    })
+    Ok(Session { connection, thread })
 }
 
 /// Stops the statement running on `thread` from a short side connection.
@@ -445,8 +448,24 @@ pub(crate) async fn inspect(
     control: &Control,
 ) -> Result<Plan, Failure> {
     let deadline = Instant::now() + engine::INSPECTION_DEADLINE;
+    let resolved = tokio::select! {
+        biased;
+        _ = control.cancelled() => Err(TableSeedError::Cancelled.into()),
+        r = route(inner, stored, deadline) => r,
+    };
+    let (_route, options) = resolved?;
+    inspect_with(&options, intent, target, control, deadline).await
+}
+
+async fn inspect_with(
+    options: &MySqlConnectOptions,
+    intent: TableSeedIntent,
+    target: TableSeedConnection,
+    control: &Control,
+    deadline: Instant,
+) -> Result<Plan, Failure> {
     let operation = async {
-        let mut session = connect(inner, stored, deadline).await?;
+        let mut session = connect(options, deadline).await?;
         let result = async {
             session
                 .connection
@@ -482,7 +501,11 @@ async fn finalize(
     for index in &draft.needed_pools {
         let fk = &table.structure.foreign_keys[*index];
         let parent = qualified(&fk.referenced_schema, &fk.referenced_table);
-        let names: Vec<String> = fk.referenced_columns.iter().map(|c| quote_backtick(c)).collect();
+        let names: Vec<String> = fk
+            .referenced_columns
+            .iter()
+            .map(|c| quote_backtick(c))
+            .collect();
         let sql = format!(
             "SELECT DISTINCT {} FROM {parent} WHERE {} LIMIT {MAX_PARENT_ROWS} LOCK IN SHARE MODE",
             names
@@ -579,11 +602,28 @@ pub(crate) async fn execute(
     control: &Control,
 ) -> Execution {
     let deadline = engine::deadline();
+    let resolved = tokio::select! {
+        biased;
+        _ = control.cancelled() => Err(TableSeedError::Cancelled.into()),
+        r = route(inner, stored, deadline) => r,
+    };
+    match resolved {
+        Ok((_route, options)) => execute_with(&options, plan, control, deadline).await,
+        Err(failure) => Execution::failed(false, failure),
+    }
+}
+
+async fn execute_with(
+    options: &MySqlConnectOptions,
+    plan: Arc<Plan>,
+    control: &Control,
+    deadline: Instant,
+) -> Execution {
     let mut session: Option<Session> = None;
     let mut began = false;
     let operation = async {
         let catalog = target_of(&plan)?;
-        session = Some(connect(inner, stored, deadline).await?);
+        session = Some(connect(options, deadline).await?);
         let connection = &mut session.as_mut().unwrap().connection;
         connection
             .execute("START TRANSACTION")
@@ -670,7 +710,7 @@ pub(crate) async fn execute(
     // statement interrupted by cancel or the deadline is stopped first.
     if let Some(session) = session {
         if !matches!(execution.outcome, TableSeedOutcome::Completed { .. }) {
-            kill(&session.options, session.thread).await;
+            kill(options, session.thread).await;
         }
         let _ = tokio::time::timeout(Duration::from_secs(1), session.connection.close()).await;
     }
@@ -748,8 +788,149 @@ mod tests {
         .unwrap();
         let draft = engine::draft(&table, &intent).expect("draft");
         let columns = engine::columns(&table, Some(&draft));
-        assert_eq!(columns[0].action, TableSeedColumnAction::Default, "auto_increment");
-        assert_eq!(columns[1].action, TableSeedColumnAction::Values, "enum members");
-        assert_eq!(columns[2].action, TableSeedColumnAction::Default, "generated");
+        assert_eq!(
+            columns[0].action,
+            TableSeedColumnAction::Default,
+            "auto_increment"
+        );
+        assert_eq!(
+            columns[1].action,
+            TableSeedColumnAction::Values,
+            "enum members"
+        );
+        assert_eq!(
+            columns[2].action,
+            TableSeedColumnAction::Default,
+            "generated"
+        );
+    }
+
+    /// End-to-end against the compose MySQL (`infrastructure/test-db`,
+    /// `make mysql`): `cargo test --manifest-path backend/Cargo.toml
+    /// mysql_table_seed_live --features isolated-profile -- --ignored`.
+    #[tokio::test]
+    #[ignore = "requires the infrastructure/test-db mysql container"]
+    async fn mysql_table_seed_live() {
+        let options = MySqlConnectOptions::new()
+            .host("127.0.0.1")
+            .port(13306)
+            .username("dbunk")
+            .password("dbunk")
+            .database("dbunk_demo");
+        let mut admin = options.connect().await.expect("connect");
+        for sql in [
+            "DROP TABLE IF EXISTS native_seed_orders",
+            "DROP TABLE IF EXISTS native_seed_customers",
+            "DROP TABLE IF EXISTS native_seed_log",
+            "CREATE TABLE native_seed_customers (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(40) NOT NULL) ENGINE=InnoDB",
+            "INSERT INTO native_seed_customers (name) VALUES ('Ada'), ('Grace')",
+            "CREATE TABLE native_seed_orders (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                customer_id INT NOT NULL,
+                email VARCHAR(120) NOT NULL UNIQUE,
+                status ENUM('new','paid') NOT NULL,
+                total DECIMAL(6,2) NOT NULL,
+                placed_at DATETIME NOT NULL,
+                label VARCHAR(20) GENERATED ALWAYS AS (CONCAT('#', customer_id)) VIRTUAL,
+                CONSTRAINT fk_native_seed_customer FOREIGN KEY (customer_id) REFERENCES native_seed_customers(id)
+             ) ENGINE=InnoDB",
+            "CREATE TABLE native_seed_log (line VARCHAR(10) NOT NULL) ENGINE=MyISAM",
+        ] {
+            admin.execute(sql).await.unwrap_or_else(|e| panic!("{sql}: {e}"));
+        }
+        let target = TableSeedConnection {
+            engine: TableSeedEngine::MySql,
+            connection_name: "compose".into(),
+            host: "127.0.0.1".into(),
+            port: 13306,
+            database: "dbunk_demo".into(),
+            user: "dbunk".into(),
+            environment: "Development".into(),
+            safe_mode: "Inherit".into(),
+            read_only: false,
+        };
+        let intent = |table: &str, rows| {
+            TableSeedIntent::new(
+                TableSeedEndpoint {
+                    connection_id: "compose".into(),
+                    schema: "dbunk_demo".into(),
+                    table: table.into(),
+                },
+                rows,
+                Some(9),
+                vec![],
+            )
+            .unwrap()
+        };
+        let control = Control::default();
+        let deadline = Instant::now() + engine::INSPECTION_DEADLINE;
+
+        let refused = inspect_with(
+            &options,
+            intent("native_seed_log", 5),
+            target.clone(),
+            &control,
+            deadline,
+        )
+        .await
+        .err()
+        .map(|f| f.error);
+        assert_eq!(
+            refused,
+            Some(TableSeedError::UnsupportedTarget),
+            "MyISAM has no transactions"
+        );
+
+        let plan = inspect_with(
+            &options,
+            intent("native_seed_orders", 500),
+            target.clone(),
+            &control,
+            deadline,
+        )
+        .await
+        .unwrap_or_else(|f| panic!("{:?}", f.error));
+        assert_eq!(plan.issue, None);
+        let execution = execute_with(&options, Arc::new(plan), &control, engine::deadline()).await;
+        assert_eq!(execution.outcome, TableSeedOutcome::Completed { rows: 500 });
+        let row = admin
+            .fetch_one(
+                "SELECT COUNT(*), COUNT(DISTINCT email), CAST(COALESCE(SUM(\
+                 customer_id NOT IN (SELECT id FROM native_seed_customers)),0) AS SIGNED) \
+                 FROM native_seed_orders",
+            )
+            .await
+            .unwrap();
+        assert_eq!(row.try_get::<i64, _>(0).unwrap(), 500);
+        assert_eq!(row.try_get::<i64, _>(1).unwrap(), 500);
+        assert_eq!(row.try_get::<i64, _>(2).unwrap(), 0, "no orphans");
+
+        // A change between review and run is refused and writes nothing.
+        let plan = inspect_with(
+            &options,
+            intent("native_seed_orders", 10),
+            target,
+            &control,
+            deadline,
+        )
+        .await
+        .unwrap_or_else(|f| panic!("{:?}", f.error));
+        admin
+            .execute("ALTER TABLE native_seed_orders ADD COLUMN note TEXT")
+            .await
+            .unwrap();
+        let execution = execute_with(&options, Arc::new(plan), &control, engine::deadline()).await;
+        assert_eq!(execution.outcome, TableSeedOutcome::RolledBack);
+        assert_eq!(
+            execution.failure.unwrap().error,
+            TableSeedError::TargetChanged
+        );
+        let count: i64 = admin
+            .fetch_one("SELECT COUNT(*) FROM native_seed_orders")
+            .await
+            .unwrap()
+            .try_get(0)
+            .unwrap();
+        assert_eq!(count, 500);
     }
 }

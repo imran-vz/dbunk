@@ -4,7 +4,7 @@ use crate::backend::development::workspace::{
     tests::{pool, raw},
     WorkspaceSnapshot,
 };
-use crate::backend::table_seed::{TableSeedConnection, TableSeedEndpoint};
+use crate::backend::table_seed::{TableSeedConnection, TableSeedEndpoint, TableSeedEngine};
 fn journal() -> WorkspaceTableSeed {
     WorkspaceTableSeed {
         attempt_id: TableSeedAttemptId::new(),
@@ -15,6 +15,7 @@ fn journal() -> WorkspaceTableSeed {
                 table: "target".into(),
             },
             connection: TableSeedConnection {
+                engine: TableSeedEngine::Postgres,
                 connection_name: "Owned test".into(),
                 host: "localhost".into(),
                 port: 5432,
@@ -35,6 +36,7 @@ fn journal() -> WorkspaceTableSeed {
             inserted_columns: 1,
             defaulted_columns: 2,
             generator_version: 1,
+            table_fingerprint: None,
         },
         state: WorkspaceTableSeedState::Applying,
         failure: None,

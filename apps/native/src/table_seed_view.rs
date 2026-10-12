@@ -32,7 +32,11 @@ const MIB: usize = 1024 * 1024;
 // No generated rows or opaque backend preparation ownership is retained here.
 const SETUP_BYTES: usize = 3 * MIB;
 const FIELDS: [(&str, usize, bool); 10] = [
-    ("Destination schema", 63, false),
+    (
+        "Destination schema (MySQL: database; SQLite: main)",
+        63,
+        false,
+    ),
     ("Destination table", 63, false),
     ("Rows (1–1000000)", 7, false),
     ("Optional unsigned seed", 20, false),
@@ -108,6 +112,9 @@ pub struct TableSeedView {
     connections_current: bool,
     connection_revision: u64,
     connection: Option<String>,
+    /// Per destination, the schema to pre-fill: a MySQL connection's
+    /// default database, `main` for SQLite, nothing for PostgreSQL.
+    schema_defaults: Vec<(String, String)>,
     choosing: bool,
     choice: Option<usize>,
     selected: Option<TableSeedAttemptId>,
@@ -155,7 +162,7 @@ impl TableSeedView {
             store, _observer: observer, budget: retained, fields: vec![], field_events: vec![],
             _setup_lease: None, preset: Default::default(), pending_preset: false,
             connections: None, connections_current: false, connection_revision: 0,
-            connection: document.connection_id.clone(), choosing: false, choice: None,
+            connection: document.connection_id.clone(), schema_defaults: vec![], choosing: false, choice: None,
             selected: None, recipe: None, setup_anchor: None, column: None, review_column: None, review_focus: cx.focus_handle(), review_scroll: UniformListScrollHandle::new(), mode: ColumnMode::Auto,
             choosing_mode: false, mode_choice: None, column_dirty: false, armed: None,
             editable: true, realism: TableSeedRealism::FictionalSafe, preview: None, status: "Load columns, edit their sources, then prepare and review the exact recipe. Rows change only after saved admission.".into(),
@@ -195,9 +202,15 @@ impl TableSeedView {
     }
     pub fn bind_connection(&mut self, connection: String, cx: &mut Context<Self>) {
         if self.connection.as_ref() != Some(&connection) {
+            let schema = self
+                .schema_defaults
+                .iter()
+                .find(|(id, _)| *id == connection)
+                .map(|(_, schema)| schema.clone())
+                .unwrap_or_default();
             self.connection = Some(connection);
             self.preview = None;
-            self.preset = Default::default();
+            self.preset = [schema, String::new()];
             self.pending_preset = true;
             self.choosing = false;
             self.status="Destination changed. Previous recipe remains visible but cannot prepare against a different table.".into();
@@ -225,9 +238,33 @@ impl TableSeedView {
             return;
         };
         self.connection_revision = revision;
+        use dbunk_lib::backend::DevelopmentEngineConnection as Engine;
+        let seedable = |row: &&dbunk_lib::backend::DevelopmentConnection| {
+            row.postgres.is_some()
+                || matches!(row.settings, Some(Engine::MySQL(_) | Engine::SQLite(_)))
+        };
+        self.schema_defaults = rows
+            .iter()
+            .filter(seedable)
+            .filter_map(|row| match &row.settings {
+                Some(Engine::MySQL(mysql)) => Some((row.id.clone(), mysql.database.clone())),
+                Some(Engine::SQLite(_)) => Some((row.id.clone(), "main".to_owned())),
+                _ => None,
+            })
+            .collect();
+        // A destination bound before the list arrived gets its default now.
+        if self.pending_preset
+            && self.preset[0].is_empty()
+            && let Some((_, schema)) = self
+                .connection
+                .as_ref()
+                .and_then(|id| self.schema_defaults.iter().find(|(key, _)| key == id))
+        {
+            self.preset[0] = schema.clone();
+        }
         match Connections::capture(
             rows.iter()
-                .filter(|row| row.postgres.is_some())
+                .filter(seedable)
                 .map(|row| (row.id.as_str(), row.name.as_str())),
             self.budget.clone(),
         ) {

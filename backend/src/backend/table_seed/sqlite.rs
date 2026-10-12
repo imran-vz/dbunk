@@ -161,8 +161,11 @@ impl Catalog {
 
     pub(crate) fn heap_bytes(&self) -> Option<usize> {
         use std::mem::size_of;
-        let strings =
-            |v: &[String]| v.iter().map(|s| s.capacity() + size_of::<String>()).sum::<usize>();
+        let strings = |v: &[String]| {
+            v.iter()
+                .map(|s| s.capacity() + size_of::<String>())
+                .sum::<usize>()
+        };
         let mut n = self.table.capacity() + self.definition.capacity();
         for c in &self.columns {
             n += size_of::<Column>() + c.name.capacity() + c.declared_type.capacity();
@@ -213,16 +216,19 @@ async fn inspect_catalog(
         return Err(TableSeedError::UnsupportedTarget.into());
     }
     let table = endpoint.table.as_str();
-    let created = sqlx::query(
-        "SELECT sql FROM main.sqlite_master WHERE type = 'table' AND name = ?",
-    )
-    .bind(table)
-    .fetch_optional(&mut *connection)
-    .await
-    .map_err(|e| sqlx_failure(&e))?
-    .ok_or(TableSeedError::UnsupportedTarget)?;
+    let created =
+        sqlx::query("SELECT sql FROM main.sqlite_master WHERE type = 'table' AND name = ?")
+            .bind(table)
+            .fetch_optional(&mut *connection)
+            .await
+            .map_err(|e| sqlx_failure(&e))?
+            .ok_or(TableSeedError::UnsupportedTarget)?;
     let created = text(&created, 0)?;
-    if created.trim_start().to_ascii_uppercase().starts_with("CREATE VIRTUAL") {
+    if created
+        .trim_start()
+        .to_ascii_uppercase()
+        .starts_with("CREATE VIRTUAL")
+    {
         return Err(TableSeedError::UnsupportedTarget.into());
     }
     // Indexes and triggers belong to the reviewed definition too.
@@ -367,14 +373,16 @@ async fn connect(
         .map_err(|e| sqlx_failure(&e))?;
     // A cancelled job interrupts whatever statement is running.
     let watched = control.clone();
-    match connection.lock_handle().await {
+    let installed = match connection.lock_handle().await {
         Ok(mut handle) => {
             handle.set_progress_handler(PROGRESS_OPS, move || !watched.is_cancelled());
+            Ok(())
         }
-        Err(error) => {
-            let _ = connection.close().await;
-            return Err(sqlx_failure(&error));
-        }
+        Err(error) => Err(sqlx_failure(&error)),
+    };
+    if let Err(failure) = installed {
+        let _ = connection.close().await;
+        return Err(failure);
     }
     Ok(connection)
 }
@@ -428,7 +436,11 @@ async fn finalize(
     let mut bytes = 0usize;
     for index in &draft.needed_pools {
         let fk = &table.structure.foreign_keys[*index];
-        let names: Vec<String> = fk.referenced_columns.iter().map(|c| quote_double(c)).collect();
+        let names: Vec<String> = fk
+            .referenced_columns
+            .iter()
+            .map(|c| quote_double(c))
+            .collect();
         let sql = format!(
             "SELECT DISTINCT {} FROM main.{} WHERE {} LIMIT {MAX_PARENT_ROWS}",
             names

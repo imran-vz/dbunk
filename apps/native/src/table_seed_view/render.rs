@@ -67,7 +67,7 @@ impl Render for TableSeedView {
                 div()
                     .id("seed-connections")
                     .role(Role::ListBox)
-                    .aria_label("Stored PostgreSQL destinations")
+                    .aria_label("Stored PostgreSQL, MySQL and SQLite destinations")
                     .track_focus(&self.choice_focus)
                     .tab_stop(true)
                     .child(self.choices(cx)),
@@ -210,7 +210,7 @@ impl Render for TableSeedView {
         if let Some(text) = self.details(cx) {
             content = content.child(label("seed-attempt-details", text));
         }
-        div().id("seed-view").key_context("TableSeed").role(Role::Group).aria_label("PostgreSQL table seed").track_focus(&self.root).size_full().bg(crate::style::bg()).text_color(crate::style::text()).text_size(px(crate::style::FONT))
+        div().id("seed-view").key_context("TableSeed").role(Role::Group).aria_label("Table seed").track_focus(&self.root).size_full().bg(crate::style::bg()).text_color(crate::style::text()).text_size(px(crate::style::FONT))
             .on_action(cx.listener(|this, _: &NextControl, window, cx| this.focus_control(false, window, cx)))
             .on_action(cx.listener(|this, _: &PreviousControl, window, cx| this.focus_control(true, window, cx)))
             .capture_key_down(cx.listener(Self::key)).overflow_y_scroll().track_scroll(&self.scroll)

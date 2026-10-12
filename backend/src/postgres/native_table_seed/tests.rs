@@ -1,4 +1,19 @@
 use super::*;
+use crate::backend::table_seed::engine::commit_result;
+impl Plan {
+    fn pg(&self) -> &Catalog {
+        match &self.catalog {
+            EngineCatalog::Postgres(catalog) => catalog,
+            _ => unreachable!("PostgreSQL fixture"),
+        }
+    }
+    fn pg_mut(&mut self) -> &mut Catalog {
+        match &mut self.catalog {
+            EngineCatalog::Postgres(catalog) => catalog,
+            _ => unreachable!("PostgreSQL fixture"),
+        }
+    }
+}
 #[tokio::test]
 async fn commit_fence_preserves_known_success_and_unknown_loss() {
     let c = Control::default();
@@ -125,6 +140,7 @@ pub(crate) fn plan(intent: TableSeedIntent, target: TableSeedConnection) -> Plan
         inserted_columns: 1,
         defaulted_columns: 0,
         generator_version: 1,
+        table_fingerprint: None,
     };
     Plan {
         seed_used: description.seed_used,
@@ -133,7 +149,7 @@ pub(crate) fn plan(intent: TableSeedIntent, target: TableSeedConnection) -> Plan
         intent,
         columns,
         issue: None,
-        catalog,
+        catalog: EngineCatalog::Postgres(catalog),
     }
 }
 #[test]
@@ -153,12 +169,12 @@ fn batch_budget_accounts_for_literal_expansion_and_parameter_count() {
         options: Default::default(),
     };
     assert_eq!(
-        planning::batch_size(&plan, &vec!["text".into(); 1600], 100),
+        engine::batch_size(&plan, &[20; 1600], 100, 60_000),
         Err(TableSeedError::Limit)
     );
     let mut plan = plan;
     plan.columns.truncate(1);
-    let batch = planning::batch_size(&plan, &["text".into()], 100).unwrap();
+    let batch = engine::batch_size(&plan, &[20], 100, 60_000).unwrap();
     assert!(batch < 500);
     assert!(batch > 0);
 }
@@ -171,6 +187,7 @@ fn database_supplied_fk_columns_are_omitted_before_fk_precedence() {
         table: "t".into(),
     };
     let target = TableSeedConnection {
+        engine: TableSeedEngine::Postgres,
         connection_name: "c".into(),
         host: "localhost".into(),
         port: 5432,
@@ -184,7 +201,7 @@ fn database_supplied_fk_columns_are_omitted_before_fk_precedence() {
         TableSeedIntent::new(endpoint, 10, Some(1), vec![]).unwrap(),
         target,
     );
-    p.catalog.keys.push(catalog::Key {
+    p.pg_mut().keys.push(catalog::Key {
         name: "fk".into(),
         kind: "f".into(),
         columns: vec!["value".into()],
@@ -195,9 +212,9 @@ fn database_supplied_fk_columns_are_omitted_before_fk_precedence() {
         fingerprint: "x".into(),
     });
     for identity in [false, true] {
-        p.catalog.relation.columns[0].public.identity = identity;
-        p.catalog.relation.columns[0].public.generated = !identity;
-        let draft = planning::draft(&p.catalog, &p.intent).unwrap();
+        p.pg_mut().relation.columns[0].public.identity = identity;
+        p.pg_mut().relation.columns[0].public.generated = !identity;
+        let draft = planning::draft(p.pg(), &p.intent).unwrap();
         assert!(draft.needed_pools.is_empty());
         assert!(matches!(
             draft.columns()[0].source,
@@ -214,8 +231,9 @@ fn endpoint() -> TableSeedEndpoint {
     }
 }
 
-fn target() -> TableSeedConnection {
+pub(crate) fn target() -> TableSeedConnection {
     TableSeedConnection {
+        engine: TableSeedEngine::Postgres,
         connection_name: "c".into(),
         host: "localhost".into(),
         port: 5432,
@@ -232,10 +250,10 @@ fn enum_plan(columns: Vec<TableSeedColumnSpec>) -> Plan {
         TableSeedIntent::new(endpoint(), 10, Some(1), columns).unwrap(),
         target(),
     );
-    let column = &mut p.catalog.relation.columns[0].public;
+    let column = &mut p.pg_mut().relation.columns[0].public;
     column.data_type = "mood".into();
     column.nullable = true;
-    p.catalog.enum_labels = vec![("value".into(), vec!["sad".into(), "ok".into()])];
+    p.pg_mut().enum_labels = vec![("value".into(), vec!["sad".into(), "ok".into()])];
     p
 }
 
@@ -251,7 +269,7 @@ fn auto_enum_columns_draw_from_their_declared_labels() {
         }],
     ] {
         let p = enum_plan(columns);
-        let draft = planning::draft(&p.catalog, &p.intent).unwrap();
+        let draft = planning::draft(p.pg(), &p.intent).unwrap();
         match &draft.columns()[0].source {
             crate::seed::ColumnSource::ValueList(values) => {
                 assert_eq!(values, &vec!["sad".to_string(), "ok".to_string()]);
@@ -259,7 +277,7 @@ fn auto_enum_columns_draw_from_their_declared_labels() {
             other => panic!("expected enum labels, got {other:?}"),
         }
         assert!(matches!(
-            planning::columns(&p.catalog, Some(&draft))[0].action,
+            planning::columns(p.pg(), Some(&draft))[0].action,
             TableSeedColumnAction::Values
         ));
     }
@@ -273,7 +291,7 @@ fn explicit_enum_column_choices_are_kept() {
         null_rate: None,
         length: None,
     }]);
-    let draft = planning::draft(&p.catalog, &p.intent).unwrap();
+    let draft = planning::draft(p.pg(), &p.intent).unwrap();
     assert!(matches!(
         &draft.columns()[0].source,
         crate::seed::ColumnSource::Constant(Some(value)) if value == "ok"
@@ -286,14 +304,14 @@ fn unique_fixed_point_runs_must_fit_the_integer_digits() {
         TableSeedIntent::new(endpoint(), 10, Some(1), vec![]).unwrap(),
         target(),
     );
-    p.catalog.relation.columns[0].public.data_type = "numeric(3,2)".into();
-    p.catalog.indexes.push(catalog::Index {
+    p.pg_mut().relation.columns[0].public.data_type = "numeric(3,2)".into();
+    p.pg_mut().indexes.push(catalog::Index {
         name: "value_key".into(),
         columns: vec!["value".into()],
         primary: false,
         fingerprint: "x".into(),
     });
-    let draft = planning::draft(&p.catalog, &p.intent).unwrap();
+    let draft = planning::draft(p.pg(), &p.intent).unwrap();
     // numeric(3,2) holds integer parts 0..=9, and row 10 needs 10.
     assert_eq!(
         planning::capacity(&draft, 10, &p.intent),
@@ -364,9 +382,9 @@ fn impossible_length_ranges_fail_review_as_length_errors() {
         .unwrap(),
         target(),
     );
-    p.catalog.relation.columns[0].public.data_type = "character varying(20)".into();
+    p.pg_mut().relation.columns[0].public.data_type = "character varying(20)".into();
     assert!(matches!(
-        planning::draft(&p.catalog, &p.intent),
+        planning::draft(p.pg(), &p.intent),
         Err(TableSeedError::LengthRange)
     ));
 }
@@ -398,7 +416,7 @@ fn generation_options_and_lengths_reach_the_plan_and_summary() {
     );
     assert_eq!(options.realism, crate::seed::Realism::Realistic);
     let p = plan(intent, target());
-    let draft = planning::draft(&p.catalog, &p.intent).unwrap();
+    let draft = planning::draft(p.pg(), &p.intent).unwrap();
     assert!(matches!(
         draft.columns()[0].source,
         crate::seed::ColumnSource::Generated {
@@ -447,7 +465,7 @@ fn previews_use_the_inspected_catalog_and_reviews_checks() {
         assert!((40..=60).contains(chars), "{chars}");
     }
     let mut narrow = p;
-    narrow.catalog.relation.columns[0].public.data_type = "character varying(20)".into();
+    narrow.pg_mut().relation.columns[0].public.data_type = "character varying(20)".into();
     assert_eq!(
         narrow.preview(&ranged(Some(40), Some(60))),
         Err(TableSeedError::LengthRange)
@@ -499,12 +517,12 @@ fn columns_report_whether_auto_takes_a_length() {
         TableSeedIntent::new(endpoint(), 10, Some(1), vec![]).unwrap(),
         target(),
     );
-    let auto_length = |p: &Plan| planning::columns(&p.catalog, None)[0].auto_length;
+    let auto_length = |p: &Plan| planning::columns(p.pg(), None)[0].auto_length;
     assert!(auto_length(&p), "text takes a length");
-    p.catalog.relation.columns[0].public.data_type = "integer".into();
+    p.pg_mut().relation.columns[0].public.data_type = "integer".into();
     assert!(!auto_length(&p), "integers do not");
-    p.catalog.relation.columns[0].public.data_type = "mood".into();
-    p.catalog.enum_labels = vec![("value".into(), vec!["ok".into()])];
+    p.pg_mut().relation.columns[0].public.data_type = "mood".into();
+    p.pg_mut().enum_labels = vec![("value".into(), vec!["ok".into()])];
     assert!(!auto_length(&p), "enums draw their labels");
 }
 

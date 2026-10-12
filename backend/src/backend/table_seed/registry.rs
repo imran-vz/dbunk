@@ -29,20 +29,15 @@ pub(super) type Inspector = Arc<
     dyn Fn(
             TableSeedIntent,
             TableSeedConnection,
-        ) -> futures_util::future::BoxFuture<
-            'static,
-            Result<Plan, super::engine::Failure>,
-        > + Send
+        )
+            -> futures_util::future::BoxFuture<'static, Result<Plan, super::engine::Failure>>
+        + Send
         + Sync,
 >;
 #[cfg(test)]
 pub(super) type Runner = Arc<
-    dyn Fn(
-            Arc<Control>,
-        ) -> futures_util::future::BoxFuture<
-            'static,
-            super::engine::Execution,
-        > + Send
+    dyn Fn(Arc<Control>) -> futures_util::future::BoxFuture<'static, super::engine::Execution>
+        + Send
         + Sync,
 >;
 pub(in crate::backend) struct Registry {
