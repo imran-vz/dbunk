@@ -8,6 +8,9 @@
 //! CONCURRENTLY`) follow under the connection's inherited settings, each
 //! after re-checking the table OID; a failure there reports the committed
 //! prefix, and a failed concurrent build's leftover invalid index is dropped.
+//! Once they all succeed the table is re-captured in a read-only
+//! transaction and verified again; a mismatch or an unanswered read is
+//! OutcomeUnknown, since the statements committed and cannot be rolled back.
 //!
 //! Only a real ROLLBACK acknowledgement establishes RolledBack; a lost reply
 //! after dispatch is always OutcomeUnknown.
@@ -20,7 +23,7 @@ use crate::postgres::connect_spec::ResolvedPostgresConnectSpec;
 use crate::postgres::dedicated::{self, DedicatedConnection, DriverJoins, NoticeSink};
 use crate::quote_double;
 use crate::schema_edit::{
-    DriftToken, SchemaBaseline, SchemaDraft, SchemaEditFailure as Failure,
+    DriftToken, Origin, SchemaBaseline, SchemaDraft, SchemaEditFailure as Failure,
     SchemaEditOutcome as Outcome, SchemaEditPreview, TableModel,
 };
 use futures_util::future::BoxFuture;
@@ -40,6 +43,10 @@ const INDEX_CLEANUP_TIMEOUT: Duration = Duration::from_secs(30);
 /// kept, never widened, and never rounded down to 0 (which disables it).
 pub(super) const LOCK_TIMEOUT_LOCAL: &str = "SELECT pg_catalog.set_config('lock_timeout', CASE WHEN pg_catalog.current_setting('lock_timeout')::interval=interval '0' THEN '10000' ELSE GREATEST(LEAST(ROUND(EXTRACT(EPOCH FROM pg_catalog.current_setting('lock_timeout')::interval)*1000),10000),1)::bigint::text END, true)";
 pub(super) const BEGIN: &str = "BEGIN ISOLATION LEVEL READ COMMITTED";
+/// Wraps the final verification so `SET LOCAL` in the capture applies.
+pub(super) const BEGIN_VERIFY: &str = "BEGIN ISOLATION LEVEL READ COMMITTED READ ONLY";
+/// Bound for the verification read after standalone statements.
+const VERIFY_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(super) type Canceller = Arc<dyn Fn() -> BoxFuture<'static, ()> + Send + Sync>;
 
@@ -402,7 +409,52 @@ async fn apply(
             Err((false, reason)) => return Outcome::OutcomeUnknown { reason },
         }
     }
+    if built.statements.len() > atomic {
+        let verified = tokio::time::timeout(VERIFY_TIMEOUT, async {
+            socket.execute(BEGIN_VERIFY).await?;
+            let result = verify(socket, baseline, draft, &[]).await;
+            socket.execute("ROLLBACK").await?;
+            result
+        })
+        .await
+        .unwrap_or(Err(Failure::Timeout));
+        if let Err(reason) = verified {
+            return Outcome::OutcomeUnknown { reason };
+        }
+    }
     Outcome::Applied { runtime_ms: 0 }
+}
+
+/// Re-captures the table in the open transaction and compares it with the
+/// draft. `deferred` lists indexes not built yet.
+async fn verify(
+    socket: &mut impl Transport,
+    baseline: &SchemaBaseline,
+    draft: &SchemaDraft,
+    deferred: &[Origin],
+) -> Result<(), Failure> {
+    let requests = type_requests(baseline, draft);
+    let types: Vec<String> = requests.iter().map(|(_, text)| text.clone()).collect();
+    let (actual, canonical) = socket
+        .observe(&baseline.table.schema, &draft.table.name, &types)
+        .await?;
+    if canonical.len() != requests.len() {
+        return Err(Failure::VerificationFailed {
+            detail: "the server did not resolve every column type".into(),
+        });
+    }
+    let canonical: Vec<_> = requests
+        .iter()
+        .map(|(origin, _)| *origin)
+        .zip(canonical)
+        .collect();
+    Expectation {
+        baseline,
+        draft,
+        deferred_indexes: deferred,
+    }
+    .compare(&actual, &canonical)
+    .map_err(|detail| Failure::VerificationFailed { detail })
 }
 
 /// After a definite failure of `CREATE INDEX CONCURRENTLY`, drops the
@@ -573,8 +625,6 @@ async fn transaction(
     dispatched: &mut bool,
 ) -> Result<(), (bool, Failure)> {
     let schema = baseline.table.schema.as_str();
-    let requests = type_requests(baseline, draft);
-    let types: Vec<String> = requests.iter().map(|(_, text)| text.clone()).collect();
     let preparing = async {
         socket.execute(BEGIN).await?;
         socket.execute(LOCK_TIMEOUT_LOCAL).await?;
@@ -607,24 +657,7 @@ async fn transaction(
         for statement in &built.statements[..built.atomic_len()] {
             socket.execute(&statement.sql).await?;
         }
-        let (actual, canonical) = socket.observe(schema, &draft.table.name, &types).await?;
-        if canonical.len() != requests.len() {
-            return Err(Failure::VerificationFailed {
-                detail: "the server did not resolve every column type".into(),
-            });
-        }
-        let canonical: Vec<_> = requests
-            .iter()
-            .map(|(origin, _)| *origin)
-            .zip(canonical)
-            .collect();
-        Expectation {
-            baseline,
-            draft,
-            deferred_indexes: &built.deferred_indexes,
-        }
-        .compare(&actual, &canonical)
-        .map_err(|detail| Failure::VerificationFailed { detail })
+        verify(socket, baseline, draft, &built.deferred_indexes).await
     };
     let prepared = tokio::select! {
         biased;
