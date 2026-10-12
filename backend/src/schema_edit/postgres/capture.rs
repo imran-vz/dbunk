@@ -6,6 +6,7 @@
 //! across kinds: a column is its `attnum`; every other object is
 //! `kind_tag << 48 | oid`, plus flag bits 32..48 for attributes a re-create
 //! would lose (`mark_preserved`).
+pub(crate) use super::{drift_oid, drift_token};
 use crate::postgres::native_catalog::table_structure::{
     StructureConstraint, StructureForeignKey, StructureGeneratedKind, StructureIdentityKind,
     StructureIndex, StructureIndexKey, StructureReferentialAction, StructureRelationKind,
@@ -86,18 +87,6 @@ pub(crate) fn features() -> ServerFeatures {
 
 /// The drift token: relation OID plus a digest of the catalog row versions
 /// of the table and its sub-objects (see `catalog::DRIFT`).
-pub(crate) fn drift_token(oid: u32, digest: &str) -> DriftToken {
-    DriftToken(format!("pg:{oid}:{digest}"))
-}
-
-pub(crate) fn drift_oid(token: &DriftToken) -> Option<u32> {
-    let mut parts = token.0.splitn(3, ':');
-    match (parts.next(), parts.next(), parts.next()) {
-        (Some("pg"), Some(oid), Some(_)) => oid.parse().ok().filter(|oid| *oid != 0),
-        _ => None,
-    }
-}
-
 /// `pg_class.reltuples`; negative means never analyzed.
 pub(crate) fn estimated_rows(reltuples: f64) -> Option<u64> {
     (reltuples.is_finite() && reltuples >= 0.0).then_some(reltuples as u64)

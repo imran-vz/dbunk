@@ -12,6 +12,7 @@ use super::model::{
     ColumnModel, IndexTarget, KeyModel, Origin, SchemaBaseline, SchemaDraft, SchemaEngine,
     TableModel,
 };
+use super::postgres::drift_oid;
 
 /// One field or object both sides changed, or a user edit whose object the
 /// server removed.
@@ -146,13 +147,15 @@ fn key_label(key: &KeyModel) -> String {
 /// so a server-side drop or insert shifts them onto other objects. For those
 /// engines a merge is only sound when every id present in both baselines
 /// still names the same object and no object appeared or vanished.
-/// PostgreSQL ids (attnum, OIDs) never move.
+/// PostgreSQL ids (attnum, OIDs) never move within one relation, but a
+/// dropped and recreated table reuses attnums under a new relation OID, so
+/// the OIDs in both drift tokens must match.
 fn ids_comparable(old: &SchemaBaseline, new: &SchemaBaseline) -> bool {
     if old.engine != new.engine || old.table.schema != new.table.schema {
         return false;
     }
     if old.engine == SchemaEngine::Postgres {
-        return true;
+        return drift_oid(&old.drift) == drift_oid(&new.drift);
     }
     fn names<T>(
         items: &[T],
@@ -382,6 +385,7 @@ mod tests {
     use crate::schema_edit::diff::diff;
     use crate::schema_edit::fixtures::{existing, users};
     use crate::schema_edit::model::*;
+    use crate::schema_edit::postgres::drift_token;
 
     #[test]
     fn untouched_draft_follows_the_server() {
@@ -446,6 +450,27 @@ mod tests {
         assert!(rebased.table.column(existing(4)).is_none());
         assert!(rebased.table.indexes.is_empty());
         assert_eq!(conflicts.len(), 2);
+    }
+
+    #[test]
+    fn postgres_restarts_when_the_relation_was_replaced() {
+        let mut old = users(SchemaEngine::Postgres);
+        old.drift = drift_token(41, "aa");
+        // Omitting a column is a removal the user asked for on this relation.
+        let mut draft = SchemaDraft::from_baseline(&old);
+        draft.table.columns.retain(|c| c.origin != existing(4));
+        // Dropped and recreated: same name and attnums, new relation OID.
+        let mut new = old.clone();
+        new.drift = drift_token(42, "bb");
+        let (rebased, conflicts) = rebase(&old, &new, &draft);
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(rebased.table, new.table);
+        assert!(diff(&new, &rebased).is_empty());
+        // The same relation with a changed digest still merges.
+        new.drift = drift_token(41, "bb");
+        let (rebased, conflicts) = rebase(&old, &new, &draft);
+        assert!(conflicts.is_empty());
+        assert!(rebased.table.column(existing(4)).is_none());
     }
 
     #[test]
