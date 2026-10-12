@@ -99,7 +99,10 @@ async fn roll_back(
         Err(error) if database_message(&error).contains("no transaction is active") => {
             SchemaEditOutcome::RolledBack { reason }
         }
-        Err(_) => SchemaEditOutcome::OutcomeUnknown { reason },
+        Err(_) => SchemaEditOutcome::OutcomeUnknown {
+            committed: 0,
+            reason,
+        },
     }
 }
 
@@ -162,6 +165,7 @@ pub(super) async fn execute(
     }
     if let Err(error) = run(connection, "ROLLBACK").await {
         return SchemaEditOutcome::OutcomeUnknown {
+            committed: 0,
             reason: failure(error),
         };
     }

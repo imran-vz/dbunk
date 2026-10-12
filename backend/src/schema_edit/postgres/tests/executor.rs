@@ -280,6 +280,7 @@ async fn a_lost_commit_or_rollback_reply_is_unknown() {
     assert_eq!(
         apply(lost_commit, &permit, &case).await,
         SchemaEditOutcome::OutcomeUnknown {
+            committed: 0,
             reason: SchemaEditFailure::Connection
         }
     );
@@ -465,6 +466,7 @@ async fn concurrent_builds_run_after_commit_and_report_the_committed_prefix() {
     assert_eq!(
         apply(lost, &permit, &case).await,
         SchemaEditOutcome::OutcomeUnknown {
+            committed: 1,
             reason: SchemaEditFailure::Connection
         }
     );
@@ -568,6 +570,7 @@ async fn standalone_statements_are_verified_after_they_commit() {
     let permit = WritePermit::test_permit();
     match apply(missing, &permit, &case).await {
         SchemaEditOutcome::OutcomeUnknown {
+            committed: 2,
             reason: SchemaEditFailure::VerificationFailed { .. },
         } => {}
         other => panic!("expected an unverified outcome, got {other:?}"),
@@ -590,6 +593,7 @@ async fn standalone_statements_are_verified_after_they_commit() {
     assert_eq!(
         apply(unread, &permit, &case).await,
         SchemaEditOutcome::OutcomeUnknown {
+            committed: 2,
             reason: SchemaEditFailure::Connection
         }
     );

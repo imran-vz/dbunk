@@ -325,9 +325,14 @@ pub fn outcome_text(outcome: &SchemaEditOutcome, statements: usize) -> OutcomeTe
             ),
             true,
         ),
-        SchemaEditOutcome::OutcomeUnknown { reason } => (
+        SchemaEditOutcome::OutcomeUnknown { committed, reason } => (
             format!(
-                "Outcome unknown: {reason}. Inspect the table and reload its structure before another attempt. This change is never replayed."
+                "Outcome unknown: {reason}. {}Inspect the table and reload its structure before another attempt. This change is never replayed.",
+                match committed {
+                    0 => String::new(),
+                    1 => "Statement 1 is known to have committed. ".to_owned(),
+                    n => format!("Statements 1 to {n} are known to have committed. "),
+                }
             ),
             true,
         ),

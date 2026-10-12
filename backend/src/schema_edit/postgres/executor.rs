@@ -406,7 +406,7 @@ async fn apply(
                     reason,
                 };
             }
-            Err((false, reason)) => return Outcome::OutcomeUnknown { reason },
+            Err((false, reason)) => return Outcome::OutcomeUnknown { committed, reason },
         }
     }
     if built.statements.len() > atomic {
@@ -419,7 +419,7 @@ async fn apply(
         .await
         .unwrap_or(Err(Failure::Timeout));
         if let Err(reason) = verified {
-            return Outcome::OutcomeUnknown { reason };
+            return Outcome::OutcomeUnknown { committed, reason };
         }
     }
     Outcome::Applied { runtime_ms: 0 }
@@ -594,7 +594,10 @@ async fn atomic_group(
     .await;
     match result {
         Ok(()) => Ok(()),
-        Err((true, reason)) => Err(Outcome::OutcomeUnknown { reason }),
+        Err((true, reason)) => Err(Outcome::OutcomeUnknown {
+            committed: 0,
+            reason,
+        }),
         // Only reads and the lock ran; closing the socket ends the
         // transaction.
         Err((false, reason)) if !dispatched => Err(Outcome::NotDispatched { reason }),
@@ -606,7 +609,10 @@ async fn atomic_group(
             }
             match tokio::time::timeout_at(grace, socket.execute("ROLLBACK")).await {
                 Ok(Ok(())) => Err(Outcome::RolledBack { reason }),
-                _ => Err(Outcome::OutcomeUnknown { reason }),
+                _ => Err(Outcome::OutcomeUnknown {
+                    committed: 0,
+                    reason,
+                }),
             }
         }
     }
