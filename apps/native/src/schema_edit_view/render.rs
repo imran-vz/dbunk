@@ -997,6 +997,8 @@ impl SchemaEditView {
         panel = panel.children(self.choices(cx));
         for (slot, input) in self.inputs.iter().enumerate() {
             let attr = input.input.attr();
+            // USING rides on the type change: no "was" note or Undo of its own.
+            let derived = input.input == Input::Using;
             let error = self
                 .input_error
                 .as_ref()
@@ -1004,7 +1006,9 @@ impl SchemaEditView {
                 .map(|(_, error)| error.clone());
             let note: Option<(SharedString, bool)> = match (&error, model.before(target, attr)) {
                 (Some(error), _) => Some((error.clone().into(), true)),
-                (None, Some(before)) if input.input.attr() != Attr::Field(Field::Reference) => {
+                (None, Some(before))
+                    if !derived && input.input.attr() != Attr::Field(Field::Reference) =>
+                {
                     Some((format!("was {}", clip(&before)).into(), false))
                 }
                 _ => input.input.hint().map(|hint| (hint.into(), false)),
@@ -1023,6 +1027,7 @@ impl SchemaEditView {
                     )))
                     .children(
                         self.undo_button(slot, target, attr, cx)
+                            .filter(|_| !derived)
                             .map(|button| div().pt(px(14.)).child(button).into_any_element()),
                     ),
             );
