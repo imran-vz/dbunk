@@ -94,8 +94,9 @@ pub enum SchemaEditOutcome {
         failed_statement: usize,
         reason: SchemaEditFailure,
     },
-    /// The result could not be established (lost connection after
-    /// dispatch). Reconcile before another attempt; never replay.
+    /// The result could not be established: a lost connection after
+    /// dispatch, or committed statements whose re-capture failed or did not
+    /// match the draft. Reconcile before another attempt; never replay.
     OutcomeUnknown { reason: SchemaEditFailure },
 }
 

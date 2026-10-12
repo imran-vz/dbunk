@@ -1,5 +1,7 @@
 use super::super::capture::drift_token;
-use super::super::executor::{annotate, run, Canceller, Transport, BEGIN, LOCK_TIMEOUT_LOCAL};
+use super::super::executor::{
+    annotate, run, Canceller, Transport, BEGIN, BEGIN_VERIFY, LOCK_TIMEOUT_LOCAL,
+};
 use super::{review, setup};
 use crate::backend::table_ddl::WritePermit;
 use crate::schema_edit::fixtures::existing;
@@ -16,7 +18,11 @@ struct Fake {
     commands: Arc<Mutex<Vec<String>>>,
     drift: Option<DriftToken>,
     relation: Option<u32>,
+    /// What the in-transaction capture sees.
     observed: TableModel,
+    /// What later captures see, after standalone statements ran.
+    finished: TableModel,
+    observations: usize,
     fail: Vec<(String, SchemaEditFailure)>,
     cleaned: Arc<Mutex<Option<bool>>>,
     /// What the invalid-index probe answers.
@@ -68,7 +74,15 @@ impl Transport for Fake {
         types: &'a [String],
     ) -> BoxFuture<'a, Result<(TableModel, Vec<String>), SchemaEditFailure>> {
         // The fake server keeps every type exactly as written.
-        Box::pin(async move { Ok((self.observed.clone(), types.to_vec())) })
+        Box::pin(async move {
+            self.observations += 1;
+            let table = if self.observations == 1 {
+                &self.observed
+            } else {
+                &self.finished
+            };
+            Ok((table.clone(), types.to_vec()))
+        })
     }
     fn canceller(&self) -> Canceller {
         Arc::new(|| Box::pin(async {}))
@@ -112,6 +126,8 @@ fn fake(case: &Case) -> Fake {
         drift: Some(case.baseline.drift.clone()),
         relation: Some(OID),
         observed: case.draft.table.clone(),
+        finished: case.draft.table.clone(),
+        observations: 0,
         fail: Vec::new(),
         cleaned: Default::default(),
         invalid: Ok(false),
@@ -323,13 +339,13 @@ async fn concurrent_builds_run_after_commit_and_report_the_committed_prefix() {
         "{outcome:?}"
     );
     let commands = commands.lock().unwrap().clone();
-    assert_eq!(commands.last(), Some(&index_sql));
     let commit = commands.iter().position(|c| c == "COMMIT").unwrap();
     assert_eq!(
-        commit + 1,
-        commands.len() - 1,
+        commands[commit + 1],
+        index_sql,
         "the build runs after COMMIT"
     );
+    assert_eq!(&commands[commit + 2..], [BEGIN_VERIFY, "ROLLBACK"]);
 
     let failure = SchemaEditFailure::Database {
         code: Some("23505".into()),
@@ -522,15 +538,69 @@ async fn the_lock_timeout_is_transaction_local_and_absent_without_an_atomic_grou
             ..PlanOptions::default()
         }
     });
-    let mut socket = fake(&only);
-    let mut observed = only.draft.table.clone();
-    observed.indexes.pop();
-    socket.observed = observed;
+    // No atomic group, so the only capture is the final verification.
+    let socket = fake(&only);
     let commands = socket.commands.clone();
     let permit = WritePermit::test_permit();
     assert!(apply(socket, &permit, &only).await.applied());
     let commands = commands.lock().unwrap().clone();
-    assert_eq!(commands, vec![only.preview.statements[0].sql.clone()]);
+    assert_eq!(
+        commands,
+        vec![
+            only.preview.statements[0].sql.clone(),
+            BEGIN_VERIFY.to_owned(),
+            "ROLLBACK".to_owned()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn standalone_statements_are_verified_after_they_commit() {
+    let case = with_concurrent_index();
+    let mut observed = case.draft.table.clone();
+    observed.indexes.pop();
+
+    // The build reports success, but the index is not there.
+    let mut missing = fake(&case);
+    missing.observed = observed.clone();
+    missing.finished = observed.clone();
+    let commands = missing.commands.clone();
+    let permit = WritePermit::test_permit();
+    match apply(missing, &permit, &case).await {
+        SchemaEditOutcome::OutcomeUnknown {
+            reason: SchemaEditFailure::VerificationFailed { .. },
+        } => {}
+        other => panic!("expected an unverified outcome, got {other:?}"),
+    }
+    let commands = commands.lock().unwrap().clone();
+    let index = commands
+        .iter()
+        .position(|c| *c == case.preview.statements[1].sql)
+        .unwrap();
+    assert_eq!(commands[index + 1], BEGIN_VERIFY);
+    assert_eq!(commands.last().map(String::as_str), Some("ROLLBACK"));
+
+    // A verification read that fails leaves the outcome unknown too.
+    let mut unread = fake(&case);
+    unread.observed = observed;
+    unread
+        .fail
+        .push((BEGIN_VERIFY.into(), SchemaEditFailure::Connection));
+    let permit = WritePermit::test_permit();
+    assert_eq!(
+        apply(unread, &permit, &case).await,
+        SchemaEditOutcome::OutcomeUnknown {
+            reason: SchemaEditFailure::Connection
+        }
+    );
+
+    // An atomic-only plan is verified once, inside its transaction.
+    let plain = add_column();
+    let socket = fake(&plain);
+    let commands = socket.commands.clone();
+    let permit = WritePermit::test_permit();
+    assert!(apply(socket, &permit, &plain).await.applied());
+    assert_eq!(sent(&commands, BEGIN_VERIFY), 0);
 }
 
 fn sent_in(commands: &[String], sql: &str) -> usize {
