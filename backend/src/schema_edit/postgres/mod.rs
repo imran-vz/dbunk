@@ -9,7 +9,9 @@
 //!   `CREATE INDEX CONCURRENTLY` follow as standalone statements.
 //! - `executor`: lock, drift recheck, statements, in-transaction
 //!   re-capture and verification, then COMMIT.
-use super::{EnginePlan, PlanError, PlanOptions, SchemaBaseline, SchemaChangeSet, SchemaDraft};
+use super::{
+    DriftToken, EnginePlan, PlanError, PlanOptions, SchemaBaseline, SchemaChangeSet, SchemaDraft,
+};
 
 #[cfg(feature = "isolated-profile")]
 mod capture;
@@ -22,6 +24,20 @@ mod planner;
 mod tests;
 #[cfg(feature = "isolated-profile")]
 mod verify;
+
+/// The drift token: the relation OID, then a digest of its catalog rows.
+pub(crate) fn drift_token(oid: u32, digest: &str) -> DriftToken {
+    DriftToken(format!("pg:{oid}:{digest}"))
+}
+
+/// The relation OID a drift token was read from, if it is a PostgreSQL one.
+pub(crate) fn drift_oid(token: &DriftToken) -> Option<u32> {
+    let mut parts = token.0.splitn(3, ':');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some("pg"), Some(oid), Some(_)) => oid.parse().ok().filter(|oid| *oid != 0),
+        _ => None,
+    }
+}
 
 /// Plans `draft` as ordered PostgreSQL statements. Pure and deterministic.
 pub fn plan(
