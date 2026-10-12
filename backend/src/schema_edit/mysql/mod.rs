@@ -53,13 +53,28 @@ pub(crate) async fn capture(
 /// `options`, so DDL's implicit commit never touches the user's session
 /// transaction. The caller has already re-planned, compared `preview` and
 /// checked the policy.
+#[cfg(test)]
 pub(crate) async fn execute(
     options: &MySqlConnectOptions,
     baseline: &SchemaBaseline,
     draft: &SchemaDraft,
     preview: &SchemaEditPreview,
 ) -> SchemaEditOutcome {
-    executor::execute(options, baseline, draft, preview).await
+    // The sender is dropped at once: nothing ever asks this run to stop.
+    let (_, stop) = tokio::sync::watch::channel(false);
+    executor::execute(options, baseline, draft, preview, stop).await
+}
+
+/// The apply as the session runs it, which `stop` can interrupt: a running statement is stopped
+/// with `KILL QUERY` (reported `Cancelled`) and no later statement runs.
+pub(crate) async fn execute_until(
+    options: &MySqlConnectOptions,
+    baseline: &SchemaBaseline,
+    draft: &SchemaDraft,
+    preview: &SchemaEditPreview,
+    stop: tokio::sync::watch::Receiver<bool>,
+) -> SchemaEditOutcome {
+    executor::execute(options, baseline, draft, preview, stop).await
 }
 
 #[cfg(test)]

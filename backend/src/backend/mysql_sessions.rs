@@ -294,6 +294,9 @@ struct Tracker {
     /// Queued ids; `true` once cancelled.
     queued: HashMap<u64, bool>,
     running: Option<u64>,
+    /// Stops the running schema apply, which runs on its own connection:
+    /// `KILL QUERY` on the session thread would not reach it.
+    stop_apply: Option<watch::Sender<bool>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -325,6 +328,7 @@ impl Tracker {
     fn finish(&mut self, id: u64) {
         if self.running == Some(id) {
             self.running = None;
+            self.stop_apply = None;
         }
     }
 

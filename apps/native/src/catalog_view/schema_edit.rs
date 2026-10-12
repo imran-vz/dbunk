@@ -13,7 +13,7 @@ pub(super) struct SchemaEditLane {
     recovery: Option<WorkspaceSchemaEdit>,
     events: Option<gpui::Subscription>,
     pub(super) busy: bool,
-    show: bool,
+    pub(super) show: bool,
 }
 
 impl SchemaEditLane {
@@ -80,6 +80,15 @@ impl CatalogView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // One Objects review owns the document: the workspace journal
+        // rejects a structure draft next to any other Objects intent.
+        if self.blocked_by_other_lane(super::object_ddl::Lane::SchemaEdit, cx) {
+            self.status =
+                "Finish or reconcile the current Objects operation before editing a structure"
+                    .into();
+            cx.notify();
+            return;
+        }
         let request = SchemaEditRequest::new(schema, table);
         if let Some(view) = &self.schema_edit.view
             && view.read(cx).request() != &request

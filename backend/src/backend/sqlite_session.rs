@@ -768,8 +768,18 @@ async fn run_worker(
                 let _ = reply.send(result);
             }
             Work::SchemaApply { edit, reply } => {
-                let result = schema_apply(&mut connection, &config, *edit).await;
+                let (result, sound) = schema_apply(&mut connection, &config, *edit).await;
                 let _ = reply.send(Ok(result));
+                if !sound {
+                    // The apply could not put the connection back (a
+                    // transaction may be open, foreign keys may be off).
+                    // Closing it rolls back; queued and later work is
+                    // refused as closed rather than run on it.
+                    shared.closing.store(true, Ordering::Release);
+                    *lock(&shared.current) = None;
+                    shared.forget(ticket, &cancel);
+                    break;
+                }
             }
         }
         *lock(&shared.current) = None;
@@ -780,22 +790,32 @@ async fn run_worker(
 
 /// Plan 033: policy first (nothing runs on a refusal), then the engine
 /// executor. Confirmed overrides are audited once the change may have run.
+/// The flag is false when the connection must be closed.
 async fn schema_apply(
     connection: &mut SqliteConnection,
     config: &SqliteSessionConfig,
     edit: SchemaApplyWork,
-) -> SessionApply {
+) -> (SessionApply, bool) {
     if config.read_only {
-        return SessionApply::Blocked("The connection is read-only".into());
+        return (
+            SessionApply::Blocked("The connection is read-only".into()),
+            true,
+        );
     }
     let authorization = match assert_permitted(&config.policy, &WriteIntent::Ddl, edit.confirmed) {
         Ok(authorization) => authorization,
-        Err(SafetyRefusal::Blocked { reason, .. }) => return SessionApply::Blocked(reason.into()),
-        Err(SafetyRefusal::NeedsConfirmation { .. }) => return SessionApply::NeedsConfirmation,
+        Err(SafetyRefusal::Blocked { reason, .. }) => {
+            return (SessionApply::Blocked(reason.into()), true)
+        }
+        Err(SafetyRefusal::NeedsConfirmation { .. }) => {
+            return (SessionApply::NeedsConfirmation, true)
+        }
     };
-    let outcome =
-        crate::schema_edit::sqlite::execute(connection, &edit.baseline, &edit.draft, &edit.preview)
-            .await;
+    let crate::schema_edit::sqlite::Executed {
+        outcome,
+        connection_sound,
+    } = crate::schema_edit::sqlite::execute(connection, &edit.baseline, &edit.draft, &edit.preview)
+        .await;
     if outcome.may_have_changed()
         && authorization.audit_disposition() == AuditDisposition::RequiredAfterSuccess
     {
@@ -809,7 +829,7 @@ async fn schema_apply(
             .await;
         }
     }
-    SessionApply::Finished(outcome)
+    (SessionApply::Finished(outcome), connection_sound)
 }
 
 /// A failure caused by `close` or `cancel` reports that cause, not SQLite's

@@ -543,6 +543,30 @@ fn referenced_by_sessions(columns: &[&str]) -> SchemaBaseline {
 }
 
 #[test]
+fn the_inbound_note_names_each_referencing_table_once() {
+    let mut baseline = referenced_by_sessions(&["id"]);
+    for (table, name) in [("audit", "fk0"), ("sessions", "fk1")] {
+        baseline.inbound.push(crate::schema_edit::InboundReference {
+            schema: "main".into(),
+            table: table.into(),
+            name: name.into(),
+            columns: vec!["id".into()],
+        });
+    }
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.add_column("extra", "TEXT");
+    let preview = plan_review(&baseline, &draft, &PlanOptions::default()).unwrap();
+    assert!(
+        preview
+            .notes
+            .iter()
+            .any(|note| note.text.contains("Foreign keys in sessions, audit reference")),
+        "{:?}",
+        preview.notes
+    );
+}
+
+#[test]
 fn dropping_a_column_another_table_references_is_refused() {
     let baseline = referenced_by_sessions(&["email"]);
     let mut draft = SchemaDraft::from_baseline(&baseline);

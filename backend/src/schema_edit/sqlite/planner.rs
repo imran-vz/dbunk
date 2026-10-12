@@ -915,12 +915,13 @@ fn dependent_notes(baseline: &SchemaBaseline, rebuild: bool) -> Vec<EngineNote> 
         ));
     }
     if !baseline.inbound.is_empty() {
-        let mut tables: Vec<&str> = baseline
-            .inbound
-            .iter()
-            .map(|reference| reference.table.as_str())
-            .collect();
-        tables.dedup();
+        // First occurrence of each table, in capture order.
+        let mut tables: Vec<&str> = Vec::new();
+        for reference in &baseline.inbound {
+            if !tables.contains(&reference.table.as_str()) {
+                tables.push(reference.table.as_str());
+            }
+        }
         notes.push(EngineNote::new(
             NoteKind::Dependents,
             format!(

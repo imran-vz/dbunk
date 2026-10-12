@@ -270,6 +270,38 @@ async fn a_structure_that_does_not_match_the_draft_rolls_back() {
 }
 
 #[tokio::test]
+async fn a_commit_the_server_refused_is_rolled_back() {
+    let case = add_column();
+    let deferred = SchemaEditFailure::Database {
+        code: Some("23503".into()),
+        message: "deferred foreign key violated".into(),
+    };
+    let mut refused = fake(&case);
+    refused.fail.push(("COMMIT".into(), deferred.clone()));
+    let permit = WritePermit::test_permit();
+    assert_eq!(
+        apply(refused, &permit, &case).await,
+        SchemaEditOutcome::RolledBack { reason: deferred }
+    );
+
+    // A shutdown error ends the connection; the commit may still have landed.
+    let shutdown = SchemaEditFailure::Database {
+        code: Some("57P01".into()),
+        message: "terminating connection due to administrator command".into(),
+    };
+    let mut ending = fake(&case);
+    ending.fail.push(("COMMIT".into(), shutdown.clone()));
+    let permit = WritePermit::test_permit();
+    assert_eq!(
+        apply(ending, &permit, &case).await,
+        SchemaEditOutcome::OutcomeUnknown {
+            committed: 0,
+            reason: shutdown
+        }
+    );
+}
+
+#[tokio::test]
 async fn a_lost_commit_or_rollback_reply_is_unknown() {
     let case = add_column();
     let mut lost_commit = fake(&case);

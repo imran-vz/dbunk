@@ -2,10 +2,13 @@
 //! documented procedure for schema changes:
 //!
 //! 1. Refuse while the user has a transaction open (probe with `BEGIN`).
-//! 2. Turn `foreign_keys` off (it is a no-op inside a transaction) and, for
-//!    a rebuild, `legacy_alter_table` on, so renaming the new table does not
-//!    trip over views that name the old one. Both are restored afterwards,
-//!    whatever the outcome.
+//! 2. Turn `foreign_keys` off (it is a no-op inside a transaction) and set
+//!    `legacy_alter_table`: on for a rebuild, so renaming the new table does
+//!    not trip over views that name the old one, and off for the fast path,
+//!    so a rename rewrites the references in other tables, triggers and
+//!    views (the session may have changed it). Both are restored afterwards,
+//!    whatever the outcome, and read back: a connection whose settings could
+//!    not be restored (a transaction left open) is reported unsound.
 //! 3. `BEGIN IMMEDIATE`, then recheck the drift token.
 //! 4. Run the statements in order.
 //! 5. Verify before COMMIT: `foreign_key_check` when keys were enforced (or,
@@ -110,19 +113,55 @@ async fn roll_back(
 /// Connection settings changed for the apply, restored afterwards.
 struct Settings {
     restore_foreign_keys: bool,
-    restore_legacy_alter_table: bool,
+    /// The session's `legacy_alter_table`, when the apply changed it.
+    restore_legacy_alter_table: Option<bool>,
 }
 
 impl Settings {
-    async fn restore(&self, connection: &mut SqliteConnection) {
-        // Outside a transaction these always take effect.
-        if self.restore_legacy_alter_table {
-            let _ = run(connection, "PRAGMA legacy_alter_table = OFF").await;
+    /// Restores the session's settings and reports whether the connection is
+    /// back as the session left it: no transaction open and both settings
+    /// read back as restored. `foreign_keys` is a no-op inside a
+    /// transaction, so a failed rollback is caught here.
+    async fn restore(&self, connection: &mut SqliteConnection) -> bool {
+        // A failed rollback may have left our transaction open; nothing
+        // below takes effect until it is gone.
+        let _ = run(connection, "ROLLBACK").await;
+        if let Some(on) = self.restore_legacy_alter_table {
+            let sql = if on {
+                "PRAGMA legacy_alter_table = ON"
+            } else {
+                "PRAGMA legacy_alter_table = OFF"
+            };
+            let _ = run(connection, sql).await;
         }
         if self.restore_foreign_keys {
             let _ = run(connection, "PRAGMA foreign_keys = ON").await;
         }
+        let closed = match run(connection, "BEGIN").await {
+            Ok(()) => run(connection, "ROLLBACK").await.is_ok(),
+            Err(_) => false,
+        };
+        if !closed {
+            return false;
+        }
+        if self.restore_foreign_keys
+            && pragma_flag(connection, "foreign_keys").await.ok() != Some(true)
+        {
+            return false;
+        }
+        match self.restore_legacy_alter_table {
+            Some(on) => pragma_flag(connection, "legacy_alter_table").await.ok() == Some(on),
+            None => true,
+        }
     }
+}
+
+/// An apply's outcome and whether the session connection is still sound
+/// (see [`Settings::restore`]). An unsound connection must be closed: it may
+/// hold a transaction and run without foreign key enforcement.
+pub(crate) struct Executed {
+    pub(crate) outcome: SchemaEditOutcome,
+    pub(crate) connection_sound: bool,
 }
 
 pub(super) async fn execute(
@@ -130,92 +169,104 @@ pub(super) async fn execute(
     baseline: &SchemaBaseline,
     draft: &SchemaDraft,
     preview: &SchemaEditPreview,
-) -> SchemaEditOutcome {
+) -> Executed {
+    let sound = |outcome| Executed {
+        outcome,
+        connection_sound: true,
+    };
     let started = Instant::now();
     if let Editability::ReadOnly { reasons } = &baseline.editable {
-        return SchemaEditOutcome::NotDispatched {
+        return sound(SchemaEditOutcome::NotDispatched {
             reason: SchemaEditFailure::Unsupported {
                 reason: reasons
                     .first()
                     .cloned()
                     .unwrap_or_else(|| "This table is read-only".into()),
             },
-        };
+        });
     }
     if preview.statements.is_empty() {
-        return SchemaEditOutcome::NotDispatched {
+        return sound(SchemaEditOutcome::NotDispatched {
             reason: SchemaEditFailure::Unsupported {
                 reason: "Nothing to change".into(),
             },
-        };
+        });
     }
 
     // 1. A user transaction makes BEGIN fail; leave it untouched.
     match run(connection, "BEGIN").await {
         Ok(()) => {}
         Err(error) if database_message(&error).contains("within a transaction") => {
-            return SchemaEditOutcome::NotDispatched {
+            return sound(SchemaEditOutcome::NotDispatched {
                 reason: SchemaEditFailure::OpenTransaction,
-            }
+            });
         }
         Err(error) => {
-            return SchemaEditOutcome::NotDispatched {
+            return sound(SchemaEditOutcome::NotDispatched {
                 reason: failure(error),
-            }
+            });
         }
     }
     if let Err(error) = run(connection, "ROLLBACK").await {
-        return SchemaEditOutcome::OutcomeUnknown {
-            committed: 0,
-            reason: failure(error),
+        // The empty probe transaction may still be open.
+        return Executed {
+            outcome: SchemaEditOutcome::OutcomeUnknown {
+                committed: 0,
+                reason: failure(error),
+            },
+            connection_sound: false,
         };
     }
 
     // 2. Connection settings.
     let mut settings = Settings {
         restore_foreign_keys: false,
-        restore_legacy_alter_table: false,
+        restore_legacy_alter_table: None,
+    };
+    let not_dispatched = |error| SchemaEditOutcome::NotDispatched {
+        reason: failure(error),
     };
     let foreign_keys = match pragma_flag(connection, "foreign_keys").await {
         Ok(on) => on,
-        Err(error) => {
-            return SchemaEditOutcome::NotDispatched {
-                reason: failure(error),
-            }
-        }
+        Err(error) => return sound(not_dispatched(error)),
     };
     if foreign_keys {
         if let Err(error) = run(connection, "PRAGMA foreign_keys = OFF").await {
-            return SchemaEditOutcome::NotDispatched {
-                reason: failure(error),
-            };
+            return sound(not_dispatched(error));
         }
         settings.restore_foreign_keys = true;
     }
-    if is_rebuild(&preview.notes) {
-        match pragma_flag(connection, "legacy_alter_table").await {
-            Ok(true) => {}
-            Ok(false) => match run(connection, "PRAGMA legacy_alter_table = ON").await {
-                Ok(()) => settings.restore_legacy_alter_table = true,
-                Err(error) => {
-                    settings.restore(connection).await;
-                    return SchemaEditOutcome::NotDispatched {
-                        reason: failure(error),
-                    };
-                }
-            },
-            Err(error) => {
-                settings.restore(connection).await;
-                return SchemaEditOutcome::NotDispatched {
-                    reason: failure(error),
-                };
+    let legacy = is_rebuild(&preview.notes);
+    let set_legacy = match pragma_flag(connection, "legacy_alter_table").await {
+        Ok(current) if current == legacy => Ok(()),
+        Ok(current) => {
+            let sql = if legacy {
+                "PRAGMA legacy_alter_table = ON"
+            } else {
+                "PRAGMA legacy_alter_table = OFF"
+            };
+            let set = run(connection, sql).await;
+            if set.is_ok() {
+                settings.restore_legacy_alter_table = Some(current);
             }
+            set
         }
+        Err(error) => Err(error),
+    };
+    if let Err(error) = set_legacy {
+        let connection_sound = settings.restore(connection).await;
+        return Executed {
+            outcome: not_dispatched(error),
+            connection_sound,
+        };
     }
 
     let outcome = transaction(connection, baseline, draft, preview, foreign_keys, started).await;
-    settings.restore(connection).await;
-    outcome
+    let connection_sound = settings.restore(connection).await;
+    Executed {
+        outcome,
+        connection_sound,
+    }
 }
 
 /// Steps 3 to 6, with `foreign_keys` already off.

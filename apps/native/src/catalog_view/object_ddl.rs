@@ -220,14 +220,16 @@ pub(super) enum Lane {
     TableDdl,
     Sequence,
     ObjectDdl,
+    SchemaEdit,
 }
-const LANES: [Lane; 6] = [
+const LANES: [Lane; 7] = [
     Lane::Schema,
     Lane::SchemaAlter,
     Lane::Maintenance,
     Lane::TableDdl,
     Lane::Sequence,
     Lane::ObjectDdl,
+    Lane::SchemaEdit,
 ];
 impl CatalogView {
     fn lane_busy(&self, lane: Lane) -> bool {
@@ -238,6 +240,7 @@ impl CatalogView {
             Lane::TableDdl => self.table_ddl_busy,
             Lane::Sequence => self.sequence_busy,
             Lane::ObjectDdl => self.object_ddl_busy,
+            Lane::SchemaEdit => self.schema_edit.busy,
         }
     }
     fn lane_retained(&self, lane: Lane, cx: &gpui::App) -> bool {
@@ -248,6 +251,7 @@ impl CatalogView {
             Lane::TableDdl => self.has_table_ddl_changes(cx),
             Lane::Sequence => self.has_sequence_changes(cx),
             Lane::ObjectDdl => self.has_object_ddl_changes(cx),
+            Lane::SchemaEdit => self.has_schema_edit_changes(cx),
         }
     }
     /// The catalog reader and every other write lane are idle.
@@ -268,6 +272,7 @@ impl CatalogView {
         self.show_table_ddl = lane == Lane::TableDdl;
         self.show_sequence = lane == Lane::Sequence;
         self.show_object_ddl = lane == Lane::ObjectDdl;
+        self.schema_edit.show = lane == Lane::SchemaEdit;
         self.show_structure = false;
         self.show_details = false;
         self.ddl_export.show = false;

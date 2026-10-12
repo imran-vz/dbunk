@@ -82,7 +82,9 @@ impl Db {
     async fn apply(&mut self, baseline: &SchemaBaseline, draft: &SchemaDraft) -> SchemaEditOutcome {
         let preview = plan_review(baseline, draft, &PlanOptions::default())
             .unwrap_or_else(|error| panic!("plan: {error:?}"));
-        execute(&mut self.connection, baseline, draft, &preview).await
+        execute(&mut self.connection, baseline, draft, &preview)
+            .await
+            .outcome
     }
 
     /// Applies, asserts success and that the re-captured table is the
@@ -532,7 +534,9 @@ async fn every_rebuild_operation_round_trips_and_keeps_the_rows() {
             preview.notes.iter().any(|n| n.kind == NoteKind::Rebuild),
             "{label} should rebuild"
         );
-        let outcome = execute(&mut db.connection, &baseline, &draft, &preview).await;
+        let outcome = execute(&mut db.connection, &baseline, &draft, &preview)
+        .await
+        .outcome;
         assert!(outcome.applied(), "{label}: {outcome:?}");
         let recaptured = db.capture("people").await;
         assert_eq!(recaptured.editable, Editability::Editable, "{label}");
@@ -607,7 +611,9 @@ async fn drift_between_review_and_apply_dispatches_nothing() {
     draft.add_column("qty", "INTEGER");
     let preview = plan_review(&baseline, &draft, &PlanOptions::default()).unwrap();
     db.run("CREATE TABLE other (x)").await;
-    let outcome = execute(&mut db.connection, &baseline, &draft, &preview).await;
+    let outcome = execute(&mut db.connection, &baseline, &draft, &preview)
+        .await
+        .outcome;
     assert_eq!(
         outcome,
         SchemaEditOutcome::NotDispatched {
@@ -716,6 +722,35 @@ async fn foreign_key_violations_roll_back_and_foreign_keys_are_restored() {
 }
 
 #[tokio::test]
+async fn a_fast_path_rename_rewrites_references_despite_a_legacy_session() {
+    let mut db = open(
+        "CREATE TABLE parent (id INTEGER PRIMARY KEY);
+         CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent(id));
+         CREATE VIEW parents AS SELECT id FROM parent;
+         INSERT INTO parent VALUES (1);
+         INSERT INTO child VALUES (1, 1);
+         PRAGMA foreign_keys = ON;
+         PRAGMA legacy_alter_table = ON;",
+    )
+    .await;
+    let baseline = db.capture("parent").await;
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.name = "owner".into();
+    let preview = plan_review(&baseline, &draft, &PlanOptions::default()).unwrap();
+    assert!(!preview.notes.iter().any(|n| n.kind == NoteKind::Rebuild));
+    db.round_trip(&baseline, &draft).await;
+    let child = db
+        .texts("SELECT sql FROM sqlite_master WHERE name = 'child'")
+        .await;
+    assert!(child[0].contains("\"owner\""), "{child:?}");
+    assert_eq!(db.number("SELECT count(*) FROM parents").await, 1);
+    // The session's own setting comes back.
+    assert_eq!(db.pragma("legacy_alter_table").await, 1);
+    assert_eq!(db.pragma("foreign_keys").await, 1);
+    db.run("INSERT INTO child VALUES (2, 1)").await;
+}
+
+#[tokio::test]
 async fn new_foreign_keys_are_checked_even_when_keys_are_not_enforced() {
     let mut db = open(
         "CREATE TABLE parent (id INTEGER PRIMARY KEY);
@@ -817,7 +852,9 @@ async fn cancellation_through_the_progress_handler_rolls_back() {
         let mut handle = db.connection.lock_handle().await.unwrap();
         handle.set_progress_handler(100, move || ticks.fetch_add(1, Ordering::AcqRel) < 50);
     }
-    let outcome = execute(&mut db.connection, &baseline, &draft, &preview).await;
+    let outcome = execute(&mut db.connection, &baseline, &draft, &preview)
+        .await
+        .outcome;
     db.connection
         .lock_handle()
         .await
@@ -844,7 +881,9 @@ async fn a_result_that_does_not_match_the_draft_rolls_back() {
     // compares first); a statement that does something else is caught by
     // the re-capture before COMMIT.
     preview.statements[0].sql = preview.statements[0].sql.replace("INTEGER", "TEXT");
-    let outcome = execute(&mut db.connection, &baseline, &draft, &preview).await;
+    let outcome = execute(&mut db.connection, &baseline, &draft, &preview)
+        .await
+        .outcome;
     match &outcome {
         SchemaEditOutcome::RolledBack {
             reason: SchemaEditFailure::VerificationFailed { detail },

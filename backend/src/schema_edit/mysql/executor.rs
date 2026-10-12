@@ -10,8 +10,10 @@
 //!    InnoDB, so a server error on the first statement leaves the table as it
 //!    was (`RolledBack`), and on a later one leaves the earlier statements
 //!    committed (`Stopped`). A lost connection after dispatch is
-//!    `OutcomeUnknown`. A statement that outlives its budget is stopped with
-//!    `KILL QUERY` from a side connection.
+//!    `OutcomeUnknown`. A statement that outlives its budget, or is still
+//!    running when the caller asks to stop (a cancel or the session closing),
+//!    is stopped with `KILL QUERY` from a side connection; a stop between
+//!    statements runs no further ones.
 //! 4. Re-capture and verify against the draft. Every statement has committed
 //!    by then, so a mismatch cannot be rolled back; it is reported as
 //!    `OutcomeUnknown { VerificationFailed }`, which tells the host to reload
@@ -26,6 +28,7 @@ use crate::schema_edit::{
 use sqlx::mysql::{MySqlConnectOptions, MySqlConnection, MySqlDatabaseError};
 use sqlx::{ConnectOptions, Connection, Executor};
 use std::time::{Duration, Instant};
+use tokio::sync::watch;
 use tokio::time::timeout;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -209,28 +212,42 @@ async fn prepare(
     Ok(thread)
 }
 
+/// True once the caller asked to stop. A dropped sender never stops.
+fn stop_requested(stop: &watch::Receiver<bool>) -> bool {
+    *stop.borrow()
+}
+
+/// Resolves when the caller asks to stop; never when its sender is gone.
+async fn stopped(stop: &mut watch::Receiver<bool>) {
+    if stop.wait_for(|stop| *stop).await.is_err() {
+        std::future::pending::<()>().await;
+    }
+}
+
 async fn run(
     connection: &mut MySqlConnection,
     sql: &str,
     options: &MySqlConnectOptions,
     thread: u64,
+    stop: &mut watch::Receiver<bool>,
 ) -> Ran {
     let mut work = (&mut *connection).execute(sql);
-    match timeout(STATEMENT_TIMEOUT, &mut work).await {
+    let reason = tokio::select! {
+        biased;
+        finished = timeout(STATEMENT_TIMEOUT, &mut work) => match finished {
+            Ok(Ok(_)) => return Ran::Done,
+            Ok(Err(error)) => return classify(&error),
+            Err(_) => SchemaEditFailure::Timeout,
+        },
+        () = stopped(stop) => SchemaEditFailure::Cancelled,
+    };
+    kill_query(options, thread).await;
+    match timeout(KILL_GRACE, &mut work).await {
+        // It finished just as the kill was sent.
         Ok(Ok(_)) => Ran::Done,
+        Ok(Err(error)) if number(&error) == Some(QUERY_INTERRUPTED) => Ran::Failed(reason),
         Ok(Err(error)) => classify(&error),
-        Err(_) => {
-            kill_query(options, thread).await;
-            match timeout(KILL_GRACE, &mut work).await {
-                // It finished just as the kill was sent.
-                Ok(Ok(_)) => Ran::Done,
-                Ok(Err(error)) if number(&error) == Some(QUERY_INTERRUPTED) => {
-                    Ran::Failed(SchemaEditFailure::Timeout)
-                }
-                Ok(Err(error)) => classify(&error),
-                Err(_) => Ran::Lost(SchemaEditFailure::Timeout),
-            }
-        }
+        Err(_) => Ran::Lost(reason),
     }
 }
 
@@ -239,6 +256,7 @@ pub(super) async fn execute(
     baseline: &SchemaBaseline,
     draft: &SchemaDraft,
     preview: &SchemaEditPreview,
+    mut stop: watch::Receiver<bool>,
 ) -> SchemaEditOutcome {
     if preview.engine != SchemaEngine::MySql || baseline.engine != SchemaEngine::MySql {
         return SchemaEditOutcome::NotDispatched {
@@ -271,7 +289,20 @@ pub(super) async fn execute(
     };
     let started = Instant::now();
     for (index, statement) in preview.statements.iter().enumerate() {
-        match run(&mut connection, &statement.sql, options, thread).await {
+        if stop_requested(&stop) {
+            close(connection).await;
+            let reason = SchemaEditFailure::Cancelled;
+            return if index == 0 {
+                SchemaEditOutcome::NotDispatched { reason }
+            } else {
+                SchemaEditOutcome::Stopped {
+                    committed: index,
+                    failed_statement: index,
+                    reason,
+                }
+            };
+        }
+        match run(&mut connection, &statement.sql, options, thread, &mut stop).await {
             Ran::Done => {}
             Ran::Failed(reason) => {
                 close(connection).await;
