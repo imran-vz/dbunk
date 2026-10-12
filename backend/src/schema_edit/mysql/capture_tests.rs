@@ -602,6 +602,18 @@ fn disagreements_and_unsupported_features_make_the_baseline_read_only() {
     let baseline = build::baseline("8.0.36", "app", "users", &catalog);
     assert!(has_reason(&baseline, "Partitioned"));
 
+    // A declared row format the definition does not show, or another one.
+    for options in ["row_format=COMPACT", ""] {
+        let mut catalog = mysql_catalog();
+        catalog.table.create_options = options.into();
+        let baseline = build::baseline("8.0.36", "app", "users", &catalog);
+        assert!(
+            has_reason(&baseline, "the row format"),
+            "{options}: {:?}",
+            reasons(&baseline)
+        );
+    }
+
     // An index comment cannot be restated.
     let mut catalog = mysql_catalog();
     catalog.create_table = MYSQL_DEFINITION.replace(

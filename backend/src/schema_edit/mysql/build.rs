@@ -800,6 +800,22 @@ fn option_problems(problems: &mut Problems, parsed: &Definition, catalog: &Catal
     if parsed.option("COMMENT").unwrap_or_default() != catalog.table.comment {
         problems.disagree("the table comment");
     }
+    let declared = catalog
+        .table
+        .create_options
+        .split_whitespace()
+        .find_map(|option| {
+            let (key, value) = option.split_once('=')?;
+            key.eq_ignore_ascii_case("row_format").then_some(value)
+        });
+    let row_format_agrees = match (parsed.option("ROW_FORMAT"), declared) {
+        (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+        (None, None) => true,
+        _ => false,
+    };
+    if !row_format_agrees {
+        problems.disagree("the row format");
+    }
 }
 
 fn inbound(catalog: &Catalog) -> Vec<InboundReference> {
