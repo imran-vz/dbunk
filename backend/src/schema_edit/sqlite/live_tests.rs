@@ -797,6 +797,61 @@ async fn a_result_that_does_not_match_the_draft_rolls_back() {
 }
 
 #[tokio::test]
+async fn a_failing_quick_check_rolls_back() {
+    let mut db = open(ITEMS).await;
+    // A row that breaks the CHECK, stored while checks were ignored.
+    db.run(
+        "PRAGMA ignore_check_constraints = ON;
+         INSERT INTO items (title, price) VALUES ('bad', -1);
+         PRAGMA ignore_check_constraints = OFF;",
+    )
+    .await;
+    let baseline = db.capture("items").await;
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.add_column("qty", "INTEGER");
+    match db.apply(&baseline, &draft).await {
+        SchemaEditOutcome::RolledBack {
+            reason: SchemaEditFailure::VerificationFailed { detail },
+        } => assert!(detail.contains("quick_check"), "{detail}"),
+        other => panic!("expected a quick_check rollback, got {other:?}"),
+    }
+    db.unchanged(&baseline).await;
+}
+
+#[tokio::test]
+async fn a_commit_blocked_by_a_reader_rolls_back() {
+    let mut db = open(ITEMS).await;
+    // In rollback-journal mode COMMIT needs an exclusive lock, which an open
+    // read transaction on another connection blocks.
+    db.run("PRAGMA journal_mode = DELETE; PRAGMA busy_timeout = 50;")
+        .await;
+    let baseline = db.capture("items").await;
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.add_column("qty", "INTEGER");
+    let mut reader = SqliteConnection::connect_with(
+        &SqliteConnectOptions::new()
+            .filename(db.path())
+            .busy_timeout(std::time::Duration::from_millis(50)),
+    )
+    .await
+    .unwrap();
+    sqlx::raw_sql("BEGIN; SELECT count(*) FROM items;")
+        .execute(&mut reader)
+        .await
+        .unwrap();
+    let outcome = db.apply(&baseline, &draft).await;
+    sqlx::raw_sql("ROLLBACK").execute(&mut reader).await.unwrap();
+    reader.close().await.unwrap();
+    assert_eq!(
+        outcome,
+        SchemaEditOutcome::RolledBack {
+            reason: SchemaEditFailure::LockTimeout
+        }
+    );
+    db.unchanged(&baseline).await;
+}
+
+#[tokio::test]
 async fn a_rebuild_recreates_triggers_and_keeps_views_working() {
     let mut db = open(
         "CREATE TABLE audit (msg TEXT);
