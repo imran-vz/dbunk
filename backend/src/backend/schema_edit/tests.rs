@@ -288,3 +288,139 @@ fn facade_futures_are_send() {
     }
     let _ = check;
 }
+
+async fn postgres_fixture() -> (tempfile::TempDir, Backend, DataDocument) {
+    // Synthetic profile only; the injected loader never opens a socket.
+    let directory = crate::backend::profile::directory();
+    let backend = Backend::open_fixture(&directory.path().canonicalize().unwrap())
+        .await
+        .unwrap();
+    let document = backend
+        .open_data_document("schema-edit-test", "one", &backend.fixture().id)
+        .await
+        .unwrap();
+    (directory, backend, document)
+}
+
+async fn postgres_policy(backend: &Backend, read_only: bool, mode: SafeMode) {
+    let mut connection =
+        crate::storage::read_connection_by_id(&backend.0.state.pool, &backend.fixture().id)
+            .await
+            .unwrap()
+            .unwrap();
+    let crate::StoredConnection::PostgreSQL(pg) = &mut connection else {
+        panic!("PostgreSQL")
+    };
+    pg.read_only = read_only;
+    pg.safe_mode = mode;
+    crate::storage::upsert_connection(&backend.0.state.pool, &connection)
+        .await
+        .unwrap();
+}
+
+fn postgres_review(backend: &Backend, document: &DataDocument) -> SchemaEditReview {
+    let baseline = users(SchemaEngine::Postgres);
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.add_column("nickname", "text");
+    let target = SchemaEditTarget {
+        source: SchemaEditSource::Postgres(document.clone()),
+        request: SchemaEditRequest::new("public", "users"),
+        baseline,
+        generation: Some(*document.0.read_cancellation().borrow()),
+    };
+    backend
+        .review_schema_edit(target, draft, PlanOptions::default())
+        .unwrap_or_else(|refusal| panic!("{:?}", refusal.error))
+}
+
+/// A loader that records the call and finds no connection, so a permitted
+/// apply ends `NotDispatched { Connection }` without a socket.
+fn no_connection(
+    called: Arc<std::sync::atomic::AtomicBool>,
+) -> impl FnOnce(
+    Arc<crate::app::AppState>,
+    String,
+) -> BoxFuture<'static, Option<ResolvedPostgresConnectSpec>>
+       + Send
+       + 'static {
+    move |_, _| {
+        called.store(true, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async { None })
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn postgres_policy_is_checked_before_the_connection_is_loaded() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let (_directory, backend, document) = postgres_fixture().await;
+
+    // Strict: confirmation first, and nothing is loaded until it is given.
+    postgres_policy(&backend, false, SafeMode::Strict).await;
+    let called = Arc::new(AtomicBool::new(false));
+    let submission = backend
+        .submit_postgres(
+            document.clone(),
+            postgres_review(&backend, &document),
+            false,
+            no_connection(called.clone()),
+        )
+        .await
+        .unwrap();
+    let SchemaEditSubmission::NeedsConfirmation(confirmation) = submission else {
+        panic!("Strict applied without confirmation")
+    };
+    assert!(!called.load(Ordering::SeqCst));
+    let submission = backend
+        .submit_postgres(
+            document.clone(),
+            confirmation.review,
+            true,
+            no_connection(called.clone()),
+        )
+        .await
+        .unwrap();
+    let SchemaEditSubmission::Finished(receipt) = submission else {
+        panic!("confirmed apply asked again")
+    };
+    assert!(called.load(Ordering::SeqCst));
+    assert_eq!(
+        receipt.outcome,
+        SchemaEditOutcome::NotDispatched {
+            reason: SchemaEditFailure::Connection
+        }
+    );
+
+    // Read-only: refused, confirmed or not, before anything is loaded.
+    postgres_policy(&backend, true, SafeMode::Inherit).await;
+    for confirmed in [false, true] {
+        let called = Arc::new(AtomicBool::new(false));
+        let result = backend
+            .submit_postgres(
+                document.clone(),
+                postgres_review(&backend, &document),
+                confirmed,
+                no_connection(called.clone()),
+            )
+            .await;
+        assert!(
+            matches!(result, Err(SchemaEditError::PolicyBlocked(_))),
+            "read-only, confirmed {confirmed}"
+        );
+        assert!(!called.load(Ordering::SeqCst));
+    }
+
+    // Development with no safe mode: straight to the loader.
+    postgres_policy(&backend, false, SafeMode::Disabled).await;
+    let called = Arc::new(AtomicBool::new(false));
+    let result = backend
+        .submit_postgres(
+            document.clone(),
+            postgres_review(&backend, &document),
+            false,
+            no_connection(called.clone()),
+        )
+        .await
+        .unwrap();
+    assert!(matches!(result, SchemaEditSubmission::Finished(_)));
+    assert!(called.load(Ordering::SeqCst));
+}

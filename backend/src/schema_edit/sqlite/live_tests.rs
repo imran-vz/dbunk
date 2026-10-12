@@ -840,7 +840,10 @@ async fn a_commit_blocked_by_a_reader_rolls_back() {
         .await
         .unwrap();
     let outcome = db.apply(&baseline, &draft).await;
-    sqlx::raw_sql("ROLLBACK").execute(&mut reader).await.unwrap();
+    sqlx::raw_sql("ROLLBACK")
+        .execute(&mut reader)
+        .await
+        .unwrap();
     reader.close().await.unwrap();
     assert_eq!(
         outcome,
