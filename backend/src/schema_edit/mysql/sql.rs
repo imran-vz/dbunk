@@ -364,6 +364,107 @@ pub(super) fn loose_expression(text: &str) -> String {
     out
 }
 
+/// Whether a recaptured default is the one the draft asked for, allowing
+/// only for how the server re-renders a value of `data_type`: numbers
+/// (`1` is stored as `1.00` in a `decimal(8,2)`), times (`2024-01-02` as
+/// `2024-01-02 00:00:00`), `ENUM`/`SET` member case, `CHAR` padding, and
+/// spellings of the current time (`now()` as `CURRENT_TIMESTAMP`). The
+/// value itself must match.
+pub(super) fn same_default(data_type: &str, wanted: &DefaultValue, found: &DefaultValue) -> bool {
+    match (wanted, found) {
+        (DefaultValue::None, DefaultValue::None) => true,
+        (DefaultValue::Literal(a), DefaultValue::Literal(b)) => same_literal(data_type, a, b),
+        (DefaultValue::Expression(a), DefaultValue::Expression(b)) => {
+            default_expression_key(a.as_str()) == default_expression_key(b.as_str())
+        }
+        _ => false,
+    }
+}
+
+fn same_literal(data_type: &str, a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    match type_base(data_type).as_str() {
+        "tinyint" | "smallint" | "mediumint" | "int" | "integer" | "bigint" | "decimal"
+        | "numeric" | "dec" | "fixed" | "float" | "double" | "real" => {
+            match (decimal_key(a), decimal_key(b)) {
+                (Some(a), Some(b)) => a == b,
+                _ => matches!(
+                    (a.trim().parse::<f64>(), b.trim().parse::<f64>()),
+                    (Ok(a), Ok(b)) if a == b
+                ),
+            }
+        }
+        "date" | "datetime" | "timestamp" | "time" => time_key(a) == time_key(b),
+        "enum" | "set" => a.eq_ignore_ascii_case(b),
+        "char" | "character" | "nchar" => a.trim_end_matches(' ') == b.trim_end_matches(' '),
+        _ => false,
+    }
+}
+
+/// A plain decimal (`-007.50`) as sign, integer digits and fraction digits
+/// without redundant zeros (`-7.5`); `None` for anything else.
+fn decimal_key(text: &str) -> Option<String> {
+    let text = text.trim();
+    let (negative, digits) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text.strip_prefix('+').unwrap_or(text)),
+    };
+    let (whole, fraction) = digits.split_once('.').unwrap_or((digits, ""));
+    if whole.is_empty() && fraction.is_empty()
+        || !whole
+            .bytes()
+            .chain(fraction.bytes())
+            .all(|b| b.is_ascii_digit())
+    {
+        return None;
+    }
+    let whole = whole.trim_start_matches('0');
+    let fraction = fraction.trim_end_matches('0');
+    let mut key = String::new();
+    if negative && !(whole.is_empty() && fraction.is_empty()) {
+        key.push('-');
+    }
+    key.push_str(if whole.is_empty() { "0" } else { whole });
+    if !fraction.is_empty() {
+        key.push('.');
+        key.push_str(fraction);
+    }
+    Some(key)
+}
+
+/// A temporal literal without zero fractional seconds or a midnight time.
+fn time_key(text: &str) -> &str {
+    let mut text = text.trim();
+    if let Some((head, fraction)) = text.rsplit_once('.') {
+        if !fraction.is_empty() && fraction.bytes().all(|b| b == b'0') {
+            text = head;
+        }
+    }
+    text.strip_suffix(" 00:00:00").unwrap_or(text)
+}
+
+/// [`loose_expression`] with the server's spellings of the current date and
+/// time folded to one.
+fn default_expression_key(text: &str) -> String {
+    let loose = loose_expression(text);
+    let (name, precision) = match loose.split_once('(') {
+        Some((name, rest)) => match rest.strip_suffix(')') {
+            Some(arguments) if arguments.bytes().all(|b| b.is_ascii_digit()) => (name, arguments),
+            _ => return loose,
+        },
+        None => (loose.as_str(), ""),
+    };
+    let canonical = match name {
+        "now" | "current_timestamp" | "localtime" | "localtimestamp" => "current_timestamp",
+        "curdate" | "current_date" if precision.is_empty() => "curdate",
+        "curtime" | "current_time" => "curtime",
+        _ => return loose,
+    };
+    format!("{canonical}({precision})")
+}
+
 /// Drops `_charset` immediately before a string literal. The introducer
 /// must start a token: `my_col'` (an identifier) is never an introducer.
 fn without_introducers(text: &str) -> String {
@@ -404,6 +505,83 @@ mod tests {
         assert_eq!(string_literal("it's"), "'it''s'");
         assert_eq!(string_literal("a\\b"), "'a\\\\b'");
         assert_eq!(string_literal("x\ny\0"), "'x\\ny\\0'");
+    }
+
+    #[test]
+    fn defaults_compare_by_value_across_server_renderings() {
+        let literal = |text: &str| DefaultValue::Literal(text.into());
+        let expression = |text: &str| DefaultValue::Expression(SqlFragment::new(text));
+        // Re-rendered, same value.
+        assert!(same_default(
+            "decimal(8,2)",
+            &literal("1"),
+            &literal("1.00")
+        ));
+        assert!(same_default(
+            "decimal(8,4)",
+            &literal("0.00"),
+            &literal("0.0000")
+        ));
+        assert!(same_default("int", &literal("+007"), &literal("7")));
+        assert!(same_default("double", &literal("1e3"), &literal("1000")));
+        assert!(same_default(
+            "datetime",
+            &literal("2024-01-02"),
+            &literal("2024-01-02 00:00:00")
+        ));
+        assert!(same_default(
+            "datetime(3)",
+            &literal("2024-01-02 10:00:00"),
+            &literal("2024-01-02 10:00:00.000")
+        ));
+        assert!(same_default("enum('a','B')", &literal("b"), &literal("B")));
+        assert!(same_default("char(4)", &literal("ab  "), &literal("ab")));
+        assert!(same_default(
+            "datetime",
+            &expression("now()"),
+            &expression("CURRENT_TIMESTAMP")
+        ));
+        assert!(same_default(
+            "datetime(3)",
+            &expression("now(3)"),
+            &expression("current_timestamp(3)")
+        ));
+        assert!(same_default(
+            "char(36)",
+            &expression("uuid()"),
+            &expression("(uuid())")
+        ));
+        assert!(same_default(
+            "varchar(9)",
+            &expression("concat('a','b')"),
+            &expression("concat(_utf8mb4'a',_utf8mb4'b')")
+        ));
+        // A different value of the same kind is a mismatch.
+        assert!(!same_default("int", &literal("1"), &literal("2")));
+        assert!(!same_default(
+            "decimal(8,2)",
+            &literal("1.5"),
+            &literal("1.50001")
+        ));
+        assert!(!same_default("varchar(9)", &literal("a"), &literal("A")));
+        assert!(!same_default("varchar(9)", &literal("a "), &literal("a")));
+        assert!(!same_default(
+            "datetime",
+            &literal("2024-01-02"),
+            &literal("2024-01-03 00:00:00")
+        ));
+        assert!(!same_default(
+            "char(36)",
+            &expression("uuid()"),
+            &expression("now()")
+        ));
+        assert!(!same_default(
+            "datetime(3)",
+            &expression("now(3)"),
+            &expression("now(6)")
+        ));
+        assert!(!same_default("int", &literal("1"), &expression("1")));
+        assert!(!same_default("int", &literal("1"), &DefaultValue::None));
     }
 
     #[test]

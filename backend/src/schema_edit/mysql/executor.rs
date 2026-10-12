@@ -18,7 +18,7 @@
 //!    and reconcile and never to replay.
 use super::build::safe_sql_mode;
 use super::catalog::{cell, message};
-use super::sql::{canonical_type, is_textual, loose_expression, same_action};
+use super::sql::{canonical_type, is_textual, loose_expression, same_action, same_default};
 use crate::schema_edit::{
     types_equal, ColumnModel, DefaultValue, IndexTarget, SchemaBaseline, SchemaDraft,
     SchemaEditFailure, SchemaEditOutcome, SchemaEditPreview, SchemaEngine, TableModel,
@@ -650,14 +650,6 @@ pub(super) fn verify(
     problems
 }
 
-fn default_kind(value: &DefaultValue) -> u8 {
-    match value {
-        DefaultValue::None => 0,
-        DefaultValue::Literal(_) => 1,
-        DefaultValue::Expression(_) => 2,
-    }
-}
-
 fn column_problems(
     problems: &mut Vec<String>,
     before: Option<&ColumnModel>,
@@ -686,20 +678,12 @@ fn column_problems(
     let untouched_default = before.is_some_and(|before| {
         before.default == wanted.default && types_equal(&before.data_type, &wanted.data_type)
     });
-    let same_default = if untouched_default {
+    let default_matches = if untouched_default {
         found.default == wanted.default
     } else {
-        match (&wanted.default, &found.default) {
-            (DefaultValue::Expression(a), DefaultValue::Expression(b)) => {
-                // `uuid()` is stored as `(uuid())`; `now()` may come back as
-                // `CURRENT_TIMESTAMP`.
-                loose_expression(a.as_str()) == loose_expression(b.as_str())
-                    || default_kind(&wanted.default) == default_kind(&found.default)
-            }
-            (a, b) => default_kind(a) == default_kind(b),
-        }
+        same_default(&found.data_type, &wanted.default, &found.default)
     };
-    if !same_default {
+    if !default_matches {
         differ("default");
     }
     match (&wanted.generated, &found.generated) {
