@@ -97,7 +97,13 @@ pub enum SchemaEditOutcome {
     /// The result could not be established: a lost connection after
     /// dispatch, or committed statements whose re-capture failed or did not
     /// match the draft. Reconcile before another attempt; never replay.
-    OutcomeUnknown { reason: SchemaEditFailure },
+    /// Statements `0..committed` are known to have committed; the rest may
+    /// or may not have. Absent in older records, which means 0.
+    OutcomeUnknown {
+        #[serde(default)]
+        committed: usize,
+        reason: SchemaEditFailure,
+    },
 }
 
 impl SchemaEditOutcome {
@@ -121,4 +127,31 @@ pub enum SessionApply {
     NeedsConfirmation,
     Blocked(String),
     Finished(SchemaEditOutcome),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_unknown_outcome_without_a_committed_count_reads_as_zero() {
+        let older = r#"{"state":"outcomeUnknown","reason":{"kind":"connection"}}"#;
+        assert_eq!(
+            serde_json::from_str::<SchemaEditOutcome>(older).unwrap(),
+            SchemaEditOutcome::OutcomeUnknown {
+                committed: 0,
+                reason: SchemaEditFailure::Connection
+            }
+        );
+        let current = SchemaEditOutcome::OutcomeUnknown {
+            committed: 2,
+            reason: SchemaEditFailure::Timeout,
+        };
+        let text = serde_json::to_string(&current).unwrap();
+        assert!(text.contains(r#""committed":2"#), "{text}");
+        assert_eq!(
+            serde_json::from_str::<SchemaEditOutcome>(&text).unwrap(),
+            current
+        );
+    }
 }

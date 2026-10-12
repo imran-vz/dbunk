@@ -834,11 +834,25 @@ fn outcomes_say_what_happened_to_the_table() {
     assert!(stopped.text.contains("partly changed"));
     let unknown = outcome_text(
         &SchemaEditOutcome::OutcomeUnknown {
+            committed: 0,
             reason: SchemaEditFailure::Connection,
         },
         1,
     );
     assert!(unknown.text.contains("never replayed"));
+    assert!(!unknown.text.contains("known to have committed"));
+    let partial = outcome_text(
+        &SchemaEditOutcome::OutcomeUnknown {
+            committed: 2,
+            reason: SchemaEditFailure::Connection,
+        },
+        3,
+    );
+    assert!(
+        partial
+            .text
+            .contains("Statements 1 to 2 are known to have committed")
+    );
     let rolled = outcome_text(
         &SchemaEditOutcome::RolledBack {
             reason: SchemaEditFailure::ForeignKeyViolation,

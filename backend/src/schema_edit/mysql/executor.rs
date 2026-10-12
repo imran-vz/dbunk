@@ -286,7 +286,12 @@ pub(super) async fn execute(
                 };
             }
             // Protocol state unknown: drop without COM_QUIT.
-            Ran::Lost(reason) => return SchemaEditOutcome::OutcomeUnknown { reason },
+            Ran::Lost(reason) => {
+                return SchemaEditOutcome::OutcomeUnknown {
+                    committed: index,
+                    reason,
+                }
+            }
         }
     }
     let runtime_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
@@ -298,9 +303,11 @@ pub(super) async fn execute(
     let outcome = match verified {
         Ok(Ok(())) => SchemaEditOutcome::Applied { runtime_ms },
         Ok(Err(detail)) => SchemaEditOutcome::OutcomeUnknown {
+            committed: preview.statements.len(),
             reason: SchemaEditFailure::VerificationFailed { detail },
         },
         Err(_) => SchemaEditOutcome::OutcomeUnknown {
+            committed: preview.statements.len(),
             reason: SchemaEditFailure::VerificationFailed {
                 detail: "the table could not be re-read in time".into(),
             },
