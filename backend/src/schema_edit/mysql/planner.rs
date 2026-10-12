@@ -105,9 +105,12 @@ pub(super) fn plan(
     _changes: &SchemaChangeSet,
     options: &PlanOptions,
 ) -> Result<EnginePlan, PlanError> {
-    if !options.concurrent_indexes.is_empty() || options.validate_separately {
+    if !options.concurrent_indexes.is_empty()
+        || options.validate_separately
+        || !options.type_conversions.is_empty()
+    {
         return Err(unsupported(
-            "Concurrent indexes and separate validation are PostgreSQL options",
+            "Concurrent indexes, separate validation and USING are PostgreSQL options",
         ));
     }
     let old = &baseline.table;

@@ -713,3 +713,53 @@ INSERT INTO {SCHEMA}.{table} (email, name, score) VALUES ('ann@x.io', 'Ann', 1);
     assert_eq!(after.table.column_names(&pk.columns), ["id", "email"]);
     assert_eq!(column(&after.table, "name").collation, None);
 }
+
+#[tokio::test]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
+async fn a_using_expression_converts_text_to_integer() {
+    let spec = live_spec();
+    let table = "using_cast";
+    fresh(&spec, table).await;
+    run_sql(
+        &spec,
+        &format!(
+            "INSERT INTO {SCHEMA}.{table} (email, name) VALUES ('ann@x.io', ' 12'), ('bo@x.io', '7');"
+        ),
+    )
+    .await;
+    let baseline = capture(&spec, table).await;
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    let name = origin_of(&draft, "name");
+    let retyped = draft.table.column_mut(name).unwrap();
+    retyped.data_type = "integer".into();
+    retyped.default = DefaultValue::None;
+    // Without USING the server refuses: text has no implicit cast to integer.
+    let outcome = apply(&spec, &baseline, &draft, &PlanOptions::default()).await;
+    assert!(
+        matches!(outcome, SchemaEditOutcome::RolledBack { .. }),
+        "{outcome:?}"
+    );
+    let options = PlanOptions {
+        type_conversions: vec![TypeConversion {
+            column: name,
+            using: SqlFragment::new("trim(name)::integer"),
+        }],
+        ..PlanOptions::default()
+    };
+    let after = step(&spec, table, &baseline, &draft, &options).await;
+    assert_eq!(column(&after.table, "name").data_type, "integer");
+    let connection = dedicated::connect(&spec, NoticeSink::Ignore)
+        .await
+        .expect("connect");
+    let rows = connection
+        .client
+        .query(
+            &format!("SELECT name FROM {SCHEMA}.{table} ORDER BY name"),
+            &[],
+        )
+        .await
+        .unwrap();
+    let values: Vec<i32> = rows.iter().map(|row| row.get(0)).collect();
+    assert_eq!(values, [7, 12]);
+    connection.close().await;
+}
