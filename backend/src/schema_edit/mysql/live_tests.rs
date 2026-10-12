@@ -288,3 +288,133 @@ async fn retype_with_default_and_rename_without_a_default_database() {
     assert_eq!(after.editable, Editability::Editable);
     connection.close().await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires make -C infrastructure/test-db mysql"]
+async fn a_failure_after_the_first_statement_reports_the_committed_prefix() {
+    let table = "schema_edit_partial";
+    let mut connection = connect().await;
+    let server = version(&mut connection).await;
+    fresh(&mut connection, table).await;
+    // No org 99, so the foreign key add (its own, last statement) fails
+    // after the column add has committed.
+    connection
+        .execute(format!("INSERT INTO `{table}` (email, org_id) VALUES ('c@x', 99)").as_str())
+        .await
+        .unwrap();
+    let baseline = capture(&mut connection, &server, "dbunk_demo", table)
+        .await
+        .unwrap();
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.add_column("extra", "int");
+    let org = origin(&draft, "org_id");
+    let fk = draft.new_origin();
+    draft.table.foreign_keys.push(ForeignKeyModel {
+        origin: fk,
+        name: Some(format!("{table}_org_fk")),
+        columns: vec![org],
+        referenced_schema: None,
+        referenced_table: format!("{table}_orgs"),
+        referenced_columns: vec!["id".into()],
+        on_update: ReferentialAction::NoAction,
+        on_delete: ReferentialAction::NoAction,
+        deferrable: Deferrable::Never,
+    });
+    let preview = plan_review(&baseline, &draft, &PlanOptions::default()).unwrap();
+    assert_eq!(preview.statements.len(), 2, "{}", preview.sql_text());
+    let outcome = execute(&options(), &baseline, &draft, &preview).await;
+    match &outcome {
+        SchemaEditOutcome::Stopped {
+            committed: 1,
+            failed_statement: 1,
+            reason: SchemaEditFailure::Database { .. },
+        } => {}
+        other => panic!("expected Stopped after one statement, got {other:?}"),
+    }
+    assert!(outcome.may_have_changed());
+    let after = capture(&mut connection, &server, "dbunk_demo", table)
+        .await
+        .unwrap();
+    assert!(after.table.columns.iter().any(|c| c.name == "extra"));
+    assert!(after.table.foreign_keys.is_empty());
+    connection.close().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires make -C infrastructure/test-db mysql"]
+async fn a_held_metadata_lock_times_out_and_changes_nothing() {
+    let table = "schema_edit_locked";
+    let mut connection = connect().await;
+    let server = version(&mut connection).await;
+    fresh(&mut connection, table).await;
+    let baseline = capture(&mut connection, &server, "dbunk_demo", table)
+        .await
+        .unwrap();
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.add_column("extra", "int");
+    let preview = plan_review(&baseline, &draft, &PlanOptions::default()).unwrap();
+    // An open transaction that read the table holds a shared metadata lock
+    // until it ends; the ALTER waits lock_wait_timeout seconds for it.
+    let mut holder = connect().await;
+    holder.execute("BEGIN").await.unwrap();
+    holder
+        .execute(format!("SELECT count(*) FROM `{table}`").as_str())
+        .await
+        .unwrap();
+    let outcome = execute(&options(), &baseline, &draft, &preview).await;
+    holder.execute("ROLLBACK").await.unwrap();
+    assert_eq!(
+        outcome,
+        SchemaEditOutcome::RolledBack {
+            reason: SchemaEditFailure::LockTimeout
+        }
+    );
+    let after = capture(&mut connection, &server, "dbunk_demo", table)
+        .await
+        .unwrap();
+    assert_eq!(after.drift, baseline.drift);
+    holder.close().await.unwrap();
+    connection.close().await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires make -C infrastructure/test-db mysql"]
+async fn a_declared_row_format_captures_editable_and_round_trips() {
+    let table = "schema_edit_row_format";
+    let mut connection = connect().await;
+    let server = version(&mut connection).await;
+    connection
+        .execute(
+            format!(
+                "DROP TABLE IF EXISTS `{table}`;
+                 CREATE TABLE `{table}` (id INT PRIMARY KEY, note TEXT) ROW_FORMAT=COMPACT"
+            )
+            .as_str(),
+        )
+        .await
+        .unwrap();
+    let baseline = capture(&mut connection, &server, "dbunk_demo", table)
+        .await
+        .unwrap();
+    assert_eq!(
+        baseline.editable,
+        Editability::Editable,
+        "{:?}",
+        baseline.editable
+    );
+    assert_eq!(
+        baseline.table.options.row_format.as_deref(),
+        Some("COMPACT")
+    );
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.options.row_format = Some("DYNAMIC".into());
+    let preview = plan_review(&baseline, &draft, &PlanOptions::default()).unwrap();
+    let outcome = execute(&options(), &baseline, &draft, &preview).await;
+    assert!(outcome.applied(), "{outcome:?}\n{}", preview.sql_text());
+    let after = capture(&mut connection, &server, "dbunk_demo", table)
+        .await
+        .unwrap();
+    assert_eq!(after.editable, Editability::Editable);
+    assert_eq!(after.table.options.row_format.as_deref(), Some("DYNAMIC"));
+    connection.close().await.unwrap();
+}

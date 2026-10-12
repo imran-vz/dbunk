@@ -25,6 +25,9 @@ pub(super) struct TableRow {
     pub charset: Option<String>,
     pub comment: String,
     pub rows: Option<u64>,
+    /// `CREATE_OPTIONS`: the declared options, such as `row_format=DYNAMIC`.
+    /// `TABLES.ROW_FORMAT` is the format in effect, which can differ from
+    /// the declared one, so it is not read.
     pub create_options: String,
 }
 
@@ -207,8 +210,8 @@ pub(super) async fn read(
         connection,
         "SELECT CAST(t.TABLE_TYPE AS CHAR), CAST(t.ENGINE AS CHAR), \
          CAST(t.TABLE_COLLATION AS CHAR), CAST(c.CHARACTER_SET_NAME AS CHAR), \
-         CAST(t.ROW_FORMAT AS CHAR), CAST(t.TABLE_COMMENT AS CHAR), \
-         CAST(t.TABLE_ROWS AS CHAR), CAST(t.CREATE_OPTIONS AS CHAR) \
+         CAST(t.TABLE_COMMENT AS CHAR), CAST(t.TABLE_ROWS AS CHAR), \
+         CAST(t.CREATE_OPTIONS AS CHAR) \
          FROM information_schema.TABLES t \
          LEFT JOIN information_schema.COLLATIONS c ON c.COLLATION_NAME = t.TABLE_COLLATION \
          WHERE t.TABLE_SCHEMA = ? AND t.TABLE_NAME = ? LIMIT ?",
@@ -224,9 +227,9 @@ pub(super) async fn read(
         engine: optional(row, 1),
         collation: optional(row, 2),
         charset: optional(row, 3),
-        comment: text(row, 5),
-        rows: number(row, 6),
-        create_options: text(row, 7),
+        comment: text(row, 4),
+        rows: number(row, 5),
+        create_options: text(row, 6),
     };
 
     let generation = if mysql(Version::has_generation_expression) {
