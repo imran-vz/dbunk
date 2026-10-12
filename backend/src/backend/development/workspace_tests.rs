@@ -1032,3 +1032,75 @@ fn admin_receipt_matching_requires_every_observed_identity_component() {
         assert!(!changed.matches(&attempt, AdminControlAction::CancelQuery, &target));
     }
 }
+
+fn schema_edit_snapshot() -> (WorkspaceSnapshot, WorkspaceSchemaEdit) {
+    use crate::backend::schema_edit::SchemaEditRequest;
+    use crate::schema_edit::{fixtures::users, SchemaDraft, SchemaEngine};
+    let baseline = users(SchemaEngine::Postgres);
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.add_column("age", "integer");
+    let record =
+        WorkspaceSchemaEdit::draft(SchemaEditRequest::new("public", "users"), baseline, draft)
+            .unwrap();
+    let mut input = snapshot();
+    input.documents[0].schema_edit = Some(record.clone());
+    (input, record)
+}
+
+#[test]
+fn schema_edit_drafts_and_unknown_attempts_round_trip() {
+    use crate::schema_edit::{plan_review, PlanOptions};
+    let (mut input, mut record) = schema_edit_snapshot();
+    assert_eq!(decode(&encode(input.clone()).unwrap()).unwrap(), input);
+
+    let preview = plan_review(&record.baseline, &record.draft, &PlanOptions::default()).unwrap();
+    record.attempt = Some(WorkspaceSchemaEditAttempt {
+        attempt_id: crate::backend::schema_edit::SchemaEditAttemptId::new(),
+        preview,
+        apply_state: WorkspaceApplyState::OutcomeUnknown,
+    });
+    input.documents[0].schema_edit = Some(record);
+    let restored = decode(&encode(input.clone()).unwrap()).unwrap();
+    assert_eq!(restored, input);
+    assert!(restored.documents[0]
+        .schema_edit
+        .as_ref()
+        .unwrap()
+        .outcome_unknown());
+}
+
+#[test]
+fn schema_edit_needs_version_17_and_a_connection_and_owns_its_document() {
+    let (input, _) = schema_edit_snapshot();
+    let mut older: serde_json::Value =
+        serde_json::from_str(&encode(input.clone()).unwrap()).unwrap();
+    older["version"] = 16.into();
+    assert_eq!(decode(&older.to_string()), Err(WorkspaceError::Corrupt));
+
+    let mut detached = input.clone();
+    detached.documents[0].connection_id = None;
+    assert_eq!(
+        encode(detached).unwrap_err(),
+        WorkspaceError::InvalidSnapshot
+    );
+
+    let mut mixed = input;
+    mixed.documents[0].saved_query_id = Some("saved-1".into());
+    assert_eq!(encode(mixed).unwrap_err(), WorkspaceError::InvalidSnapshot);
+}
+
+#[test]
+fn schema_edit_records_must_match_their_request_and_fit_the_allowance() {
+    let (_, record) = schema_edit_snapshot();
+    let mut renamed = record.clone();
+    renamed.request.table = "people".into();
+    assert_eq!(renamed.validate(), Err(WorkspaceError::InvalidSnapshot));
+
+    let mut engine = record.clone();
+    engine.engine = crate::schema_edit::SchemaEngine::MySql;
+    assert_eq!(engine.validate(), Err(WorkspaceError::InvalidSnapshot));
+
+    let mut wide = record;
+    wide.draft.table.columns[0].comment = Some("x".repeat(WORKSPACE_SCHEMA_EDIT_MAX_BYTES));
+    assert_eq!(wide.validate(), Err(WorkspaceError::InvalidSnapshot));
+}
