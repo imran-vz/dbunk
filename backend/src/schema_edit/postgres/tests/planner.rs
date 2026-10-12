@@ -140,7 +140,9 @@ fn type_changes_note_rewrites_unless_binary_coercible() {
         sql(&preview),
         vec![r#"ALTER TABLE "public"."users" ALTER COLUMN "email" TYPE text;"#]
     );
-    assert!(preview.statements[0].destructive);
+    // varchar(100) → text widens: nothing is lost.
+    assert!(!preview.statements[0].destructive);
+    assert!(!preview.destructive());
     assert!(!preview
         .notes
         .iter()
@@ -151,6 +153,8 @@ fn type_changes_note_rewrites_unless_binary_coercible() {
     draft.table.column_mut(existing(3)).unwrap().data_type = "integer".into();
     let preview = review(&baseline, &draft, &PlanOptions::default()).unwrap();
     assert!(has_note(&preview, NoteKind::Rewrite, "rewrites the table"));
+    // text → integer narrows.
+    assert!(preview.statements[0].destructive);
 }
 
 #[test]

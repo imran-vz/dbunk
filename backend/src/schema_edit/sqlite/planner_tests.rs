@@ -530,3 +530,61 @@ fn a_rebuild_with_a_rename_is_refused_when_other_tables_refer_to_it() {
     draft.table.name = "people".into();
     assert!(plan_review(&baseline, &draft, &PlanOptions::default()).is_ok());
 }
+
+fn referenced_by_sessions(columns: &[&str]) -> SchemaBaseline {
+    let mut baseline = users(SchemaEngine::Sqlite);
+    baseline.inbound.push(crate::schema_edit::InboundReference {
+        schema: "main".into(),
+        table: "sessions".into(),
+        name: "fk0".into(),
+        columns: columns.iter().map(|c| (*c).into()).collect(),
+    });
+    baseline
+}
+
+#[test]
+fn dropping_a_column_another_table_references_is_refused() {
+    let baseline = referenced_by_sessions(&["email"]);
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.checks.clear();
+    draft.remove_column(existing(2));
+    let reason = unsupported_reason(review(&baseline, &draft));
+    assert!(
+        reason.contains("email") && reason.contains("sessions"),
+        "{reason}"
+    );
+    // An unreferenced column still drops.
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.remove_column(existing(4));
+    assert!(review(&baseline, &draft).is_ok());
+}
+
+#[test]
+fn dropping_the_key_a_reference_needs_is_refused() {
+    let baseline = referenced_by_sessions(&["email"]);
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.uniques.clear();
+    let reason = unsupported_reason(review(&baseline, &draft));
+    assert!(reason.contains("unique key"), "{reason}");
+    // A unique index on the same column keeps the reference matched.
+    let origin = draft.new_origin();
+    draft.table.indexes.push(IndexModel {
+        origin,
+        name: "users_email_idx".into(),
+        unique: true,
+        method: None,
+        members: vec![IndexMember::column(existing(2))],
+        include: Vec::new(),
+        predicate: None,
+    });
+    assert!(review(&baseline, &draft).is_ok());
+}
+
+#[test]
+fn a_reference_to_the_implicit_primary_key_keeps_it() {
+    let baseline = referenced_by_sessions(&["(primary key, from user_id)"]);
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    draft.table.primary_key = None;
+    let reason = unsupported_reason(review(&baseline, &draft));
+    assert!(reason.contains("primary key"), "{reason}");
+}

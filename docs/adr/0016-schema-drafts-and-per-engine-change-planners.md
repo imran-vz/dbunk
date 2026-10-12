@@ -57,5 +57,12 @@ by re-introspecting. A drifted baseline is refused with `BaselineChanged`.
   committed prefix (`Stopped`) and runs on a dedicated connection that never
   commits the user's session transaction. SQLite DDL runs on the session
   connection and is refused while the user has a transaction open.
+- SQLite and MySQL definitions are read with hand-written parsers that keep
+  every expression's original bytes; `sqlparser` only cross-checks that the
+  definition parses. An untouched expression must be restated exactly, which
+  a parse-and-print round trip does not guarantee.
+- SQLite refuses an edit that breaks another table's foreign key (dropping a
+  referenced column, or the key it matches), because sessions run with
+  `foreign_keys` off and nothing else would catch the dangling reference.
 - The draft and the apply attempt are journaled with the workspace
   (`WorkspaceSchemaEdit`). Restoring one restores the draft, never authority.

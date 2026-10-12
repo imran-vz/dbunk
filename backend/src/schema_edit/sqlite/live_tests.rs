@@ -642,6 +642,39 @@ async fn a_rebuild_failing_mid_copy_leaves_the_table_unchanged() {
 }
 
 #[tokio::test]
+async fn a_retype_converts_by_affinity_and_strict_tables_refuse_lossy_values() {
+    // STRICT needs SQLite 3.37.
+    let mut db = open(
+        "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT) STRICT;
+         INSERT INTO t VALUES (1, '12'), (2, 'abc');",
+    )
+    .await;
+    let baseline = db.capture("t").await;
+    let retype = |baseline: &SchemaBaseline| {
+        let mut draft = SchemaDraft::from_baseline(baseline);
+        let origin = column(&draft, "v");
+        draft.table.column_mut(origin).unwrap().data_type = "INTEGER".into();
+        draft
+    };
+    // 'abc' has no integer form: the copy fails rather than storing 0.
+    match db.apply(&baseline, &retype(&baseline)).await {
+        SchemaEditOutcome::RolledBack {
+            reason: SchemaEditFailure::Database { .. },
+        } => {}
+        other => panic!("expected a rolled back database error, got {other:?}"),
+    }
+    db.unchanged(&baseline).await;
+
+    db.run("DELETE FROM t WHERE id = 2").await;
+    let baseline = db.capture("t").await;
+    db.round_trip(&baseline, &retype(&baseline)).await;
+    assert_eq!(
+        db.texts("SELECT typeof(v) || ':' || v FROM t").await,
+        vec!["integer:12"]
+    );
+}
+
+#[tokio::test]
 async fn foreign_key_violations_roll_back_and_foreign_keys_are_restored() {
     let mut db = open(
         "CREATE TABLE parent (id INTEGER PRIMARY KEY);

@@ -40,6 +40,7 @@ pub(super) fn plan(
     draft: &SchemaDraft,
 ) -> Result<EnginePlan, PlanError> {
     refuse_unsupported(draft)?;
+    refuse_broken_inbound(baseline, draft)?;
     let expected = expected_table(baseline, draft);
     let steps = plan_steps(baseline, draft);
     let mut plan = match fast_path(baseline, &expected, &steps) {
@@ -60,6 +61,87 @@ pub(super) fn plan(
 /// `legacy_alter_table` only then).
 pub(super) fn is_rebuild(notes: &[EngineNote]) -> bool {
     notes.iter().any(|note| note.kind == NoteKind::Rebuild)
+}
+
+/// SQLite does not refuse a change that breaks another table's foreign key:
+/// the reference dangles, and once `foreign_keys` is on every write to the
+/// child fails with "foreign key mismatch". Sessions open with it off, so the
+/// executor's `foreign_key_check` cannot catch this either. Refuse dropping
+/// a referenced column, or the primary key or unique key the reference needs.
+fn refuse_broken_inbound(baseline: &SchemaBaseline, draft: &SchemaDraft) -> Result<(), PlanError> {
+    let old = &baseline.table;
+    for reference in &baseline.inbound {
+        // `REFERENCES t` without columns targets the primary key; capture
+        // records those members as `(primary key, from …)`.
+        let origins: Option<Vec<Origin>> = if reference
+            .columns
+            .iter()
+            .all(|c| c.starts_with("(primary key"))
+        {
+            old.primary_key.as_ref().map(|key| key.columns.clone())
+        } else {
+            reference
+                .columns
+                .iter()
+                .map(|name| {
+                    old.columns
+                        .iter()
+                        .find(|column| column.name.eq_ignore_ascii_case(name))
+                        .map(|column| column.origin)
+                })
+                .collect()
+        };
+        let Some(origins) = origins.filter(|origins| !origins.is_empty()) else {
+            continue;
+        };
+        if let Some(column) = origins
+            .iter()
+            .find(|origin| draft.table.column(**origin).is_none())
+            .and_then(|origin| old.column(*origin))
+        {
+            return Err(unsupported(format!(
+                "Column {} is referenced by a foreign key in {}. Drop or change that foreign key \
+                 first",
+                column.name, reference.table
+            )));
+        }
+        // Only an existing match must survive; a reference that was already
+        // unmatched is not this edit's doing.
+        if keyed(old, &origins) && !keyed(&draft.table, &origins) {
+            return Err(unsupported(format!(
+                "A foreign key in {} needs the primary key or a unique key on the columns it \
+                 references. Keep that key, or change the foreign key first",
+                reference.table
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// True when the primary key, a unique key or a full unique column index
+/// covers exactly `origins`, as a foreign key's parent key must.
+fn keyed(table: &TableModel, origins: &[Origin]) -> bool {
+    let same = |columns: &[Origin]| {
+        columns.len() == origins.len() && origins.iter().all(|origin| columns.contains(origin))
+    };
+    table
+        .primary_key
+        .iter()
+        .chain(&table.uniques)
+        .any(|key| same(&key.columns))
+        || table.indexes.iter().any(|index| {
+            index.unique
+                && index.predicate.is_none()
+                && index
+                    .members
+                    .iter()
+                    .map(|member| match member.target {
+                        IndexTarget::Column(origin) => Some(origin),
+                        IndexTarget::Expression(_) => None,
+                    })
+                    .collect::<Option<Vec<_>>>()
+                    .is_some_and(|columns| same(&columns))
+        })
 }
 
 /// Draft attributes SQLite cannot hold, refused before anything is planned.
@@ -924,7 +1006,10 @@ fn rebuild(baseline: &SchemaBaseline, table: &TableModel) -> Result<EnginePlan, 
         }
     }
 
-    // Copy lists: surviving columns by origin, plus the rowid.
+    // Copy lists: surviving columns by origin, plus the rowid. Values are
+    // copied without CAST: the new column's affinity converts what converts
+    // losslessly, and a STRICT table refuses the rest, failing the rebuild.
+    // CAST would silently turn 'abc' into 0 for an INTEGER column.
     let mut targets = Vec::new();
     let mut sources = Vec::new();
     for column in &table.columns {

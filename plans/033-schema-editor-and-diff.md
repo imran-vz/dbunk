@@ -1,6 +1,6 @@
 # Plan 033: Schema editor and schema change diff (PostgreSQL, MySQL, SQLite)
 
-**Status:** Phases 0 to 2 implemented on `t3/schema-editor-diff`, and phase 3 in part (rebase on drift, OutcomeUnknown recovery for PostgreSQL drafts, large-table notes). The native app has not been built yet; `just check-native` and the `just dev-native` walkthrough run after merge to main. Not done: cancellation during apply, MariaDB live tests, phase 4.
+**Status:** Phases 0 and 1 implemented on `t3/schema-editor-diff`; phase 2's code is merged but its verification (`just check-native`, native lint and tests, the `just dev-native` walkthrough, MariaDB live runs) waits for the merge to main. Phase 3 in part: rebase on drift, OutcomeUnknown recovery for PostgreSQL drafts, large-table notes; no dedicated keyboard and accessibility pass yet. Not done: `USING` for PostgreSQL type changes, cancellation during apply (#45), MySQL/SQLite draft persistence (#46), MariaDB live tests (#47), phase 4 (#48).
 **Decisions taken:** `sqlparser-rs` is approved as a backend dependency. MySQL
 8.0+ and MariaDB 10.6+ are editable; older servers stay read-only. Build the
 shared base first, then implement all three engines in parallel.
@@ -186,7 +186,7 @@ flags drive the review UI. Gating stays `WriteIntent::Ddl` per ADR-0004.
      restored after.
   3. BEGIN.
   4. Create the new table from the rendered draft.
-  5. `INSERT INTO new SELECT … FROM old`, with CAST for changed types.
+  5. `INSERT INTO new SELECT … FROM old`. No CAST: the new column's affinity converts what converts losslessly and a STRICT table refuses the rest, where CAST would silently store 0 for 'abc'.
   6. Drop the old table and rename the new one.
   7. Recreate indexes and triggers from their baseline SQL.
   8. Verify inside the transaction, before COMMIT:
