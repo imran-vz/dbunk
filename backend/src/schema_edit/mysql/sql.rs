@@ -346,17 +346,49 @@ pub(super) fn canonical_type(text: &str) -> String {
 }
 
 /// Expression text compared loosely: whitespace, quotes-escaping
-/// backslashes and identifier backticks removed, case folded, and redundant
-/// outer parentheses stripped. Used only where the server's two renderings
-/// of one expression differ (catalog versus `SHOW CREATE TABLE`).
+/// backslashes and identifier backticks removed, case folded, charset
+/// introducers dropped (the server stores `''` as `_utf8mb4''`), and
+/// redundant outer parentheses stripped. Used only where the server's
+/// renderings of one expression differ (catalog versus `SHOW CREATE TABLE`,
+/// or the text a user typed versus what the server stored).
 pub(super) fn loose_expression(text: &str) -> String {
-    let mut out: String = text
+    let folded: String = text
         .chars()
         .filter(|c| !c.is_whitespace() && *c != '\\' && *c != '`')
         .collect::<String>()
         .to_lowercase();
+    let mut out = without_introducers(&folded);
     while wrapped_in_parens(&out) {
         out = out[1..out.len() - 1].to_owned();
+    }
+    out
+}
+
+/// Drops `_charset` immediately before a string literal. The introducer
+/// must start a token: `my_col'` (an identifier) is never an introducer.
+fn without_introducers(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let starts_token = at == 0
+            || !(bytes[at - 1].is_ascii_alphanumeric()
+                || bytes[at - 1] == b'_'
+                || bytes[at - 1] == b'$'
+                || bytes[at - 1] == b'\'');
+        if bytes[at] == b'_' && starts_token {
+            let name = bytes[at + 1..]
+                .iter()
+                .take_while(|b| b.is_ascii_alphanumeric())
+                .count();
+            if name > 0 && bytes.get(at + 1 + name) == Some(&b'\'') {
+                at += 1 + name;
+                continue;
+            }
+        }
+        let next = text[at..].chars().next().map_or(1, char::len_utf8);
+        out.push_str(&text[at..at + next]);
+        at += next;
     }
     out
 }
@@ -421,6 +453,17 @@ mod tests {
             loose_expression("concat(`a`,_utf8mb4' ',`b`)")
         );
         assert_eq!(loose_expression("((`a` > 0))"), loose_expression("`a` > 0"));
+        // The server adds charset introducers to literals a user typed bare.
+        assert_eq!(
+            loose_expression("(`name` <> _utf8mb4\\'\\')"),
+            loose_expression("name <> ''")
+        );
+        assert_eq!(
+            loose_expression("_latin1'a' = x"),
+            loose_expression("'a' = x")
+        );
+        // An identifier ending in a word is not an introducer.
+        assert_ne!(loose_expression("a_b'c'"), loose_expression("a'c'"));
         assert_ne!(loose_expression("(a) + (b)"), loose_expression("a + b"));
     }
 

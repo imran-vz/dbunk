@@ -407,9 +407,11 @@ fn shapes(table: &TableModel) -> Vec<IndexShape> {
 
 /// Compares the re-captured table with the draft. Structure (names, order,
 /// types, nullability, keys, members, references) is compared exactly, with
-/// types canonicalized. Defaults and expressions are compared byte for byte
-/// when the draft left them as captured, and by kind (or loosely, for
-/// expressions) when edited, since the server normalizes what it stores. A
+/// types canonicalized. Defaults are compared byte for byte when the draft
+/// left them as captured, and by kind (or loosely) when edited, since the
+/// server normalizes what it stores. Check and generated expressions are
+/// always compared loosely: a table copy re-renders even untouched ones
+/// (a literal's charset introducer follows the column's charset). A
 /// draft charset or collation of `None` (inherit) accepts whatever the table
 /// default gave.
 pub(super) fn verify(
@@ -608,10 +610,6 @@ pub(super) fn verify(
     // Checks.
     let mut found_checks: Vec<_> = got.checks.iter().map(Some).collect();
     for check in &want.checks {
-        let untouched = old
-            .check(check.origin)
-            .filter(|_| !check.origin.is_new())
-            .is_some_and(|before| before.expression == check.expression);
         let position = found_checks.iter().position(|found| {
             found.is_some_and(|found| match &check.name {
                 Some(name) => found.name.as_deref().is_some_and(|n| same_name(n, name)),
@@ -628,12 +626,8 @@ pub(super) fn verify(
             ));
             continue;
         };
-        let same_expression = if untouched {
-            found.expression == check.expression
-        } else {
-            loose_expression(found.expression.as_str())
-                == loose_expression(check.expression.as_str())
-        };
+        let same_expression = loose_expression(found.expression.as_str())
+            == loose_expression(check.expression.as_str());
         if !same_expression || found.enforced != check.enforced {
             problems.push(format!(
                 "check {} differs",
@@ -704,12 +698,8 @@ fn column_problems(
     match (&wanted.generated, &found.generated) {
         (None, None) => {}
         (Some(a), Some(b)) => {
-            let untouched = before.is_some_and(|before| before.generated == wanted.generated);
-            let same_expression = if untouched {
-                a.expression == b.expression
-            } else {
-                loose_expression(a.expression.as_str()) == loose_expression(b.expression.as_str())
-            };
+            let same_expression =
+                loose_expression(a.expression.as_str()) == loose_expression(b.expression.as_str());
             if a.stored != b.stored || !same_expression {
                 differ("generation");
             }

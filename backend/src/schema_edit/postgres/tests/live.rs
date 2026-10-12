@@ -588,3 +588,128 @@ async fn an_index_comment_blocks_its_recreate_and_moves_the_drift_token() {
     connection.close().await;
     assert_eq!(comment.as_deref(), Some("keep me"));
 }
+
+/// Applies `draft`, which the executor verifies before COMMIT, then
+/// re-captures and checks the result is editable and its own fixed point.
+async fn step(
+    spec: &ResolvedPostgresConnectSpec,
+    table: &str,
+    baseline: &SchemaBaseline,
+    draft: &SchemaDraft,
+    options: &PlanOptions,
+) -> SchemaBaseline {
+    let preview = plan_review(baseline, draft, options).expect("plans");
+    let outcome = apply(spec, baseline, draft, options).await;
+    assert!(outcome.applied(), "{outcome:?}\n{}", preview.sql_text());
+    let after = capture(spec, table).await;
+    assert_eq!(
+        after.editable,
+        Editability::Editable,
+        "{:?}",
+        after.editable
+    );
+    assert_eq!(
+        plan_review(
+            &after,
+            &SchemaDraft::from_baseline(&after),
+            &PlanOptions::default()
+        ),
+        Err(PlanError::NoChanges)
+    );
+    after
+}
+
+fn origin_of(draft: &SchemaDraft, name: &str) -> Origin {
+    draft
+        .table
+        .columns
+        .iter()
+        .find(|c| c.name == name)
+        .unwrap_or_else(|| panic!("column {name}"))
+        .origin
+}
+
+#[tokio::test]
+#[ignore = "requires make -C infrastructure/test-db postgres"]
+async fn drops_identity_collation_keys_and_expressions_round_trip() {
+    let spec = live_spec();
+    let table = "kinds";
+    fresh(&spec, table).await;
+    run_sql(
+        &spec,
+        &format!(
+            "DROP TABLE IF EXISTS {SCHEMA}.kinds_orgs CASCADE;
+CREATE TABLE {SCHEMA}.kinds_orgs (id int PRIMARY KEY);
+INSERT INTO {SCHEMA}.kinds_orgs VALUES (1);
+INSERT INTO {SCHEMA}.{table} (email, name, score) VALUES ('ann@x.io', 'Ann', 1);"
+        ),
+    )
+    .await;
+    let baseline = capture(&spec, table).await;
+
+    // Drop a column and the identity, change a collation, add a generated
+    // column and a foreign key validated in its own statement.
+    let mut draft = SchemaDraft::from_baseline(&baseline);
+    let id = origin_of(&draft, "id");
+    let name = origin_of(&draft, "name");
+    assert!(draft.remove_column(origin_of(&draft, "score")));
+    draft.table.column_mut(id).unwrap().identity = Identity::None;
+    draft.table.column_mut(name).unwrap().collation = Some("C".into());
+    let org = draft.add_column("org_id", "integer");
+    let doubled = draft.add_column("doubled", "bigint");
+    draft.table.column_mut(doubled).unwrap().generated = Some(Generated {
+        expression: SqlFragment::new("id * 2"),
+        stored: true,
+    });
+    let fk = draft.new_origin();
+    draft.table.foreign_keys.push(ForeignKeyModel {
+        origin: fk,
+        name: Some("kinds_org_fk".into()),
+        columns: vec![org],
+        referenced_schema: Some(SCHEMA.into()),
+        referenced_table: "kinds_orgs".into(),
+        referenced_columns: vec!["id".into()],
+        on_update: ReferentialAction::NoAction,
+        on_delete: ReferentialAction::SetNull,
+        deferrable: Deferrable::Never,
+    });
+    let options = PlanOptions {
+        validate_separately: true,
+        ..PlanOptions::default()
+    };
+    let after = step(&spec, table, &baseline, &draft, &options).await;
+    let t = &after.table;
+    assert!(t.columns.iter().all(|c| c.name != "score"));
+    assert_eq!(column(t, "id").identity, Identity::None);
+    assert_eq!(column(t, "name").collation.as_deref(), Some("C"));
+    assert!(column(t, "doubled").generated.is_some());
+    assert_eq!(t.foreign_keys.len(), 1);
+    assert_eq!(t.foreign_keys[0].on_delete, ReferentialAction::SetNull);
+
+    // Drop the primary key and the generated expression (the column keeps
+    // its values).
+    let mut draft = SchemaDraft::from_baseline(&after);
+    draft.table.primary_key = None;
+    let doubled = origin_of(&draft, "doubled");
+    draft.table.column_mut(doubled).unwrap().generated = None;
+    let after = step(&spec, table, &after, &draft, &PlanOptions::default()).await;
+    assert!(after.table.primary_key.is_none());
+    assert!(column(&after.table, "doubled").generated.is_none());
+
+    // A composite primary key, and back to the default collation.
+    let mut draft = SchemaDraft::from_baseline(&after);
+    let id = origin_of(&draft, "id");
+    let email = origin_of(&draft, "email");
+    let name = origin_of(&draft, "name");
+    let key = draft.new_origin();
+    draft.table.primary_key = Some(KeyModel {
+        origin: key,
+        name: Some("kinds_pkey".into()),
+        columns: vec![id, email],
+    });
+    draft.table.column_mut(name).unwrap().collation = None;
+    let after = step(&spec, table, &after, &draft, &PlanOptions::default()).await;
+    let pk = after.table.primary_key.as_ref().unwrap();
+    assert_eq!(after.table.column_names(&pk.columns), ["id", "email"]);
+    assert_eq!(column(&after.table, "name").collation, None);
+}
