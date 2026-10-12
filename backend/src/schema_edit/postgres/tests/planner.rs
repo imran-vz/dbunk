@@ -783,3 +783,68 @@ fn helpers() {
     assert!(!references_identifier("\"Email\" <> ''", "email"));
     assert!(!references_identifier("'email' <> ''", "email"));
 }
+
+#[test]
+fn a_reviewed_using_expression_converts_a_retyped_column() {
+    let (baseline, mut draft) = setup();
+    // name: text → integer has no implicit cast.
+    draft.table.column_mut(existing(3)).unwrap().data_type = "integer".into();
+    let using = |column, text: &str| PlanOptions {
+        type_conversions: vec![TypeConversion {
+            column,
+            using: SqlFragment::new(text),
+        }],
+        ..PlanOptions::default()
+    };
+    let preview = review(&baseline, &draft, &using(existing(3), "length(name)")).unwrap();
+    assert!(
+        sql(&preview).iter().any(|statement| statement
+            == &r#"ALTER TABLE "public"."users" ALTER COLUMN "name" TYPE integer USING length(name);"#),
+        "{:?}",
+        sql(&preview)
+    );
+    assert!(preview.statements.iter().any(|s| s.destructive));
+
+    // Only for an existing column whose type changes, once, as one
+    // expression.
+    for (options, expected) in [
+        (using(existing(2), "email"), "whose type changes"),
+        (using(draft_origin(&draft), "1"), "whose type changes"),
+        (
+            using(existing(3), "1; DROP TABLE users"),
+            "USING for column name",
+        ),
+    ] {
+        let error = review(&baseline, &draft, &options).unwrap_err();
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+    let mut twice = using(existing(3), "1");
+    twice
+        .type_conversions
+        .push(twice.type_conversions[0].clone());
+    let error = review(&baseline, &draft, &twice).unwrap_err();
+    assert!(error.to_string().contains("more than one"), "{error}");
+}
+
+fn draft_origin(draft: &SchemaDraft) -> Origin {
+    let mut draft = draft.clone();
+    draft.add_column("fresh", "integer")
+}
+
+#[test]
+fn other_engines_refuse_using() {
+    for engine in [SchemaEngine::MySql, SchemaEngine::Sqlite] {
+        let baseline = crate::schema_edit::fixtures::users(engine);
+        let mut draft = SchemaDraft::from_baseline(&baseline);
+        draft.table.column_mut(existing(3)).unwrap().data_type = "integer".into();
+        let options = PlanOptions {
+            type_conversions: vec![TypeConversion {
+                column: existing(3),
+                using: SqlFragment::new("0"),
+            }],
+            ..PlanOptions::default()
+        };
+        let error = plan_review(&baseline, &draft, &options).unwrap_err();
+        assert!(error.to_string().contains("USING"), "{engine:?}: {error}");
+    }
+}

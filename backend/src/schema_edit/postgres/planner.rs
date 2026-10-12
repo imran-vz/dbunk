@@ -19,10 +19,11 @@ use crate::postgres::objects::{PgObjectKind, PgObjectRef};
 use crate::postgres::sql_lex::{lex_sql, SqlToken};
 use crate::quote_double;
 use crate::schema_edit::{
-    is_widening, normalize_type, plan_steps, BaselineId, ColumnField, ColumnModel, DefaultValue,
-    Deferrable, EngineNote, EnginePlan, ForeignKeyModel, Identity, IndexTarget, NoteKind, Origin,
-    PlanError, PlanOptions, PlanStep, PreviewGroup, PreviewStatement, ReferentialAction,
-    SchemaBaseline, SchemaDraft, SchemaObject, TableModel,
+    check_fragment, is_widening, normalize_type, plan_steps, types_equal, BaselineId, ColumnField,
+    ColumnModel, DefaultValue, Deferrable, EngineNote, EnginePlan, ForeignKeyModel, Identity,
+    IndexTarget, NoteKind, Origin, PlanError, PlanOptions, PlanStep, PreviewGroup,
+    PreviewStatement, ReferentialAction, SchemaBaseline, SchemaDraft, SchemaEngine, SchemaObject,
+    TableModel,
 };
 
 /// PostgreSQL identifiers are at most 63 bytes.
@@ -180,6 +181,45 @@ fn unsupported(reason: impl Into<String>) -> PlanError {
     }
 }
 
+/// Each `USING` names one existing column whose type changes, once, and is
+/// a single expression.
+fn check_conversions(
+    baseline: &SchemaBaseline,
+    draft: &SchemaDraft,
+    options: &PlanOptions,
+) -> Result<(), PlanError> {
+    for (index, conversion) in options.type_conversions.iter().enumerate() {
+        let retyped = draft.table.column(conversion.column).filter(|column| {
+            !conversion.column.is_new()
+                && baseline
+                    .table
+                    .column(conversion.column)
+                    .is_some_and(|before| !types_equal(&before.data_type, &column.data_type))
+        });
+        let Some(column) = retyped else {
+            return Err(unsupported(
+                "USING applies only to an existing column whose type changes",
+            ));
+        };
+        if options.type_conversions[..index]
+            .iter()
+            .any(|earlier| earlier.column == conversion.column)
+        {
+            return Err(unsupported(format!(
+                "Column {} has more than one USING expression",
+                column.name
+            )));
+        }
+        if let Err(error) = check_fragment(conversion.using.as_str(), SchemaEngine::Postgres) {
+            return Err(unsupported(format!(
+                "USING for column {}: {error}",
+                column.name
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn internal(reason: &str) -> PlanError {
     PlanError::Internal(reason.into())
 }
@@ -202,6 +242,7 @@ pub(crate) fn build(
     let steps = plan_steps(baseline, draft);
     let major = server_major(&baseline.server.version);
     precheck(baseline, draft, &steps, major)?;
+    check_conversions(baseline, draft, options)?;
 
     let mut emitter = Emitter {
         baseline,
@@ -936,6 +977,15 @@ impl<'a> Emitter<'a> {
     /// after the previous one: generation and identity are removed first, a
     /// replaced default is dropped before a type change, identity and
     /// generation are added after NOT NULL, and a new default comes last.
+    /// The reviewed `USING` expression for column `id`, if any.
+    fn using(&self, id: BaselineId) -> Option<String> {
+        self.options
+            .type_conversions
+            .iter()
+            .find(|conversion| conversion.column == Origin::Existing(id))
+            .map(|conversion| conversion.using.as_str().to_owned())
+    }
+
     fn alter_column(&mut self, id: BaselineId, fields: &[ColumnField]) -> Result<(), PlanError> {
         let old = self.old_column(id)?;
         let new = self.new_column(Origin::Existing(id))?;
@@ -1019,14 +1069,14 @@ impl<'a> Emitter<'a> {
                     name: name.clone(),
                     data_type: new.data_type.clone(),
                     collation: collation.clone(),
-                    using: None,
+                    using: self.using(id),
                 }),
                 None => PgObjectOp::AlterColumnType(AlterColumnTypeOp {
                     schema: schema.clone(),
                     table: table.clone(),
                     name: name.clone(),
                     new_type: new.data_type.clone(),
-                    using: None,
+                    using: self.using(id),
                 }),
             });
         }

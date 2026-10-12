@@ -90,8 +90,17 @@ pub fn plan(
     baseline: &SchemaBaseline,
     draft: &SchemaDraft,
     _changes: &SchemaChangeSet,
-    _options: &PlanOptions,
+    options: &PlanOptions,
 ) -> Result<EnginePlan, PlanError> {
+    // Apply re-plans with the reviewed options; none of them means anything
+    // here, so a preview never claims one.
+    if *options != PlanOptions::default() {
+        return Err(PlanError::Unsupported {
+            reason: "Online-only, concurrent indexes, separate validation and USING are not \
+                     SQLite options"
+                .into(),
+        });
+    }
     planner::plan(baseline, draft)
 }
 

@@ -3,7 +3,7 @@
 //! reviewed SQL is exactly the SQL that runs (ADR-0011: the UI never sends
 //! SQL).
 use super::change::{DraftIssue, SchemaChangeSet};
-use super::model::{Origin, SchemaEngine};
+use super::model::{Origin, SchemaEngine, SqlFragment};
 use serde::{Deserialize, Serialize};
 
 /// Statements in one plan.
@@ -91,6 +91,18 @@ pub struct PlanOptions {
     /// PostgreSQL: add foreign keys and checks `NOT VALID` and validate them
     /// in a later statement, so the long scan does not hold the strong lock.
     pub validate_separately: bool,
+    /// PostgreSQL: `USING` expressions for type changes the server cannot
+    /// cast on its own (text to integer). One per retyped existing column.
+    pub type_conversions: Vec<TypeConversion>,
+}
+
+/// `ALTER COLUMN … TYPE … USING <expression>` for one column. Renames run
+/// first, so the expression names columns by their new names.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeConversion {
+    pub column: Origin,
+    pub using: SqlFragment,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
