@@ -1,5 +1,7 @@
 # dbunk
 
+CI is disabled. Run [local verification](docs/LOCAL_CHECKS.md) on the development device before submitting changes.
+
 dbunk is an open-source native database workspace for macOS: browse data, run SQL, inspect and change schemas, and operate databases from one fast, keyboard-friendly window.
 
 The app is built with Rust and [GPUI](https://www.gpui.rs/) (Zed's UI framework, including Zed's editor). The earlier Tauri/React app was retired in favour of this native app.
