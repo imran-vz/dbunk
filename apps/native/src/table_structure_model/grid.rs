@@ -25,10 +25,12 @@ impl Section {
             Self::Columns => {
                 const COLUMNS: &[ColumnSpec] = &[
                     mono(fixed("#", 40.)),
-                    fill("Name", 140.),
-                    mono(fill("Type", 120.)),
-                    mono(fill("Default", 120.)),
-                    fixed("Nullable", 84.),
+                    // Name, Type and Default are refitted to their content
+                    // by the view (`fitted_columns`); Comment takes the rest.
+                    fixed("Name", 140.),
+                    mono(fixed("Type", 120.)),
+                    mono(fixed("Default", 120.)),
+                    fixed("Nullable", 72.),
                     fixed("Keys", 150.),
                     fill("Comment", 100.),
                 ];
@@ -175,9 +177,9 @@ impl Capture {
                     text(clip(&c.data_type)),
                     optional(&c.default_expression),
                     if c.nullable {
-                        faint("NULL")
+                        faint("null")
                     } else {
-                        text("NOT NULL".into())
+                        text("not null".into())
                     },
                     Shown::Tags(column_tags(d, c)),
                     optional(&c.comment),

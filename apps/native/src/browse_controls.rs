@@ -933,7 +933,7 @@ impl BrowseControls {
             .h(px(BAR_ROW))
             .flex()
             .items_center()
-            .gap(px(4.))
+            .gap(px(crate::style::S2))
             .child(remove)
             .child(conjunction(index))
             .child(column_trigger)
@@ -981,7 +981,7 @@ impl BrowseControls {
                     .h(px(BAR_ROW))
                     .flex()
                     .items_center()
-                    .gap(px(4.))
+                    .gap(px(crate::style::S2))
                     .child(remove)
                     .child(conjunction(self.rows.len() + index))
                     .child(
@@ -995,7 +995,7 @@ impl BrowseControls {
                     .child(
                         div()
                             .flex_none()
-                            .text_color(crate::style::faint())
+                            .text_color(crate::style::dim())
                             .child("not editable here"),
                     ),
             );
@@ -1068,7 +1068,7 @@ impl BrowseControls {
             .h(px(BAR_ROW))
             .flex()
             .items_center()
-            .gap(px(4.))
+            .gap(px(crate::style::S2))
             .child(add)
             .child(apply)
             .child(clear)
@@ -1081,12 +1081,12 @@ impl BrowseControls {
                     .h(px(BAR_ROW))
                     .flex()
                     .items_center()
-                    .gap(px(4.))
+                    .gap(px(crate::style::S2))
                     .child(
                         div()
                             .flex_none()
                             .w(px(64.))
-                            .text_color(crate::style::faint())
+                            .text_color(crate::style::dim())
                             .child("SQL WHERE"),
                     )
                     .child(
@@ -1110,8 +1110,8 @@ impl BrowseControls {
                     .h(px(BAR_ROW))
                     .flex()
                     .items_center()
-                    .gap(px(4.))
-                    .text_color(crate::style::faint())
+                    .gap(px(crate::style::S2))
+                    .text_color(crate::style::dim())
                     .child("and SQL")
                     .child(
                         div()
@@ -1128,8 +1128,8 @@ impl BrowseControls {
             .flex()
             .flex_col()
             .flex_none()
-            .px(px(8.))
-            .py(px(2.))
+            .px(px(crate::style::S4))
+            .py(px(crate::style::S1))
             .text_sm()
             .text_color(crate::style::dim())
             .border_b_1()
@@ -1138,7 +1138,7 @@ impl BrowseControls {
                 div()
                     .flex()
                     .items_start()
-                    .gap(px(8.))
+                    .gap(px(crate::style::S4))
                     .child(rows)
                     .child(actions),
             )
@@ -1153,7 +1153,7 @@ impl BrowseControls {
                 .id(id)
                 .role(Role::Status)
                 .aria_label(text.clone())
-                .py(px(2.))
+                .py(px(crate::style::S1))
                 .text_color(crate::style::dim())
                 .child(text)
         })
@@ -1278,7 +1278,7 @@ impl BrowseControls {
             .child(body)
             .children(
                 self.message_line("browse-panel-message")
-                    .map(|line| line.px(px(8.))),
+                    .map(|line| line.px(px(crate::style::S4))),
             );
         Some(popover::layer(anchor, Placement::Below, panel).into_any_element())
     }
@@ -1430,7 +1430,7 @@ fn conjunction(index: usize) -> Div {
     div()
         .flex_none()
         .w(px(36.))
-        .text_color(crate::style::faint())
+        .text_color(crate::style::dim())
         .child(if index == 0 { "where" } else { "and" })
 }
 

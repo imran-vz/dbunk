@@ -115,6 +115,8 @@ pub struct PgToolView {
     budget: Rc<Cell<usize>>,
     setup: Option<Setup>,
     connection: Option<String>,
+    /// Saved connections by id, for the header's display name.
+    connections: Vec<(String, crate::overview_view::chrome::ToolConnection)>,
     fields: Option<(Entity<Field>, Entity<Field>)>,
     lease: Option<FieldLease>,
     field_seed: Option<(String, String)>,
@@ -163,6 +165,7 @@ impl PgToolView {
             budget: retained,
             setup: None,
             connection: document.connection_id.clone(),
+            connections: Vec::new(),
             fields: None,
             lease: None,
             field_seed: Some((String::new(), String::new())),
@@ -218,6 +221,23 @@ impl PgToolView {
         }
         self.freeze_fields(cx);
         cx.notify();
+    }
+    /// Saved connection records, so the header names the connection.
+    pub fn set_connection_metadata(
+        &mut self,
+        records: &[dbunk_lib::backend::DevelopmentConnection],
+        cx: &mut Context<Self>,
+    ) {
+        self.connections = crate::overview_view::chrome::ToolConnection::index(records);
+        cx.notify();
+    }
+    /// The action that moves the job forward: Prepare, then Review, Start
+    /// and Confirm. It is the one accent button of the document.
+    fn next_step(&self, cx: &gpui::App) -> usize {
+        [13, 12, 11]
+            .into_iter()
+            .find(|index| self.enabled(ACTIONS[*index].0, cx))
+            .unwrap_or(9)
     }
     pub fn bind_connection(&mut self, connection: String, cx: &mut Context<Self>) {
         if connection.len() > 256

@@ -106,10 +106,10 @@ fn clip(text: &str) -> String {
 fn render_cell(spec: &ColumnSpec, cell: Cell, removed: bool) -> AnyElement {
     let base = div()
         .h_full()
-        .px(px(8.))
+        .px(px(style::S4))
         .flex()
         .items_center()
-        .gap(px(4.))
+        .gap(px(style::S2))
         .overflow_hidden()
         .whitespace_nowrap()
         .flex_basis(px(spec.width))
@@ -121,7 +121,7 @@ fn render_cell(spec: &ColumnSpec, cell: Cell, removed: bool) -> AnyElement {
     let text = clip(&cell.text);
     if removed {
         return base
-            .text_color(style::faint())
+            .text_color(style::dim())
             .child(div().min_w_0().truncate().line_through().child(text))
             .into_any_element();
     }
@@ -132,7 +132,7 @@ fn render_cell(spec: &ColumnSpec, cell: Cell, removed: bool) -> AnyElement {
                     .flex_shrink_1()
                     .min_w_0()
                     .truncate()
-                    .text_color(style::faint())
+                    .text_color(style::dim())
                     .line_through()
                     .child(clip(&before)),
             )
@@ -384,11 +384,11 @@ impl SchemaEditView {
             .h_full()
             .flex_none()
             .w(px(ROW_ACTIONS))
-            .px(px(4.))
+            .px(px(style::S2))
             .flex()
             .items_center()
             .justify_end()
-            .gap(px(2.));
+            .gap(px(style::S1));
         if row.issues > 0 {
             actions = actions.child(
                 div()
@@ -572,8 +572,8 @@ impl SchemaEditView {
             .min_w_0()
             .min_h_0()
             .h_full()
-            .pt(px(4.))
-            .pb(px(12.))
+            .pt(px(style::S2))
+            .pb(px(style::S5))
             .child(
                 uniform_list(
                     "schema-edit-lines",
@@ -631,7 +631,7 @@ impl SchemaEditView {
         div()
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(px(style::S3))
             .child(
                 div()
                     .id(id)
@@ -641,10 +641,10 @@ impl SchemaEditView {
                     .tab_index(0)
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .px(px(4.))
-                    .h(px(22.))
-                    .rounded(px(4.))
+                    .gap(px(style::S3))
+                    .px(px(style::S2))
+                    .h(px(style::CONTROL))
+                    .rounded(px(style::R_SM))
                     .text_color(if enabled {
                         style::text()
                     } else {
@@ -655,7 +655,7 @@ impl SchemaEditView {
                             .hover(|s| s.bg(style::hover()))
                             .on_click(cx.listener(move |this, _, _, cx| this.choose(choice, cx)))
                     })
-                    .focus(|s| s.border_color(style::accent()))
+                    .focus(|s| s.shadow(vec![ui::ring()]))
                     .child(ui::check_box(checked))
                     .child(label),
             )
@@ -689,12 +689,12 @@ impl SchemaEditView {
         div()
             .flex()
             .flex_col()
-            .gap(px(4.))
+            .gap(px(style::S2))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(px(style::S3))
                     .text_size(px(style::FONT_SMALL))
                     .text_color(style::dim())
                     .child(label)
@@ -906,8 +906,8 @@ impl SchemaEditView {
             .overflow_y_scroll()
             .flex()
             .flex_col()
-            .gap(px(10.))
-            .p(px(12.))
+            .gap(px(style::S5))
+            .p(px(style::S5))
             .border_l_1()
             .border_color(style::line())
             .bg(style::panel());
@@ -915,7 +915,7 @@ impl SchemaEditView {
             return panel
                 .child(
                     div()
-                        .text_color(style::faint())
+                        .text_color(style::dim())
                         .child("Waiting for the structure…"),
                 )
                 .into_any_element();
@@ -926,7 +926,7 @@ impl SchemaEditView {
             div()
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(px(style::S3))
                 .child(
                     div()
                         .flex_1()
@@ -977,7 +977,7 @@ impl SchemaEditView {
             return panel
                 .child(
                     div()
-                        .text_color(style::faint())
+                        .text_color(style::dim())
                         .child("Removed from the draft. Restore it to edit."),
                 )
                 .child(
@@ -1019,7 +1019,7 @@ impl SchemaEditView {
                 div()
                     .flex()
                     .items_start()
-                    .gap(px(4.))
+                    .gap(px(style::S2))
                     .child(div().flex_1().min_w_0().child(ui::labelled(
                         input.input.label(),
                         frame,
@@ -1149,7 +1149,7 @@ impl SchemaEditView {
                 .aria_label(SharedString::from(text.clone()))
                 .flex_none()
                 .px(px(INSET))
-                .py(px(4.))
+                .py(px(style::S2))
                 .bg(if warn {
                     style::warn_fill()
                 } else {
@@ -1188,9 +1188,9 @@ impl SchemaEditView {
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(px(style::S4))
                     .px(px(INSET))
-                    .py(px(5.))
+                    .py(px(style::S3))
                     .bg(style::bad_fill())
                     .border_b_1()
                     .border_color(style::bad_line())
@@ -1235,9 +1235,9 @@ impl SchemaEditView {
                     .flex_none()
                     .flex()
                     .flex_col()
-                    .gap(px(2.))
+                    .gap(px(style::S1))
                     .px(px(INSET))
-                    .py(px(4.))
+                    .py(px(style::S2))
                     .bg(style::warn_fill())
                     .border_b_1()
                     .border_color(style::line_soft())
@@ -1246,7 +1246,7 @@ impl SchemaEditView {
                     .children(
                         lines
                             .into_iter()
-                            .map(|line| div().pl(px(12.)).child(clip(&line))),
+                            .map(|line| div().pl(px(style::S5)).child(clip(&line))),
                     )
                     .into_any_element(),
             );
@@ -1277,7 +1277,7 @@ impl SchemaEditView {
                         .aria_label(SharedString::from(table_issues.join(". ")))
                         .flex_none()
                         .px(px(INSET))
-                        .py(px(4.))
+                        .py(px(style::S2))
                         .text_color(style::bad_text())
                         .child(table_issues.join(" · "))
                         .into_any_element(),

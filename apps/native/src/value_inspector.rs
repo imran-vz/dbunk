@@ -151,9 +151,9 @@ impl ValueInspector {
                 if let Some(value) = &self.data.value {
                     cx.write_to_clipboard(ClipboardItem::new_string(value.clone()));
                     self.status = if self.data.disclosure.is_empty() {
-                        "Copied exact retained value".into()
+                        "Copied value".into()
                     } else {
-                        format!("Copied exact retained value. {}", self.data.disclosure)
+                        format!("Copied value. {}", self.data.disclosure)
                     };
                 }
             }
@@ -256,7 +256,7 @@ impl Render for ValueInspector {
                 crate::ui::segmented()
                     .child(
                         div()
-                            .px_1()
+                            .px(gpui::px(crate::style::S2))
                             .font_family(crate::style::MONO)
                             .text_color(crate::style::text())
                             .child(self.data.column.clone()),
@@ -277,8 +277,8 @@ impl Render for ValueInspector {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .px_2()
-                    .py_1()
+                    .px(gpui::px(crate::style::S4))
+                    .py(gpui::px(crate::style::S2))
                     .font_family(crate::style::MONO)
                     .when(self.data.value.is_none(), |value| {
                         value.italic().text_color(crate::style::faint())

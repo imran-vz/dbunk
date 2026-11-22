@@ -89,7 +89,15 @@ impl ResultGrid {
             .items_center()
             .justify_center()
             .cursor_pointer()
-            .child(crate::ui::tri_check_box(state))
+            .child(
+                // Unchecked boxes stay quiet until the row is hovered, so a
+                // page of empty outlines never competes with the cell focus.
+                crate::ui::tri_check_box(state).when(state == CheckState::Off, |check| {
+                    check
+                        .border_color(crate::style::line_soft())
+                        .group_hover("grid-row", |s| s.border_color(crate::style::faint()))
+                }),
+            )
             .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
                 this.checked.toggle(row, event.modifiers().shift);
                 cx.emit(GridEvent::CheckedRowsChanged);

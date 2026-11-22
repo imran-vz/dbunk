@@ -196,6 +196,8 @@ impl ConnectionSettingsView {
         .into_any_element()
     }
 }
+/// Width of the saved-field list beside the read-only value editor.
+const LIST_WIDTH: f32 = 280.;
 impl Render for ConnectionSettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.editor.is_none()
@@ -225,11 +227,11 @@ impl Render for ConnectionSettingsView {
             .on_action(cx.listener(|this,_:&PreviousControl,window,cx|{this.focus_control(true,window,cx);cx.stop_propagation();}))
             .capture_key_down(cx.listener(|this,event,window,cx|this.key(event,window,cx)))
             .child(crate::ui::toolbar().child(self.button(0,cx)).child(self.button(1,cx)))
-            .child(div().id("connection-settings-status").role(Role::Status).aria_label(self.message).px_2().py_1().text_color(crate::style::dim()).child(self.message))
-            .when(!self.current&&self.capture.is_some(),|view|view.child(div().px_2().text_color(crate::style::warn()).child("Previous saved metadata retained; Edit disabled until metadata reload succeeds")))
-            .child(div().flex().flex_1().min_h_0()
-                .child(div().id("connection-settings-fields").role(Role::ListBox).aria_label("Saved connection fields; Up and Down select").track_focus(&self.list).tab_stop(count>0).tab_index(0).w(px(280.)).min_h_0().border_r_1().border_color(crate::style::line()).child(
-                    uniform_list("connection-setting-rows",count,cx.processor(|this,range:std::ops::Range<usize>,_,cx|{range.filter_map(|index|{let label=this.capture.as_ref()?.label(index)?;let revision=this.revision;let weak=cx.weak_entity();Some(div().id(("connection-setting",index)).role(Role::ListBoxOption).aria_label(label).aria_selected(this.selected==index).h(px(28.)).px_2().truncate().bg(if this.selected==index{crate::style::hover()}else{crate::style::bg()}).on_click(cx.listener(move |this,_,window,cx|{this.select(revision,index,cx);window.focus(&this.list,cx);})).on_a11y_action(gpui::accesskit::Action::Click,move |_,_,cx|{weak.update(cx,|this,cx|this.select(revision,index,cx)).ok();}).child(label))}).collect()})).track_scroll(&self.scroll).h_full()))
+            .child(div().id("connection-settings-status").role(Role::Status).aria_label(self.message).px(px(crate::style::INSET_CONTENT)).py(px(crate::style::S3)).text_color(crate::style::dim()).child(self.message))
+            .when(!self.current&&self.capture.is_some(),|view|view.child(div().px(px(crate::style::INSET_CONTENT)).pb(px(crate::style::S3)).text_color(crate::style::warn()).child("Showing the previously loaded settings. Edit is unavailable until they reload.")))
+            .child(div().flex().flex_1().min_h_0().border_t_1().border_color(crate::style::line_soft())
+                .child(div().id("connection-settings-fields").role(Role::ListBox).aria_label("Saved connection fields; Up and Down select").track_focus(&self.list).tab_stop(count>0).tab_index(0).w(px(LIST_WIDTH)).min_h_0().py(px(crate::style::S2)).border_r_1().border_color(crate::style::line_soft()).child(
+                    uniform_list("connection-setting-rows",count,cx.processor(|this,range:std::ops::Range<usize>,window,cx|{let focused=this.list.is_focused(window);range.filter_map(|index|{let label=this.capture.as_ref()?.label(index)?;let revision=this.revision;let weak=cx.weak_entity();Some(crate::ui::list_row(("connection-setting",index),this.selected==index,focused).role(Role::ListBoxOption).aria_label(label).aria_selected(this.selected==index).on_click(cx.listener(move |this,_,window,cx|{this.select(revision,index,cx);window.focus(&this.list,cx);})).on_a11y_action(gpui::accesskit::Action::Click,move |_,_,cx|{weak.update(cx,|this,cx|this.select(revision,index,cx)).ok();}).child(crate::ui::row_label(label)))}).collect()})).track_scroll(&self.scroll).h_full()))
                 .child(div().flex_1().min_w_0().min_h_0().when_some(self.editor.as_ref(),|view,editor|view.child(editor.accessible.clone()))))
     }
 }

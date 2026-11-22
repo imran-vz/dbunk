@@ -355,14 +355,39 @@ impl AdminView {
         self.publish_control(cx);
     }
     pub(super) fn control_panel(&self, cx: &Context<Self>) -> gpui::AnyElement {
+        use crate::{overview_view::chrome, style};
+        // Signal steps appear with the review they act on; Review cancel and
+        // Review terminate sit with the selected row's details.
+        let actions = (17..21)
+            .filter(|index| self.enabled(ACTIONS[*index].0))
+            .map(|index| self.button(index, cx))
+            .collect::<Vec<_>>();
+        if !self.control.can_display() && actions.is_empty() {
+            return div().into_any_element();
+        }
+        let text = self.control.text();
+        let parsed = chrome::parse_details(&text);
+        let note = parsed.notes.join(" ");
         div()
+            .flex_none()
             .flex()
             .flex_col()
             .border_t_1()
-            .border_color(crate::style::line())
+            .border_color(style::line())
+            .bg(style::panel())
             .child(
-                crate::ui::toolbar()
-                    .children((15..ACTIONS.len()).map(|index| self.button(index, cx))),
+                div()
+                    .h(px(style::TOOLBAR))
+                    .px(px(style::INSET_CONTENT))
+                    .flex()
+                    .items_center()
+                    .gap(px(style::S2))
+                    .child(crate::ui::heading("Signal review"))
+                    .when(!note.is_empty(), |row| {
+                        row.child(crate::ui::info_hint("admin-signal-note", note))
+                    })
+                    .child(crate::ui::grow())
+                    .children(actions),
             )
             .when(self.control.can_display(), |panel| {
                 panel.child(
@@ -370,17 +395,18 @@ impl AdminView {
                         .id("admin-signal-review")
                         .role(Role::Group)
                         .aria_label("Exact signal target and recovery")
-                        .aria_value(self.control.text())
+                        .aria_value(text.clone())
                         .track_focus(&self.control_details)
                         .tab_stop(true)
                         .tab_index(0)
                         .max_h(px(200.))
                         .overflow_y_scroll()
                         .track_scroll(&self.control_scroll)
-                        .px_2()
-                        .py_1()
-                        .whitespace_normal()
-                        .child(self.control.text()),
+                        .px(px(style::INSET_CONTENT))
+                        .pb(px(style::S4))
+                        .flex()
+                        .flex_col()
+                        .children(chrome::detail_rows("admin-signal", &parsed)),
                 )
             })
             .into_any_element()

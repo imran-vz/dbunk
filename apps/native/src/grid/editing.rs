@@ -172,7 +172,7 @@ impl ResultGrid {
 
     /// Height of the insert band above the rows: at most five rows.
     pub(super) fn band_height(&self) -> f32 {
-        self.band_rows().min(BAND_ROWS) as f32 * crate::style::ROW
+        self.band_rows().min(BAND_ROWS) as f32 * ROW
     }
 
     pub(super) fn display_of(&self, source: usize) -> Option<usize> {
@@ -209,7 +209,7 @@ impl ResultGrid {
                     return None;
                 }
                 let offset = self.scroll().0.borrow().base_handle.offset().y / px(1.);
-                self.band_height() + row as f32 * crate::style::ROW + offset
+                self.band_height() + row as f32 * ROW + offset
             }
             CellRef::Insert(change) => {
                 let index = self
@@ -217,11 +217,11 @@ impl ResultGrid {
                     .inserts
                     .iter()
                     .position(|insert| insert.change == change)?;
-                index as f32 * crate::style::ROW + self.band_scroll.offset().y / px(1.)
+                index as f32 * ROW + self.band_scroll.offset().y / px(1.)
             }
         };
         let pinned = display < self.pinned_count();
-        let geometry = self.cell_geometry(display, crate::style::ROW);
+        let geometry = self.cell_geometry(display, ROW);
         Some((
             frozen::cell_rect(geometry, y, pinned),
             frozen::pane_range(geometry, pinned),
@@ -259,7 +259,7 @@ impl ResultGrid {
             .flex_shrink_0()
             .w(self.column_width(display))
             .h_full()
-            .px_2()
+            .px(gpui::px(crate::style::S4))
             .flex()
             .items_center()
             .overflow_hidden()
@@ -328,11 +328,11 @@ impl ResultGrid {
                     .top_0()
                     .h_full()
                     .w(px(gutter))
-                    .px_1()
+                    .px(gpui::px(crate::style::S2))
                     .flex()
                     .items_center()
                     .justify_end()
-                    .gap(px(4.))
+                    .gap(px(crate::style::S2))
                     .bg(style::panel())
                     .border_r_1()
                     .border_color(style::line_soft())
@@ -346,7 +346,7 @@ impl ResultGrid {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .rounded(px(3.))
+                            .rounded(px(crate::style::R_SM))
                             .cursor_pointer()
                             .text_color(style::faint())
                             .hover(|button| button.bg(style::hover()).text_color(style::text()))

@@ -96,41 +96,41 @@ impl TableDdlView {
         let label = self.label(action, fallback);
         let enabled = self.enabled(action);
         let weak = cx.weak_entity();
-        let primary = enabled && matches!(action, Action::Review | Action::Apply | Action::Confirm);
-        let toggle = matches!(action, Action::Remove).then_some(self.remove_comment);
-        crate::ui::pressed(
-            crate::ui::tool_button(
+        // One primary at a time: the latest step that can run.
+        let primary = enabled
+            && match action {
+                Action::Confirm => true,
+                Action::Apply => !self.enabled(Action::Confirm),
+                Action::Review => !self.enabled(Action::Confirm) && !self.enabled(Action::Apply),
+                _ => false,
+            };
+        let element = if matches!(action, Action::Remove) {
+            crate::object_ddl_view::check_row(
                 ("table-ddl-action", index),
                 label,
-                (toggle == Some(true)).then_some("icons/check.svg"),
+                self.remove_comment,
                 enabled,
-                primary,
-            ),
-            toggle == Some(true),
-        )
-        .role(if matches!(action, Action::Remove) {
-            Role::CheckBox
+            )
+        } else if primary {
+            crate::ui::tool_button_accent(("table-ddl-action", index), label, None, enabled)
         } else {
-            Role::Button
-        })
-        .aria_label(label)
-        .track_focus(&self.buttons[index])
-        .tab_stop(enabled)
-        .tab_index(0)
-        .a11y_synthetic_children(move |b| {
-            if !enabled {
-                b.parent_node().set_disabled();
-            }
-        })
-        .when(matches!(action, Action::Remove), |b| {
-            b.aria_toggled(self.remove_comment.into())
-        })
-        .on_click(cx.listener(move |this, _, window, cx| this.click(index, window, cx)))
-        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-            weak.update(cx, |this, cx| this.click(index, window, cx))
-                .ok();
-        })
-        .into_any_element()
+            crate::ui::tool_button(("table-ddl-action", index), label, None, enabled, false)
+        };
+        element
+            .track_focus(&self.buttons[index])
+            .tab_stop(enabled)
+            .tab_index(0)
+            .a11y_synthetic_children(move |b| {
+                if !enabled {
+                    b.parent_node().set_disabled();
+                }
+            })
+            .on_click(cx.listener(move |this, _, window, cx| this.click(index, window, cx)))
+            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                weak.update(cx, |this, cx| this.click(index, window, cx))
+                    .ok();
+            })
+            .into_any_element()
     }
     fn click(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if !self.enabled(ACTIONS[index].0) {
@@ -242,7 +242,17 @@ impl Render for TableDdlView {
             }))
             .child(crate::ui::toolbar().children((0..ACTIONS.len()).map(|i| self.button(i, cx))))
             .when_some(self.value.as_ref(), |v, field| {
-                v.child(div().px(px(8.)).pt(px(8.)).child(field.clone()))
+                v.child(
+                    div()
+                        .flex_none()
+                        .w_full()
+                        .max_w(px(
+                            crate::style::TOOL_COLUMN + 2. * crate::style::INSET_CONTENT
+                        ))
+                        .px(px(crate::style::INSET_CONTENT))
+                        .pt(px(crate::style::S5))
+                        .child(crate::object_ddl_view::well(field.clone())),
+                )
             })
             .child(
                 div()
@@ -257,8 +267,10 @@ impl Render for TableDdlView {
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
-                    .p(px(8.))
+                    .px(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S4))
                     .font_family(crate::style::MONO)
+                    .text_size(px(crate::style::FONT_DATA))
                     .focus(|s| s.bg(crate::style::row_hover()))
                     .child(text)
                     .when(!self.receipt.is_empty(), |v| {
@@ -267,7 +279,7 @@ impl Render for TableDdlView {
                                 .id("table-ddl-receipt")
                                 .role(Role::Label)
                                 .aria_label(self.receipt.clone())
-                                .mt(px(8.))
+                                .mt(px(crate::style::S4))
                                 .text_color(crate::style::dim())
                                 .child(self.receipt.clone()),
                         )

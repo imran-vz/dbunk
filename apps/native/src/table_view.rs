@@ -1461,11 +1461,14 @@ impl TableView {
                                 let bytes = model.retained_bytes();
                                 self.grid
                                     .update(cx, |grid, cx| grid.table_page(page.clone(), cx));
+                                // Timing sits at the footer's right edge;
+                                // the status says what the page holds.
                                 self.status = format!(
-                                    "Page {} · {} rows · {} ms{}",
-                                    model.page(),
-                                    page.rows.len(),
-                                    page.runtime_ms,
+                                    "{}{}",
+                                    pager::footer_rows_label(
+                                        page.rows.len(),
+                                        pager::page_total(model, &page),
+                                    ),
                                     if page.truncated_cells > 0 || page.omitted_rows > 0 {
                                         " · incomplete values"
                                     } else {
@@ -1688,8 +1691,8 @@ impl TableView {
                     .id("relationship-detail-summary")
                     .role(Role::Label)
                     .aria_label(summary.clone())
-                    .px_2()
-                    .py_1()
+                    .px(gpui::px(crate::style::S4))
+                    .py(gpui::px(crate::style::S2))
                     .child(summary),
             );
         if !rows.is_empty() {
@@ -1698,7 +1701,7 @@ impl TableView {
                     .id("relationship-detail-rows")
                     .role(Role::Label)
                     .aria_label(rows.clone())
-                    .px_2()
+                    .px(gpui::px(crate::style::S4))
                     .font_family(crate::style::MONO)
                     .text_color(crate::style::dim())
                     .max_h(px(160.))
@@ -1712,7 +1715,7 @@ impl TableView {
                     .id("relationship-detail-cell")
                     .role(Role::Label)
                     .aria_label(selected.clone())
-                    .px_2()
+                    .px(gpui::px(crate::style::S4))
                     .font_family(crate::style::MONO)
                     .child(selected),
             );
@@ -1972,8 +1975,8 @@ impl Render for TableView {
                     .aria_label("Foreign-key reference from original loaded row")
                     .max_h(px(120.))
                     .overflow_y_scroll()
-                    .px_2()
-                    .py_1()
+                    .px(gpui::px(crate::style::S4))
+                    .py(gpui::px(crate::style::S2))
                     .border_t_1()
                     .border_color(crate::style::line())
                     .font_family(crate::style::MONO)
@@ -1998,7 +2001,11 @@ impl Render for TableView {
         }
         let popover = self.render_popover(window, cx);
         let checked = self.grid.read(cx).checked_rows().len();
-        let page = self.model.as_ref().map(TableDocument::page);
+        let runtime = self
+            .model
+            .as_ref()
+            .and_then(TableDocument::result)
+            .map(|result| format!("{} ms", result.runtime_ms));
         let footer = crate::ui::status_line()
             .child(
                 div()
@@ -2043,8 +2050,8 @@ impl Render for TableView {
                         .child(format!("{} staged", summary.staged)),
                 )
             })
-            .when_some(page, |footer, page| {
-                footer.child(format!("page {}", page.max(1)))
+            .when_some(runtime, |footer, runtime| {
+                footer.child(div().id("table-runtime").flex_none().child(runtime))
             });
         div()
             .relative()

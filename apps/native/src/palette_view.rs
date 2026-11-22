@@ -2,8 +2,10 @@
 //! Return as the query changes, and capped kinds are disclosed.
 use crate::{
     accessible_editor::AccessibleEditor,
-    open_anything::{self, Frecency, Item, Ranked},
+    open_anything::{self, Frecency, Item, ItemKind, Ranked},
+    style, ui,
 };
+use dbunk_lib::backend::DevelopmentEnvironment;
 use editor::{Editor, EditorEvent};
 use gpui::{
     Context, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role,
@@ -11,6 +13,28 @@ use gpui::{
 };
 
 const QUERY_BYTES: usize = 4096;
+/// Overlay width.
+const WIDTH: f32 = 640.;
+/// Rows shown before the result list scrolls.
+const VISIBLE_ROWS: usize = 12;
+
+/// Height of the result list: it fits its rows (one `ROW` each, plus the
+/// list's top and bottom inset) up to `VISIBLE_ROWS`, then scrolls.
+fn list_height(rows: usize) -> f32 {
+    rows.clamp(1, VISIBLE_ROWS) as f32 * style::ROW + style::S2 * 2.
+}
+
+/// Leading icon of a result row. The kind word stays in the row's AX label.
+fn kind_icon(kind: ItemKind) -> &'static str {
+    match kind {
+        ItemKind::Command => "icons/command.svg",
+        ItemKind::Tab => "icons/file.svg",
+        ItemKind::Connection => "icons/database_zap.svg",
+        ItemKind::Schema => "icons/folder.svg",
+        ItemKind::Relation => "icons/table.svg",
+        ItemKind::Object => "icons/box.svg",
+    }
+}
 
 pub enum PaletteEvent {
     /// Index into the items the palette was opened with.
@@ -22,6 +46,9 @@ pub struct PaletteView<C: 'static> {
     ranked: Ranked,
     selected: usize,
     note: Option<String>,
+    /// Environment of each item's connection, parallel to `items`; shown as
+    /// an `env_tag` at the end of the row.
+    environments: Vec<Option<DevelopmentEnvironment>>,
     query: Entity<Editor>,
     accessible: Entity<AccessibleEditor>,
     _query_events: Subscription,
@@ -30,9 +57,11 @@ pub struct PaletteView<C: 'static> {
 }
 impl<C: 'static> EventEmitter<PaletteEvent> for PaletteView<C> {}
 impl<C: 'static> PaletteView<C> {
-    /// `note` discloses sources the index deliberately does not cover.
+    /// `note` is a short line for a partial index (objects not loaded yet);
+    /// `environments` is parallel to `items` (missing entries show no tag).
     pub fn new(
         items: Vec<Item<C>>,
+        environments: Vec<Option<DevelopmentEnvironment>>,
         frecency: &Frecency,
         note: Option<String>,
         window: &mut Window,
@@ -69,6 +98,7 @@ impl<C: 'static> PaletteView<C> {
             ranked,
             selected: 0,
             note,
+            environments,
             query,
             accessible,
             _query_events: query_events,
@@ -159,6 +189,7 @@ impl<C: 'static> Render for PaletteView<C> {
             .map(|(kind, count)| format!("{count} more {}", kind.label().to_lowercase()))
             .collect::<Vec<_>>()
             .join(", ");
+        let count = self.ranked.items.len();
         div()
             .id("open-anything")
             .role(Role::Dialog)
@@ -168,33 +199,32 @@ impl<C: 'static> Render for PaletteView<C> {
             // Clicks inside stay inside; the host's backdrop takes clicks
             // outside and calls `dismiss`.
             .occlude()
-            .w(px(640.))
-            .max_h(px(480.))
+            .w(px(WIDTH))
             .flex()
             .flex_col()
             .overflow_hidden()
-            .rounded(px(8.))
-            .bg(crate::style::panel())
-            .text_color(crate::style::text())
-            .text_size(px(crate::style::FONT))
+            .rounded(px(style::R_LG))
+            .bg(style::panel())
+            .text_color(style::text())
+            .text_size(px(style::FONT))
             .border_1()
-            .border_color(crate::style::line())
+            .border_color(style::line())
             .shadow_lg()
             .child(
                 div()
-                    .h(px(34.))
-                    .px(px(10.))
+                    .h(px(style::BAR + style::S2))
+                    .px(px(style::S5))
                     .flex()
                     .items_center()
-                    .gap(px(8.))
+                    .gap(px(style::S4))
                     .border_b_1()
-                    .border_color(crate::style::line())
+                    .border_color(style::line_soft())
                     .child(
                         gpui::svg()
                             .path("icons/magnifying_glass.svg")
-                            .size(px(crate::style::ICON))
+                            .size(px(style::ICON))
                             .flex_none()
-                            .text_color(crate::style::faint()),
+                            .text_color(style::dim()),
                     )
                     .child(div().flex_1().min_w_0().child(self.accessible.clone())),
             )
@@ -203,49 +233,62 @@ impl<C: 'static> Render for PaletteView<C> {
                     .id("open-anything-results")
                     .role(Role::ListBox)
                     .aria_label(format!(
-                        "{} results; arrows select, Return opens, Escape closes",
-                        self.ranked.items.len()
+                        "{count} results; arrows select, Return opens, Escape closes"
                     ))
                     .aria_value(selected)
-                    .flex_1()
-                    .min_h(px(120.))
-                    .child(
-                        uniform_list(
-                            "open-anything-rows",
-                            self.ranked.items.len(),
-                            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                                range
-                                    .map(|position| {
-                                        let index = this.ranked.items[position];
-                                        let item = &this.items[index];
-                                        let selected = position == this.selected;
-                                        div()
-                                            .id(("open-anything-row", position))
+                    .flex_none()
+                    .py(px(style::S2))
+                    .map(|results| {
+                        if count == 0 {
+                            return results.child(
+                                div()
+                                    .h(px(style::ROW))
+                                    .px(px(style::S5))
+                                    .flex()
+                                    .items_center()
+                                    .text_color(style::dim())
+                                    .child("No matches"),
+                            );
+                        }
+                        results.child(
+                            uniform_list(
+                                "open-anything-rows",
+                                count,
+                                cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                                    range
+                                        .map(|position| {
+                                            let index = this.ranked.items[position];
+                                            let item = &this.items[index];
+                                            let selected = position == this.selected;
+                                            let environment =
+                                                this.environments.get(index).copied().flatten();
+                                            let row = ui::list_row(
+                                                ("open-anything-row", position),
+                                                selected,
+                                                true,
+                                            )
                                             .role(Role::ListBoxOption)
                                             .aria_label(this.row_label(index))
                                             .aria_selected(selected)
-                                            .h(px(24.))
-                                            .px(px(10.))
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(8.))
-                                            .overflow_hidden()
-                                            .whitespace_nowrap()
-                                            .cursor_pointer()
-                                            .hover(|row| row.bg(crate::style::hover()))
-                                            .when(selected, |row| row.bg(crate::style::select()))
+                                            .gap(px(style::S4))
                                             .child(
-                                                div()
+                                                gpui::svg()
+                                                    .path(kind_icon(item.kind))
+                                                    .size(px(style::ICON))
                                                     .flex_none()
-                                                    .w(px(64.))
-                                                    .text_size(px(crate::style::FONT_SMALL))
-                                                    .text_color(crate::style::faint())
-                                                    .child(item.kind.label()),
+                                                    .text_color(if selected {
+                                                        style::text()
+                                                    } else {
+                                                        style::dim()
+                                                    }),
                                             )
                                             .child(
                                                 div()
                                                     .flex_none()
-                                                    .text_color(crate::style::text())
+                                                    .max_w(px(WIDTH * 0.5))
+                                                    .overflow_hidden()
+                                                    .text_ellipsis()
+                                                    .text_color(style::text())
                                                     .child(SharedString::from(item.label.clone())),
                                             )
                                             .child(
@@ -253,54 +296,111 @@ impl<C: 'static> Render for PaletteView<C> {
                                                     .flex_1()
                                                     .min_w_0()
                                                     .overflow_hidden()
-                                                    .text_color(crate::style::faint())
-                                                    .font_family(crate::style::MONO)
-                                                    .text_size(px(crate::style::FONT_SMALL))
+                                                    .text_ellipsis()
+                                                    .text_size(px(style::FONT_SMALL))
+                                                    .text_color(style::dim())
                                                     .child(SharedString::from(
                                                         item.description.clone(),
                                                     )),
                                             )
+                                            .when_some(environment, |row, environment| {
+                                                row.child(ui::env_tag(environment))
+                                            })
                                             .on_click(cx.listener(move |this, _, _, cx| {
                                                 this.selected = position;
                                                 this.choose(position, cx);
-                                            }))
-                                    })
-                                    .collect()
-                            }),
+                                            }));
+                                            // A full-width flex column, so the
+                                            // highlight spans the panel.
+                                            div().w_full().flex().flex_col().child(row)
+                                        })
+                                        .collect()
+                                }),
+                            )
+                            .track_scroll(&self.scroll)
+                            .h(px(list_height(count) - style::S2 * 2.)),
                         )
-                        .track_scroll(&self.scroll)
-                        .h(px(400.)),
-                    ),
+                    }),
             )
-            .when(!truncated.is_empty(), |root| {
-                root.child(
-                    div()
-                        .id("open-anything-truncated")
-                        .role(Role::Label)
-                        .aria_label(format!("Not shown: {truncated}"))
-                        .px(px(10.))
-                        .py(px(4.))
-                        .border_t_1()
-                        .border_color(crate::style::line_soft())
-                        .text_size(px(crate::style::FONT_SMALL))
-                        .text_color(crate::style::warn())
-                        .child(format!("Not shown: {truncated}; refine the search")),
-                )
-            })
-            .when_some(self.note.clone(), |root, note| {
-                root.child(
-                    div()
-                        .id("open-anything-note")
-                        .role(Role::Label)
-                        .aria_label(note.clone())
-                        .px(px(10.))
-                        .py(px(4.))
-                        .border_t_1()
-                        .border_color(crate::style::line_soft())
-                        .text_size(px(crate::style::FONT_SMALL))
-                        .text_color(crate::style::dim())
-                        .child(note),
-                )
-            })
+            .child(
+                div()
+                    .h(px(style::FOOTER))
+                    .flex_none()
+                    .px(px(style::S5))
+                    .flex()
+                    .items_center()
+                    .gap(px(style::S5))
+                    .border_t_1()
+                    .border_color(style::line_soft())
+                    .text_size(px(style::FONT_SMALL))
+                    .text_color(style::dim())
+                    .whitespace_nowrap()
+                    .map(|footer| {
+                        // A partial result says so; otherwise the footer
+                        // only carries the keys.
+                        if !truncated.is_empty() {
+                            footer.child(
+                                div()
+                                    .id("open-anything-truncated")
+                                    .role(Role::Label)
+                                    .aria_label(format!("Not shown: {truncated}"))
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .text_ellipsis()
+                                    .text_color(style::warn())
+                                    .child(format!("{truncated} not shown; refine the search")),
+                            )
+                        } else if let Some(note) = self.note.clone() {
+                            footer.child(
+                                div()
+                                    .id("open-anything-note")
+                                    .role(Role::Label)
+                                    .aria_label(note.clone())
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .text_ellipsis()
+                                    .child(note),
+                            )
+                        } else {
+                            footer
+                        }
+                    })
+                    .child(div().flex_1())
+                    .child(div().flex_none().child("↑↓ select   ↵ open   esc close")),
+            )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn result_list_fits_its_rows_up_to_a_cap() {
+        let inset = style::S2 * 2.;
+        // An empty list keeps one row for "No matches".
+        assert_eq!(list_height(0), style::ROW + inset);
+        assert_eq!(list_height(3), 3. * style::ROW + inset);
+        assert_eq!(list_height(VISIBLE_ROWS), list_height(500));
+        assert!(list_height(VISIBLE_ROWS) < 400.);
+    }
+
+    #[test]
+    fn every_kind_has_its_own_icon() {
+        let kinds = [
+            ItemKind::Command,
+            ItemKind::Tab,
+            ItemKind::Connection,
+            ItemKind::Schema,
+            ItemKind::Relation,
+            ItemKind::Object,
+        ];
+        for (i, a) in kinds.iter().enumerate() {
+            assert!(
+                kinds[i + 1..]
+                    .iter()
+                    .all(|b| kind_icon(*a) != kind_icon(*b))
+            );
+        }
     }
 }

@@ -31,14 +31,26 @@ impl PgToolView {
             .id("pg-tool-choices")
             .flex()
             .flex_col()
-            .child(crate::ui::toolbar().children((17..23).map(|index| self.button(index, cx))))
+            .gap(px(crate::style::S3))
             .child(
                 div()
-                    .id("pg-tool-choice-limits")
-                    .role(Role::Label)
-                    .aria_label(notice.clone())
-                    .px_2()
-                    .child(notice),
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(px(crate::style::S2))
+                    .child(self.button(17, cx))
+                    // Choice controls appear once choices are loaded.
+                    .when(self.metadata.capture.is_some(), |row| {
+                        row.child(
+                            crate::ui::segment_group()
+                                .child(self.button(18, cx))
+                                .child(self.button(19, cx)),
+                        )
+                        .child(self.button(20, cx))
+                        .child(self.button(21, cx))
+                    })
+                    .when(self.metadata.busy(), |row| row.child(self.button(22, cx)))
+                    .child(crate::ui::info_hint("pg-tool-choice-limits", notice)),
             )
             .when(self.metadata.capture.is_some(), |body| {
                 body.child(
@@ -48,16 +60,19 @@ impl PgToolView {
                         .aria_label(format!("{kind}; arrows select, Enter uses exact name"))
                         .track_focus(&self.choice_focus)
                         .tab_index(0)
-                        .h(px(140.))
+                        .h(px(5. * crate::style::ROW))
                         .min_h_0()
                         .when(count == 0, |list| {
-                            list.child(div().px_2().child(
-                                if self.metadata.kind == choices::ChoiceKind::Table {
-                                    "No captured tables match the exact schema field"
-                                } else {
-                                    "No schemas in this capture"
-                                },
-                            ))
+                            list.child(
+                                div()
+                                    .px(px(crate::style::S3))
+                                    .text_color(crate::style::dim())
+                                    .child(if self.metadata.kind == choices::ChoiceKind::Table {
+                                        "No captured tables match the exact schema field"
+                                    } else {
+                                        "No schemas in this capture"
+                                    }),
+                            )
                         })
                         .child(
                             uniform_list(
@@ -76,44 +91,41 @@ impl PgToolView {
                                                     })
                                                 })
                                             else {
-                                                return div().h(px(28.)).into_any_element();
+                                                return div()
+                                                    .h(px(crate::style::ROW))
+                                                    .into_any_element();
                                             };
                                             let name = row.entry.name.clone();
                                             let revision = this.metadata.revision;
                                             let filter = this.metadata.filter_revision;
                                             let selected = this.metadata.selected == Some(index);
                                             let weak = cx.weak_entity();
-                                            div()
-                                                .id(("pg-tool-choice", index))
-                                                .role(Role::ListBoxOption)
-                                                .aria_label(name.clone())
-                                                .aria_selected(selected)
-                                                .h(px(28.))
-                                                .px_2()
-                                                .overflow_hidden()
-                                                .when(selected, |row| {
-                                                    row.bg(crate::style::select())
-                                                })
-                                                .child(name)
-                                                .on_click(cx.listener(
-                                                    move |this, _, window, cx| {
+                                            crate::ui::list_row(
+                                                ("pg-tool-choice", index),
+                                                selected,
+                                                true,
+                                            )
+                                            .role(Role::ListBoxOption)
+                                            .aria_label(name.clone())
+                                            .aria_selected(selected)
+                                            .child(name)
+                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                                this.select_choice(
+                                                    revision, filter, index, window, cx,
+                                                )
+                                            }))
+                                            .on_a11y_action(
+                                                gpui::accesskit::Action::Click,
+                                                move |_, window, cx| {
+                                                    weak.update(cx, |this, cx| {
                                                         this.select_choice(
                                                             revision, filter, index, window, cx,
                                                         )
-                                                    },
-                                                ))
-                                                .on_a11y_action(
-                                                    gpui::accesskit::Action::Click,
-                                                    move |_, window, cx| {
-                                                        weak.update(cx, |this, cx| {
-                                                            this.select_choice(
-                                                                revision, filter, index, window, cx,
-                                                            )
-                                                        })
-                                                        .ok();
-                                                    },
-                                                )
-                                                .into_any_element()
+                                                    })
+                                                    .ok();
+                                                },
+                                            )
+                                            .into_any_element()
                                         })
                                         .collect()
                                 }),

@@ -26,8 +26,12 @@ impl TableSeedView {
         };
         let enabled = self.enabled(action, cx);
         let weak = cx.weak_entity();
-        let primary = matches!(action, Action::Apply);
-        crate::ui::tool_button(("seed-action", index), text, None, enabled, primary)
+        let button = if matches!(action, Action::Apply) {
+            crate::ui::tool_button_accent(("seed-action", index), text, None, enabled)
+        } else {
+            crate::ui::tool_button(("seed-action", index), text, None, enabled, false)
+        };
+        button
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
@@ -39,33 +43,59 @@ impl TableSeedView {
             .into_any_element()
     }
 }
+impl TableSeedView {
+    /// A stored connection's display name, never its id (D14).
+    fn connection_name(&self, id: &str) -> String {
+        self.connections
+            .as_ref()
+            .and_then(|choices| choices.rows.iter().find(|(key, _)| key.as_str() == id))
+            .map_or_else(|| "Unavailable connection".into(), |(_, name)| name.clone())
+    }
+}
 impl Render for TableSeedView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.ensure_fields(window, cx);
-        let mut content=div().flex().flex_col().gap_2()
-            .child(crate::ui::toolbar().children((0..ACTIONS.len()).filter(|index|!matches!(ACTIONS[*index].0,Action::Mode|Action::SaveColumn)).map(|index|self.button(index,cx))))
-            .child(label("seed-status",self.status.clone()))
-            .child(label("seed-boundaries","Generate rows on the backend in one destination transaction. DEFAULT leaves database defaults authoritative. Exact review freezes the seed and clock. Cancellation after COMMIT cannot undo rows. Jobs and uncertain intent survive tab closure.".into()));
+        let mut content = div()
+            .flex()
+            .flex_col()
+            .gap(px(crate::style::S4))
+            .pb(px(crate::style::INSET_CONTENT))
+            .child(
+                crate::ui::toolbar()
+                    .children(
+                        (0..ACTIONS.len())
+                            .filter(|index| {
+                                !matches!(ACTIONS[*index].0, Action::Mode | Action::SaveColumn)
+                            })
+                            .map(|index| self.button(index, cx)),
+                    )
+                    .child(crate::ui::grow())
+                    .child(crate::ui::info_hint(
+                        "seed-boundaries",
+                        "Generate rows on the backend in one destination transaction. DEFAULT leaves database defaults authoritative. Exact review freezes the seed and clock. Cancellation after COMMIT cannot undo rows. Jobs and uncertain intent survive tab closure.",
+                    )),
+            )
+            .child(label("seed-status", self.status.clone()).text_color(crate::style::dim()));
         if let Some(message) = self.store.read(cx).message() {
             content = content.child(label("seed-store-message", message.to_owned()));
         }
-        for (index, field) in RUN_FIELDS
-            .iter()
-            .filter_map(|index| self.fields.get(*index).map(|field| (*index, field)))
-        {
-            content = content.child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .px_2()
-                    .child(div().text_color(crate::style::dim()).child(FIELDS[index].0))
-                    .child(div().flex_1().child(field.clone())),
-            );
-        }
+        content = content.child(
+            field_column().children(
+                RUN_FIELDS
+                    .iter()
+                    .filter_map(|index| self.fields.get(*index).map(|field| (*index, field)))
+                    .map(|(index, field)| field_row(FIELDS[index].0, field.clone())),
+            ),
+        );
         if self.choosing {
             content = content.child(
                 div()
                     .id("seed-connections")
+                    .mx(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S2))
+                    .rounded(px(crate::style::R_MD))
+                    .border_1()
+                    .border_color(crate::style::line_soft())
                     .role(Role::ListBox)
                     .aria_label("Stored PostgreSQL, MySQL and SQLite destinations")
                     .track_focus(&self.choice_focus)
@@ -77,6 +107,11 @@ impl Render for TableSeedView {
             content = content.child(
                 div()
                     .id("seed-jobs")
+                    .mx(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S2))
+                    .rounded(px(crate::style::R_MD))
+                    .border_1()
+                    .border_color(crate::style::line_soft())
                     .role(Role::ListBox)
                     .aria_label("Seed attempts and durable recovery records")
                     .track_focus(&self.job_focus)
@@ -89,11 +124,11 @@ impl Render for TableSeedView {
                 .child(label(
                     "seed-recipe-target",
                     format!(
-                        "Editable recipe: {} / {}.{} · {} columns{}",
-                        recipe.setup.endpoint.connection_id,
+                        "Editable recipe: {} / {}.{} · {}{}",
+                        self.connection_name(&recipe.setup.endpoint.connection_id),
                         recipe.setup.endpoint.schema,
                         recipe.setup.endpoint.table,
-                        recipe.columns.len(),
+                        plural(recipe.columns.len(), "column", "columns"),
                         if recipe.changed {
                             " · local edits require Prepare"
                         } else {
@@ -104,6 +139,11 @@ impl Render for TableSeedView {
                 .child(
                     div()
                         .id("seed-columns")
+                        .mx(px(crate::style::INSET_CONTENT))
+                        .py(px(crate::style::S2))
+                        .rounded(px(crate::style::R_MD))
+                        .border_1()
+                        .border_color(crate::style::line_soft())
                         .role(Role::ListBox)
                         .aria_label("Editable seed columns")
                         .track_focus(&self.column_focus)
@@ -115,13 +155,21 @@ impl Render for TableSeedView {
                     .child(label(
                         "seed-column-metadata",
                         format!(
-                            "{} ({}) · nullable: {} · default: {} · generated: {} · identity: {}{}",
+                            "{} ({}) · {}{}{}{}{}",
                             column.name,
                             column.data_type,
-                            column.nullable,
-                            column.has_default,
-                            column.generated,
-                            column.identity,
+                            if column.nullable { "null" } else { "not null" },
+                            if column.has_default {
+                                " · has default"
+                            } else {
+                                ""
+                            },
+                            if column.generated {
+                                " · generated"
+                            } else {
+                                ""
+                            },
+                            if column.identity { " · identity" } else { "" },
                             if self.column_dirty {
                                 " · unsaved changes"
                             } else {
@@ -134,24 +182,23 @@ impl Render for TableSeedView {
                             .child(self.button(4, cx))
                             .child(self.button(5, cx)),
                     );
-                for (index, field) in
-                    self.fields.iter().enumerate().filter(|(index, field)| {
-                        column_field(*index) && self.field_visible(field, cx)
-                    })
-                {
-                    content = content.child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .px_2()
-                            .child(div().text_color(crate::style::dim()).child(FIELDS[index].0))
-                            .child(div().flex_1().child(field.clone())),
-                    );
-                }
+                let column_fields: Vec<_> = self
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, field)| column_field(*index) && self.field_visible(field, cx))
+                    .map(|(index, field)| field_row(FIELDS[index].0, field.clone()))
+                    .collect();
+                content = content.child(field_column().children(column_fields));
                 if self.choosing_mode {
                     content = content.child(
                         div()
                             .id("seed-modes")
+                            .mx(px(crate::style::INSET_CONTENT))
+                            .py(px(crate::style::S2))
+                            .rounded(px(crate::style::R_MD))
+                            .border_1()
+                            .border_color(crate::style::line_soft())
                             .role(Role::ListBox)
                             .aria_label("Column source and generator choices")
                             .track_focus(&self.mode_focus)
@@ -197,6 +244,11 @@ impl Render for TableSeedView {
                 .child(
                     div()
                         .id("seed-reviewed-columns")
+                        .mx(px(crate::style::INSET_CONTENT))
+                        .py(px(crate::style::S2))
+                        .rounded(px(crate::style::R_MD))
+                        .border_1()
+                        .border_color(crate::style::line_soft())
                         .role(Role::ListBox)
                         .aria_label("Exact resolved seed column review")
                         .track_focus(&self.review_focus)
@@ -217,13 +269,32 @@ impl Render for TableSeedView {
             .child(div().id("seed-review-and-receipt").role(Role::Group).aria_label("Seed setup, exact review and receipt; Page Up and Page Down scroll, Home and End from this group reach either end").track_focus(&self.details_focus).tab_stop(true).child(content))
     }
 }
-fn label(id: &'static str, text: String) -> AnyElement {
+fn label(id: &'static str, text: String) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
         .role(Role::Label)
         .aria_label(text.clone())
-        .px_2()
+        .px(px(crate::style::INSET_CONTENT))
         .whitespace_normal()
         .child(text)
-        .into_any_element()
+}
+/// A tool-form column: at most `TOOL_COLUMN` wide, content inset.
+fn field_column() -> gpui::Div {
+    div()
+        .w_full()
+        .max_w(px(
+            crate::style::TOOL_COLUMN + 2. * crate::style::INSET_CONTENT
+        ))
+        .px(px(crate::style::INSET_CONTENT))
+        .flex()
+        .flex_col()
+        .gap(px(crate::style::S5))
+}
+/// A labelled bounded field in a visible well.
+fn field_row(name: &'static str, field: Entity<Field>) -> gpui::Div {
+    crate::ui::labelled(name, crate::object_ddl_view::well(field), None)
+}
+/// `1 column`, `2 columns`.
+pub(super) fn plural(count: usize, one: &str, many: &str) -> String {
+    format!("{count} {}", if count == 1 { one } else { many })
 }

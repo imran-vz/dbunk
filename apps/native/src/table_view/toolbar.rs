@@ -513,20 +513,8 @@ impl TableView {
             );
         }
 
+        // Timing lives in the footer only; the toolbar keeps the pager.
         let numbers = self.page_numbers();
-        if let Some(model) = &self.model
-            && let Some(result) = model.result()
-        {
-            bar = bar.child(
-                div()
-                    .flex_none()
-                    .px(px(4.))
-                    .font_family(style::MONO)
-                    .text_size(px(style::FONT_SMALL))
-                    .text_color(style::faint())
-                    .child(format!("{} ms", result.runtime_ms)),
-            );
-        }
 
         // Pager, or Connect while disconnected.
         if mode.connect {
@@ -582,7 +570,6 @@ impl TableView {
                     pager_open,
                 )
                 .relative()
-                .font_family(style::MONO)
                 .aria_label(SharedString::from(format!(
                     "{summary_label}. Change page or limit"
                 )))
@@ -603,7 +590,6 @@ impl TableView {
                 self.control(
                     "table-total",
                     ui::tool_button("table-total", total, None, count_enabled, false)
-                        .font_family(style::MONO)
                         .aria_label(SharedString::from(tip))
                         .tooltip(ui::tooltip(tip))
                         .tooltip_show_delay(ui::tooltip_delay()),
@@ -627,7 +613,7 @@ impl TableView {
             bar = bar.child(previous).child(range);
             if let Some(total) = total {
                 bar = bar
-                    .child(div().flex_none().text_color(style::faint()).child("of"))
+                    .child(div().flex_none().text_color(style::dim()).child("of"))
                     .child(total);
             }
             bar = bar.child(next);
@@ -711,10 +697,10 @@ impl TableView {
                 .aria_label(message.clone())
                 .flex_none()
                 .h(px(style::FOOTER))
-                .px(px(8.))
+                .px(px(crate::style::S4))
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(px(crate::style::S3))
                 .overflow_hidden()
                 .border_b_1()
                 .border_color(style::line_soft())
@@ -736,12 +722,11 @@ impl TableView {
                     strip = strip
                         .child(self.control(
                             "notice-refresh",
-                            ui::tool_button(
+                            ui::tool_button_accent(
                                 "notice-refresh",
                                 "Refresh",
                                 None,
                                 refresh_enabled,
-                                true,
                             ),
                             refresh_enabled,
                             cx,
@@ -761,7 +746,7 @@ impl TableView {
                     strip = strip
                         .child(self.control(
                             "notice-retry",
-                            ui::tool_button("notice-retry", "Retry", None, true, true),
+                            ui::tool_button("notice-retry", "Retry", None, true, false),
                             true,
                             cx,
                             |this, window, cx| {
@@ -801,7 +786,7 @@ impl TableView {
                     .aria_label(message.clone())
                     .flex_none()
                     .min_h(px(style::FOOTER))
-                    .px(px(8.))
+                    .px(px(crate::style::S4))
                     .flex()
                     .items_center()
                     .text_sm()

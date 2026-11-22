@@ -171,6 +171,8 @@ pub struct SchemaMapView {
     host: Arc<Host>,
     id: String,
     connection: Option<String>,
+    /// Saved connections by id, for the header's display name.
+    connections: Vec<(String, crate::overview_view::chrome::ToolConnection)>,
     wake: async_channel::Sender<()>,
     budget: Rc<Cell<usize>>,
     controls: Option<TableControls>,
@@ -233,6 +235,7 @@ impl SchemaMapView {
             host,
             id: document.id.clone(),
             connection: document.connection_id.clone(),
+            connections: Vec::new(),
             wake,
             budget,
             controls: None,
@@ -350,6 +353,15 @@ impl SchemaMapView {
         if self.root.contains_focused(window, cx) {
             self.previous_focus = window.focused(cx);
         }
+    }
+    /// Saved connection records, so the header names the connection.
+    pub fn set_connection_metadata(
+        &mut self,
+        records: &[dbunk_lib::backend::DevelopmentConnection],
+        cx: &mut Context<Self>,
+    ) {
+        self.connections = crate::overview_view::chrome::ToolConnection::index(records);
+        cx.notify();
     }
     pub fn bind_connection(&mut self, connection: String, cx: &mut Context<Self>) {
         if self.dirty {

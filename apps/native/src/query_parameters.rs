@@ -291,15 +291,15 @@ impl Render for QueryParameters {
             .border_b_1()
             .border_color(crate::style::line_soft())
             .bg(crate::style::panel())
-            .px_2()
-            .py_1()
-            .gap_1()
+            .px(gpui::px(crate::style::S4))
+            .py(gpui::px(crate::style::S2))
+            .gap(gpui::px(crate::style::S2))
             .text_sm()
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(4.))
+                    .gap(px(crate::style::S2))
                     .flex_wrap()
                     .child(self.button(
                         "Named parameters".into(),
@@ -324,7 +324,7 @@ impl Render for QueryParameters {
                         cx,
                     )),
             )
-            .child(div().text_color(crate::style::faint()).child(if self.enabled {
+            .child(div().text_size(px(crate::style::FONT_SMALL)).text_color(crate::style::dim()).child(if self.enabled {
                 "Text bindings. Run discovers :names in the selected SQL. Values are not saved."
             } else {
                 "Named parameters off. Blank row limit keeps the normal result cap."
@@ -334,7 +334,7 @@ impl Render for QueryParameters {
                     div()
                         .flex()
                         .items_center()
-                        .gap_2()
+                        .gap(gpui::px(crate::style::S4))
                         .child(
                             div()
                                 .min_w(px(80.))

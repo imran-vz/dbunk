@@ -648,14 +648,14 @@ impl Render for ExportView {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_1()
-                    .px_2()
-                    .py_2()
+                    .gap(gpui::px(crate::style::S2))
+                    .px(gpui::px(crate::style::S4))
+                    .py(gpui::px(crate::style::S4))
                     .child(
                         div()
                             .flex()
                             .items_center()
-                            .gap_2()
+                            .gap(gpui::px(crate::style::S4))
                             .child(
                                 div()
                                     .w(gpui::px(110.))
@@ -674,7 +674,7 @@ impl Render for ExportView {
                         div()
                             .flex()
                             .items_center()
-                            .gap_2()
+                            .gap(gpui::px(crate::style::S4))
                             .child(
                                 div()
                                     .w(gpui::px(110.))

@@ -192,7 +192,9 @@ impl Worker {
                 let applied = tokio::select! {
                     biased;
                     applied = &mut work => applied,
-                    _ = retired.wait_for(|retired| *retired) => {
+                    // `watch::Ref` holds a std read guard; drop it before the
+                    // arm awaits `work`, or the spawned task is not `Send`.
+                    _ = async { retired.wait_for(|retired| *retired).await.map(drop) } => {
                         stop.send_replace(true);
                         work.await
                     }

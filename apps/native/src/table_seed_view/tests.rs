@@ -271,3 +271,10 @@ fn unchosen_seeds_are_called_illustrative() {
     assert!(text.contains("illustrative seed"), "{text}");
     assert!(!text.contains("seed 1"), "{text}");
 }
+
+#[test]
+fn recipe_column_count_is_pluralised() {
+    assert_eq!(super::render::plural(1, "column", "columns"), "1 column");
+    assert_eq!(super::render::plural(0, "column", "columns"), "0 columns");
+    assert_eq!(super::render::plural(12, "column", "columns"), "12 columns");
+}

@@ -31,7 +31,7 @@ impl BrowseControls {
         let header = div()
             .flex_none()
             .h(px(26.))
-            .px(px(8.))
+            .px(px(crate::style::S4))
             .flex()
             .items_center()
             .child(popover::heading("Sort by"))
@@ -96,7 +96,7 @@ impl BrowseControls {
             .child(
                 div()
                     .flex_none()
-                    .p(px(4.))
+                    .p(px(crate::style::S2))
                     .child(ui::field().w_full().child(self.search.accessible.clone())),
             )
             .child(list);
@@ -110,7 +110,7 @@ impl BrowseControls {
             .flex_1()
             .min_w_0()
             .h_full()
-            .p(px(4.))
+            .p(px(crate::style::S2))
             .overflow_y_scroll();
         let last = sort.len().saturating_sub(1);
         for (index, key) in sort.iter().enumerate() {
@@ -209,14 +209,13 @@ impl BrowseControls {
             .h(px(22.))
             .flex()
             .items_center()
-            .gap(px(2.))
+            .gap(px(crate::style::S1))
             .child(
                 div()
                     .flex_none()
                     .w(px(14.))
-                    .font_family(style::MONO)
                     .text_size(px(style::FONT_SMALL))
-                    .text_color(style::faint())
+                    .text_color(style::dim())
                     .child((index + 1).to_string()),
             )
             .child(
@@ -238,8 +237,8 @@ impl BrowseControls {
 
 fn empty(text: &'static str) -> gpui::Div {
     div()
-        .px(px(8.))
-        .py(px(4.))
-        .text_color(style::faint())
+        .px(px(crate::style::S4))
+        .py(px(crate::style::S2))
+        .text_color(style::dim())
         .child(text)
 }

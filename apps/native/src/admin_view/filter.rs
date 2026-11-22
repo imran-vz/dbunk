@@ -227,7 +227,14 @@ impl Render for FilterInput {
             .flex()
             .flex_col()
             .w_full()
-            .child(div().h(gpui::px(28.)).child(self.accessible.clone()))
+            .child(
+                div()
+                    .h(gpui::px(crate::style::FIELD - 2.))
+                    .flex()
+                    .flex_col()
+                    .justify_center()
+                    .child(self.accessible.clone()),
+            )
             .when_some(self.notice, |view, notice| {
                 view.child(
                     div()

@@ -224,9 +224,9 @@ impl Render for FindView {
             .flex()
             .flex_none()
             .items_center()
-            .gap_2()
+            .gap(gpui::px(crate::style::S4))
             .h(px(crate::style::TOOLBAR))
-            .px_2()
+            .px(gpui::px(crate::style::S4))
             .bg(crate::style::panel())
             .border_b_1()
             .border_color(crate::style::line_soft())
@@ -249,9 +249,8 @@ impl Render for FindView {
                     .id("sql-find-status")
                     .role(Role::Status)
                     .aria_label(self.status.clone())
-                    .font_family(crate::style::MONO)
                     .text_size(px(crate::style::FONT_SMALL))
-                    .text_color(crate::style::faint())
+                    .text_color(crate::style::dim())
                     .child(self.status.clone()),
             )
     }

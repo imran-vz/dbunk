@@ -23,6 +23,11 @@ use std::{
 
 const TYPE_AHEAD_RESET: Duration = Duration::from_millis(700);
 const FILTER_BYTES: usize = 8192;
+/// Left edge of sidebar text: the `list_row` margin plus its padding, so the
+/// header, status and row labels share one column.
+const TEXT_INSET: f32 = style::S2 + style::S3;
+/// Indent per tree level.
+const TREE_INDENT: f32 = style::S5;
 
 pub enum NavigatorEvent {
     OpenTable {
@@ -452,13 +457,17 @@ impl NavigatorView {
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
-            .size(px(20.))
+            .size(px(style::CONTROL - style::S2))
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(4.))
-            .hover(|s| s.bg(style::hover()))
-            .focus(|s| s.bg(style::hover()))
+            .rounded(px(style::R_SM))
+            .when(enabled, |button| {
+                button.cursor_pointer().hover(|s| s.bg(style::hover()))
+            })
+            .focus(|s| s.shadow(vec![crate::ui::ring()]))
+            .tooltip(crate::ui::tooltip(label))
+            .tooltip_show_delay(crate::ui::tooltip_delay())
             .child(
                 gpui::svg()
                     .path(icon)
@@ -617,13 +626,13 @@ impl Render for NavigatorView {
             .on_key_down(cx.listener(Self::key_down))
             .child(
                 div()
-                    .h(px(26.))
+                    .h(px(style::ROW + style::S2))
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(px(2.))
-                    .pl(px(10.))
-                    .pr(px(6.))
+                    .gap(px(style::S1))
+                    .pl(px(TEXT_INSET))
+                    .pr(px(style::S2))
                     .child(
                         div()
                             .flex_1()
@@ -646,37 +655,53 @@ impl Render for NavigatorView {
                         cx,
                     )),
             )
-            .child(
-                div()
-                    .mx(px(8.))
-                    .mb(px(4.))
-                    .h(px(20.))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .px(px(6.))
-                    .rounded(px(4.))
-                    .border_1()
-                    .border_color(style::line_soft())
-                    .child(
-                        gpui::svg()
-                            .path("icons/filter.svg")
-                            .size(px(style::ICON))
-                            .text_color(style::faint()),
-                    )
-                    .child(div().flex_1().min_w_0().h(px(16.)).child(self.accessible.clone())),
-            )
+            // The filter waits for a connection: an empty tree has nothing
+            // to filter (A0-8).
+            .when(self.connection.is_some(), |root| {
+                root.child(
+                    div()
+                        .mx(px(style::S2))
+                        .mb(px(style::S2))
+                        .h(px(style::CONTROL))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .gap(px(style::S3))
+                        .px(px(style::S3))
+                        .rounded(px(style::R_SM))
+                        .border_1()
+                        .border_color(style::line())
+                        .bg(style::bg())
+                        .child(
+                            gpui::svg()
+                                .path("icons/filter.svg")
+                                .size(px(style::ICON))
+                                .flex_none()
+                                .text_color(style::faint()),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .h(px(style::CONTROL - style::S3))
+                                .child(self.accessible.clone()),
+                        ),
+                )
+            })
             .when(show_status, |root| {
                 root.child(
                     div()
                         .id("navigator-status")
                         .role(Role::Status)
                         .aria_label(status.clone())
-                        .px(px(10.))
-                        .pb(px(2.))
+                        .px(px(TEXT_INSET))
+                        .pb(px(style::S2))
                         .text_size(px(style::FONT_SMALL))
-                        .text_color(style::faint())
+                        .text_color(if self.stale {
+                            style::warn()
+                        } else {
+                            style::dim()
+                        })
                         .child(status),
                 )
             })
@@ -710,83 +735,75 @@ impl Render for NavigatorView {
                                         };
                                         let (path, color) = row_icon(row, this.catalog.as_ref());
                                         let selected = position == this.selected;
-                                        div()
-                                            .id(("navigator-row", position))
-                                            .role(Role::TreeItem)
-                                            .aria_label(this.row_label(row))
-                                            .aria_selected(selected)
-                                            .h(px(style::ROW))
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(5.))
-                                            .pl(px(8. + 12. * (row.level.saturating_sub(1)) as f32))
-                                            .pr(px(8.))
-                                            .overflow_hidden()
-                                            .whitespace_nowrap()
-                                            .text_color(match row.kind {
-                                                RowKind::Truncated => style::warn(),
-                                                RowKind::ShowMore { .. } => style::dim(),
-                                                _ => style::text(),
-                                            })
-                                            .hover(|s| s.bg(style::hover()))
-                                            .when(selected, |row| {
-                                                row.bg(if focused { style::select() } else { style::raised() })
-                                            })
-                                            .child(match expanded {
-                                                Some(open) => gpui::svg()
-                                                    .path(if open {
-                                                        "icons/chevron_down.svg"
-                                                    } else {
-                                                        "icons/chevron_right.svg"
-                                                    })
-                                                    .size(px(style::ICON))
-                                                    .flex_none()
-                                                    .text_color(style::faint())
-                                                    .into_any_element(),
-                                                None => div().w(px(style::ICON)).flex_none().into_any_element(),
-                                            })
-                                            .child(
-                                                gpui::svg()
-                                                    .path(path)
-                                                    .size(px(style::ICON))
-                                                    .flex_none()
-                                                    .text_color(color),
-                                            )
-                                            .child(
+                                        let item = crate::ui::list_row(
+                                            ("navigator-row", position),
+                                            selected,
+                                            focused,
+                                        )
+                                        .role(Role::TreeItem)
+                                        .aria_label(this.row_label(row))
+                                        .aria_selected(selected)
+                                        .gap(px(style::S2 + 1.))
+                                        .pl(px(style::S2 + TREE_INDENT * (row.level.saturating_sub(1)) as f32))
+                                        .pr(px(style::S3))
+                                        .text_color(match row.kind {
+                                            RowKind::Truncated => style::warn(),
+                                            RowKind::ShowMore { .. } => style::dim(),
+                                            _ => style::text(),
+                                        })
+                                        .child(match expanded {
+                                            Some(open) => gpui::svg()
+                                                .path(if open {
+                                                    "icons/chevron_down.svg"
+                                                } else {
+                                                    "icons/chevron_right.svg"
+                                                })
+                                                .size(px(style::ICON))
+                                                .flex_none()
+                                                .text_color(style::faint())
+                                                .into_any_element(),
+                                            None => div().w(px(style::ICON)).flex_none().into_any_element(),
+                                        })
+                                        .child(
+                                            gpui::svg()
+                                                .path(path)
+                                                .size(px(style::ICON))
+                                                .flex_none()
+                                                .text_color(color),
+                                        )
+                                        .child(crate::ui::row_label(SharedString::from(row.label.clone())))
+                                        .when_some(row.count, |row, count| {
+                                            row.child(
                                                 div()
-                                                    .flex_1()
-                                                    .min_w_0()
-                                                    .overflow_hidden()
-                                                    .child(SharedString::from(row.label.clone())),
+                                                    .flex_none()
+                                                    .text_size(px(style::FONT_SMALL))
+                                                    .text_color(style::dim())
+                                                    .child(count.to_string()),
                                             )
-                                            .when_some(row.count, |row, count| {
-                                                row.child(
-                                                    div()
-                                                        .text_size(px(style::FONT_SMALL))
-                                                        .text_color(style::faint())
-                                                        .child(count.to_string()),
-                                                )
-                                            })
-                                            .on_click(cx.listener(
-                                                move |this, event: &gpui::ClickEvent, window, cx| {
-                                                    // Rows may have shrunk since this frame.
-                                                    let Some(row) = this.rows.get(position) else {
-                                                        return;
-                                                    };
-                                                    let expandable = matches!(
-                                                        row.kind,
-                                                        RowKind::Schema { .. }
-                                                            | RowKind::Group { .. }
-                                                            | RowKind::ShowMore { .. }
-                                                    );
-                                                    this.selected = position;
-                                                    window.focus(&this.list, cx);
-                                                    if event.click_count() > 1 || expandable {
-                                                        this.activate_row(position, cx);
-                                                    }
-                                                    cx.notify();
-                                                },
-                                            ))
+                                        })
+                                        .on_click(cx.listener(
+                                            move |this, event: &gpui::ClickEvent, window, cx| {
+                                                // Rows may have shrunk since this frame.
+                                                let Some(row) = this.rows.get(position) else {
+                                                    return;
+                                                };
+                                                let expandable = matches!(
+                                                    row.kind,
+                                                    RowKind::Schema { .. }
+                                                        | RowKind::Group { .. }
+                                                        | RowKind::ShowMore { .. }
+                                                );
+                                                this.selected = position;
+                                                window.focus(&this.list, cx);
+                                                if event.click_count() > 1 || expandable {
+                                                    this.activate_row(position, cx);
+                                                }
+                                                cx.notify();
+                                            },
+                                        ));
+                                        // A full-width flex column, so the
+                                        // row's highlight spans the sidebar.
+                                        div().w_full().flex().flex_col().child(item)
                                     })
                                     .collect()
                             }),

@@ -244,7 +244,7 @@ identity,..}
                         .w(px(width as f32))
                         .h(px(height as f32))
                         .bg(crate::style::panel())
-                        .rounded(px(4.))
+                        .rounded(px(crate::style::R_MD))
                         .border_1()
                         .border_color(if selected {
                             crate::style::accent()
@@ -259,7 +259,8 @@ identity,..}
                                 .top(px((5. * camera.zoom) as f32))
                                 .left(px((8. * camera.zoom) as f32))
                                 .whitespace_nowrap()
-                                .font_weight(gpui::FontWeight::BOLD)
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .font_family(crate::style::MONO)
                                 .child(node.title.clone()),
                         )
                         .child(
@@ -268,7 +269,7 @@ identity,..}
                                 .top(px((24. * camera.zoom) as f32))
                                 .left(px((8. * camera.zoom) as f32))
                                 .text_size(px((10. * camera.zoom) as f32))
-                                .text_color(crate::style::faint())
+                                .text_color(crate::style::dim())
                                 .whitespace_nowrap()
                                 .child(format!(
                                     "{} columns{}{}{}",

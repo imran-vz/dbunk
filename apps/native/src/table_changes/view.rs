@@ -90,11 +90,15 @@ impl TableChanges {
             Action::Include(_, next) => Some(!next),
             _ => None,
         };
-        let primary = matches!(action, Action::Stage);
-        let control = crate::ui::pressed(
-            crate::ui::tool_button(key.clone(), label, None, enabled, primary),
-            checked.unwrap_or(false),
-        );
+        // Stage is the editor's primary action (D6: the accent tool button).
+        let control = if matches!(action, Action::Stage) {
+            crate::ui::tool_button_accent(key.clone(), label, None, enabled)
+        } else {
+            crate::ui::pressed(
+                crate::ui::tool_button(key.clone(), label, None, enabled, false),
+                checked.unwrap_or(false),
+            )
+        };
         self.wire(key, control, action, enabled, checked, cx)
     }
     /// A 24 px dialog button with an explicit variant.
@@ -187,23 +191,28 @@ impl TableChanges {
         let geometry = (kind == Some(Kind::Geometry) && !null && !raw)
             .then(|| crate::geometry_preview::parse(&edit.editor.read(cx).text(cx)));
 
-        let mut body = div().flex().flex_col().gap(px(6.)).px(px(8.)).child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .font_family(style::MONO)
-                        .text_color(style::dim())
-                        .child(title.clone()),
-                )
-                .when(null, |row| row.child(ui::badge("NULL")))
-                .when(default, |row| row.child(ui::badge("DEFAULT"))),
-        );
+        let mut body = div()
+            .flex()
+            .flex_col()
+            .gap(px(crate::style::S3))
+            .px(px(crate::style::S4))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(crate::style::S3))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .font_family(style::MONO)
+                            .text_color(style::dim())
+                            .child(title.clone()),
+                    )
+                    .when(null, |row| row.child(ui::badge("NULL")))
+                    .when(default, |row| row.child(ui::badge("DEFAULT"))),
+            );
         if let Some(label) = context {
             body = body.child(
                 div()
@@ -223,8 +232,8 @@ impl TableChanges {
             body = body.child(
                 div()
                     .h(px(150.))
-                    .px_1()
-                    .rounded(px(4.))
+                    .px(gpui::px(crate::style::S2))
+                    .rounded(px(crate::style::R_SM))
                     .border_1()
                     .border_color(if error.is_some() {
                         style::bad_line()
@@ -272,8 +281,8 @@ impl TableChanges {
         if kind == Some(Kind::Geometry) {
             body = body.child(
                 div()
-                    .text_xs()
-                    .text_color(style::faint())
+                    .text_size(px(style::FONT_SMALL))
+                    .text_color(style::dim())
                     .child("WKT prefix check only; the database still validates the value"),
             );
         }
@@ -281,7 +290,11 @@ impl TableChanges {
             body = body.child(ui::error_banner("cell-editor-error", error));
         }
 
-        let mut tools = div().flex().flex_wrap().items_center().gap(px(4.));
+        let mut tools = div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap(px(crate::style::S2));
         if cell {
             tools = tools.child(self.button("Set NULL", Action::Null, !pending, cx));
         }
@@ -321,9 +334,9 @@ impl TableChanges {
         let footer = div()
             .flex()
             .items_center()
-            .gap(px(4.))
-            .px(px(8.))
-            .pt(px(4.))
+            .gap(px(crate::style::S2))
+            .px(px(crate::style::S4))
+            .pt(px(crate::style::S2))
             .border_t_1()
             .border_color(style::line_soft())
             .child(tools)
@@ -334,7 +347,7 @@ impl TableChanges {
         let panel = popover::panel("cell-popover-editor", Role::Dialog, format!("Edit {title}"))
             .key_context("CellPopover")
             .w(px(480.))
-            .gap(px(6.))
+            .gap(px(crate::style::S3))
             .on_action(cx.listener(|this, _: &SaveCellPopover, window, cx| {
                 if this.composition_active(window, cx) {
                     cx.propagate();

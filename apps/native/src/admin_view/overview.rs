@@ -313,7 +313,7 @@ impl AdminView {
         let header = match (&self.connection, &self.identity) {
             (None, _) => "No connection bound".to_owned(),
             (Some(_), Some(identity)) => format!("{identity} · {state}"),
-            (Some(id), None) => format!("Connection {id} · {state}"),
+            (Some(_), None) => format!("Saved connection · {state}"),
         };
         let header = match &self.health {
             Some(health) if self.connection.is_some() => format!("{header} · {health}"),

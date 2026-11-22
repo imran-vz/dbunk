@@ -489,7 +489,7 @@ impl ManagedServersView {
         cx: &Context<Self>,
     ) -> gpui::AnyElement {
         let key = key.into();
-        let label = label.into();
+        let label: SharedString = label.into();
         let focus = self
             .controls
             .entry(key.clone())
@@ -499,16 +499,18 @@ impl ManagedServersView {
         let enabled = !self.busy || op == Op::Close;
         let weak = cx.weak_entity();
         let variant = match op {
-            Op::Close => crate::ui::Variant::Ghost,
+            Op::Close | Op::Back => crate::ui::Variant::Ghost,
+            Op::Review | Op::Provision => crate::ui::Variant::Primary,
+            Op::ConfirmDestroy => crate::ui::Variant::Danger,
             _ => crate::ui::Variant::Secondary,
         };
-        crate::ui::button(SharedString::from(key), label.clone(), variant, enabled)
-            .when(selected == Some(true), |button| {
-                button
-                    .bg(crate::style::primary_fill())
-                    .border_color(crate::style::primary_line())
-                    .text_color(crate::style::primary_text())
-            })
+        // An exclusive choice (the PostgreSQL version) is a segment inside a
+        // `segment_group`; everything else is a page button.
+        let element = match selected {
+            Some(selected) => crate::ui::segment(SharedString::from(key), label, selected, enabled),
+            None => crate::ui::button(SharedString::from(key), label, variant, enabled),
+        };
+        element
             .role(if selected.is_some() {
                 Role::RadioButton
             } else {
@@ -573,8 +575,12 @@ impl ManagedServersView {
     }
 
     fn composer(&mut self, cx: &mut Context<Self>) -> gpui::Div {
-        let mut content = div().flex().flex_col().gap(px(10.));
-        let mut fields = div().grid().grid_cols(2).gap_x(px(12.)).gap_y(px(10.));
+        let mut content = div().flex().flex_col().gap(px(crate::style::S5));
+        let mut fields = div()
+            .grid()
+            .grid_cols(2)
+            .gap_x(px(crate::style::S5))
+            .gap_y(px(crate::style::S5));
         for field in &self.fields {
             fields = fields.child(crate::ui::labelled(
                 field.label,
@@ -584,7 +590,7 @@ impl ManagedServersView {
             ));
         }
         content = content.child(fields);
-        let mut versions = div().flex().flex_wrap().gap_2().child("PostgreSQL version");
+        let mut versions = crate::ui::segment_group().self_start();
         for version in MANAGED_POSTGRES_VERSIONS {
             versions = versions.child(self.button(
                 format!("version-{version}"),
@@ -594,7 +600,7 @@ impl ManagedServersView {
                 cx,
             ));
         }
-        content = content.child(versions);
+        content = content.child(crate::ui::labelled("PostgreSQL version", versions, None));
         if let Some(plan) = self.plan.clone() {
             let review = provision_review(&plan);
             content = content
@@ -603,12 +609,17 @@ impl ManagedServersView {
                         .id("managed-provision-review")
                         .role(Role::Alert)
                         .aria_label(review.clone())
+                        .p(px(crate::style::S5))
+                        .rounded(px(crate::style::R_MD))
+                        .border_1()
+                        .border_color(crate::style::line_soft())
+                        .bg(crate::style::panel())
                         .child(review),
                 )
                 .child(
                     div()
                         .flex()
-                        .gap_2()
+                        .gap(px(crate::style::S4))
                         .child(self.button(
                             "provision-confirm",
                             format!("Provision {} on {}", plan.name, plan.host_binding),
@@ -622,7 +633,7 @@ impl ManagedServersView {
             content = content.child(
                 div()
                     .flex()
-                    .gap_2()
+                    .gap(px(crate::style::S4))
                     .child(self.button(
                         "provision-review",
                         "Review provisioning",
@@ -638,10 +649,20 @@ impl ManagedServersView {
 
     fn rows(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(list) = self.list.clone() else {
-            return div().child("Loading managed servers…").into_any_element();
+            return div()
+                .text_color(crate::style::dim())
+                .child("Loading managed servers…")
+                .into_any_element();
         };
         if list.servers.is_empty() {
-            return div().child("No managed servers yet.").into_any_element();
+            return crate::ui::empty_state(
+                "icons/database_zap.svg",
+                "No managed servers yet",
+                Some("Provision PostgreSQL to run a local server in Docker.".into()),
+                None,
+            )
+            .h_auto()
+            .into_any_element();
         }
         let destroy = self.destroy.clone();
         let mut rows = div()
@@ -650,10 +671,10 @@ impl ManagedServersView {
             .aria_label("Managed servers")
             .flex()
             .flex_col()
-            .gap_3();
+            .gap(px(crate::style::S4));
         for (index, server) in list.servers.iter().enumerate() {
             let summary = row_summary(server);
-            let mut actions = div().flex().flex_wrap().gap_2();
+            let mut actions = div().flex().flex_wrap().gap(px(crate::style::S4));
             for op in row_actions(&server.status) {
                 let verb = match op {
                     RowOp::Start => "Start",
@@ -673,9 +694,14 @@ impl ManagedServersView {
                 .id(("managed-row", index))
                 .role(Role::ListItem)
                 .aria_label(summary.clone())
+                .p(px(crate::style::S5))
+                .rounded(px(crate::style::R_MD))
+                .border_1()
+                .border_color(crate::style::line_soft())
+                .bg(crate::style::panel())
                 .flex()
                 .flex_col()
-                .gap_1()
+                .gap(px(crate::style::S4))
                 .child(summary)
                 .child(actions);
             if let Some(plan) = destroy.as_ref().filter(|plan| plan.record_id == server.id) {
@@ -686,12 +712,13 @@ impl ManagedServersView {
                             .id(("managed-destroy-review", index))
                             .role(Role::Alert)
                             .aria_label(review.clone())
+                            .text_color(crate::style::bad_text())
                             .child(review),
                     )
                     .child(
                         div()
                             .flex()
-                            .gap_2()
+                            .gap(px(crate::style::S4))
                             .child(self.button(
                                 "destroy-confirm",
                                 format!("Destroy {} permanently", plan.name),
@@ -714,6 +741,9 @@ impl ManagedServersView {
     }
 }
 
+/// Width of the managed servers page column.
+const PAGE_WIDTH: f32 = 680.;
+
 impl Render for ManagedServersView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.visible_controls.clear();
@@ -724,18 +754,19 @@ impl Render for ManagedServersView {
         let mut content = div()
             .flex()
             .flex_col()
-            .gap_3()
+            .gap(px(crate::style::S5))
             .child(
                 div()
                     .id("managed-docker-status")
                     .role(Role::Status)
                     .aria_label(docker.clone())
+                    .text_color(crate::style::dim())
                     .child(docker),
             )
             .child(
                 div()
                     .flex()
-                    .gap_2()
+                    .gap(px(crate::style::S4))
                     .child(self.button("docker-check", "Check Docker", Op::Check, None, cx))
                     .child(self.button("managed-refresh", "Refresh", Op::Refresh, None, cx))
                     .when(!self.composing, |toolbar| {
@@ -764,23 +795,15 @@ impl Render for ManagedServersView {
                     .child(message.clone()),
             );
         }
-        let mut footer = div()
-            .flex()
-            .items_center()
-            .justify_end()
-            .gap(px(6.))
-            .pt(px(12.))
-            .border_t_1()
-            .border_color(crate::style::line_soft());
-        if self.busy {
-            footer = footer.child(
-                div()
-                    .text_sm()
-                    .text_color(crate::style::faint())
-                    .child("Working…"),
-            );
-        }
-        footer = footer.child(self.button("Close", "Close", Op::Close, None, cx));
+        let working = self.busy.then(|| {
+            div()
+                .text_sm()
+                .text_color(crate::style::dim())
+                .child("Working…")
+        });
+        // The close button sits in the page's own header row, right-aligned
+        // to the column (D15).
+        let close = self.button("Close", "Close", Op::Close, None, cx);
         div()
             .id("managed-servers")
             .role(Role::Dialog)
@@ -793,31 +816,48 @@ impl Render for ManagedServersView {
             .capture_key_down(cx.listener(Self::key))
             .child(div().h(px(crate::style::BAR)).flex_none())
             .child(
-                div().w_full().flex().justify_center().px(px(24.)).pb(px(32.)).child(
-                    div()
-                        .w(px(680.))
-                        .max_w_full()
-                        .flex()
-                        .flex_col()
-                        .gap(px(16.))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap(px(3.))
-                                .child(
-                                    div()
-                                        .text_size(px(crate::style::FONT_TITLE))
-                                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                                        .child("Managed servers"),
-                                )
-                                .child(div().text_sm().text_color(crate::style::dim()).child(
-                                    "Local PostgreSQL in Docker, owned by this profile. Containers are matched by their labels, never by name.",
-                                )),
-                        )
-                        .child(content)
-                        .child(footer),
-                ),
+                div()
+                    .w_full()
+                    .flex()
+                    .justify_center()
+                    .px(px(crate::style::S7))
+                    .pb(px(crate::style::S7))
+                    .child(
+                        div()
+                            .w(px(PAGE_WIDTH))
+                            .max_w_full()
+                            .flex()
+                            .flex_col()
+                            .gap(px(crate::style::S6))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_start()
+                                    .gap(px(crate::style::S5))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .flex()
+                                            .flex_col()
+                                            .gap(px(crate::style::S2))
+                                            .child(
+                                                div()
+                                                    .text_size(px(crate::style::FONT_TITLE))
+                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                    .child("Managed servers"),
+                                            )
+                                            .child(
+                                                div().text_sm().text_color(crate::style::dim()).child(
+                                                    "Local PostgreSQL in Docker, owned by this profile. Containers are matched by their labels, never by name.",
+                                                ),
+                                            ),
+                                    )
+                                    .children(working)
+                                    .child(close),
+                            )
+                            .child(content),
+                    ),
             )
     }
 }

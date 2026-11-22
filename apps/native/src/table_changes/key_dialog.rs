@@ -34,7 +34,7 @@ impl TableChanges {
             .child(
                 div()
                     .text_sm()
-                    .text_color(style::faint())
+                    .text_color(style::dim())
                     .child("You claim these columns uniquely identify each row. Full-row guards apply; proven keys take precedence."),
             );
         if !self.key_draft_clear() {
@@ -63,7 +63,7 @@ impl TableChanges {
             let choices = div()
                 .flex()
                 .flex_wrap()
-                .gap(px(4.))
+                .gap(px(crate::style::S2))
                 .child(self.button(
                     &format!("Key column: {}", selected.as_deref().unwrap_or("none")),
                     Action::KeyColumn,
@@ -81,7 +81,7 @@ impl TableChanges {
                 .id("selected-key-columns")
                 .flex()
                 .flex_col()
-                .gap(px(2.))
+                .gap(px(crate::style::S1))
                 .max_h(px(120.))
                 .overflow_y_scroll();
             for (index, column) in self.key.columns.clone().iter().enumerate() {
@@ -96,7 +96,7 @@ impl TableChanges {
                 div()
                     .flex()
                     .flex_wrap()
-                    .gap(px(4.))
+                    .gap(px(crate::style::S2))
                     .child(self.button(
                         "Save virtual key",
                         Action::KeySave,
@@ -112,7 +112,7 @@ impl TableChanges {
                 div()
                     .flex()
                     .flex_wrap()
-                    .gap(px(4.))
+                    .gap(px(crate::style::S2))
                     .child(self.button(
                         "Choose virtual key",
                         Action::KeyEdit,

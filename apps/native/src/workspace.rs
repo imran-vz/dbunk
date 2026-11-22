@@ -2645,7 +2645,7 @@ impl Render for Workspace {
                         .on_mouse_down(gpui::MouseButton::Right, cx.listener(Self::dismiss_palette))
                         .flex()
                         .justify_center()
-                        .pt(px(64.))
+                        .pt(px(crate::style::BAR + crate::style::S7))
                         .child(crate::ui::appear("palette", div().child(palette))),
                 )
             })

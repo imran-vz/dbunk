@@ -92,30 +92,45 @@ impl CsvTransferView {
                 default
             };
         let weak = cx.weak_entity();
-        crate::ui::pressed(
-            crate::ui::tool_button(("csv-action", index), label, None, enabled, false),
-            selected,
-        )
-        .role(if toggle { Role::CheckBox } else { Role::Button })
-        .a11y_synthetic_children(move |builder| {
-            if !enabled {
-                builder.parent_node().set_disabled();
-            }
-            if toggle {
-                builder
-                    .parent_node()
-                    .set_toggled(gpui::accesskit::Toggled::from(selected));
-            }
-        })
-        .track_focus(&self.buttons[index])
-        .tab_index(0)
-        .tab_stop(enabled)
-        .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
-        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-            weak.update(cx, |this, cx| this.activate(action, window, cx))
-                .ok();
-        })
-        .into_any_element()
+        let id = ("csv-action", index);
+        let exclusive = matches!(
+            action,
+            Action::Import
+                | Action::Xlsx
+                | Action::Export
+                | Action::Schemas
+                | Action::Tables
+                | Action::Delimiter(_)
+        );
+        let base = if exclusive {
+            crate::ui::segment(id, label, selected, enabled)
+        } else if matches!(action, Action::Header) {
+            crate::overview_view::chrome::check_row(id, label, selected, enabled)
+        } else if index == self.next_step(cx) {
+            crate::ui::tool_button_accent(id, label, None, enabled)
+        } else {
+            crate::ui::tool_button(id, label, None, enabled, false)
+        };
+        base.role(if toggle { Role::CheckBox } else { Role::Button })
+            .a11y_synthetic_children(move |builder| {
+                if !enabled {
+                    builder.parent_node().set_disabled();
+                }
+                if toggle {
+                    builder
+                        .parent_node()
+                        .set_toggled(gpui::accesskit::Toggled::from(selected));
+                }
+            })
+            .track_focus(&self.buttons[index])
+            .tab_index(0)
+            .tab_stop(enabled)
+            .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
+            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                weak.update(cx, |this, cx| this.activate(action, window, cx))
+                    .ok();
+            })
+            .into_any_element()
     }
     fn review_text(&self, cx: &gpui::App) -> Option<String> {
         let review = self.current_review(cx)?;
@@ -191,20 +206,20 @@ impl CsvTransferView {
                     }
                 )
             });
-        div().child("Source columns are indexed; duplicate and blank headers remain distinct. Unmapped targets use database defaults.")
-            .when_some(error,|body,error|body.child(div().py(px(4.)).child(crate::ui::shake(format!("csv-mapping-error-shake-{error}"),crate::ui::error_banner("csv-mapping-error",error)))))
+        div().flex().flex_col().gap(px(crate::style::S3))
+            .child(div().flex().flex_wrap().items_center().gap(px(crate::style::S2)).children((19..22).map(|index|self.button(index,cx))).child(crate::ui::info_hint("csv-mapping-note","Source columns are indexed; duplicate and blank headers remain distinct. Unmapped targets use database defaults.")))
+            .when_some(error,|body,error|body.child(div().py(px(crate::style::S2)).child(crate::ui::shake(format!("csv-mapping-error-shake-{error}"),crate::ui::error_banner("csv-mapping-error",error)))))
             .when_some(missing,|body,name|body.child(format!("Required target: {name}")))
-            .child(crate::ui::toolbar().children((19..22).map(|index|self.button(index,cx))))
             .child(div().id("csv-mapping-list").role(Role::ListBox).aria_label("CSV source to target column mapping").track_focus(&self.mapping_focus).tab_index(0)
                 .on_key_down(cx.listener(move|this,event:&KeyDownEvent,window,cx|{if !this.mapping_focus.is_focused(window)||this.inspection_data(cx).is_none_or(|data|data.inspection_id!=id){return;}let next=match event.keystroke.key.as_str(){"up"=>this.mapping_source.unwrap_or(0).saturating_sub(1),"down"=>this.mapping_source.map_or(0,|index|(index+1).min(count.saturating_sub(1))),"home"=>0,"end"=>count.saturating_sub(1),_=>return};this.mapping_source=(count>0).then_some(next);cx.notify();cx.stop_propagation();}))
                 .child(gpui::uniform_list("csv-mapping",count,cx.processor(move|this,range:std::ops::Range<usize>,_,cx|{range.map(|index|{
                     let Some(data)=this.inspection_data(cx).filter(|data|data.inspection_id==id)else{return div().into_any_element();};let Some(source)=data.source_columns.get(index)else{return div().into_any_element();};
                     let target=this.mapping.as_ref().and_then(|mapping|mapping.target_index(index)).and_then(|index|data.target_columns.get(index));
                     let label=format!("{}: {} → {}",index+1,if source.name.is_empty(){"(blank)".into()}else{preview(&source.name)},target.map_or_else(||"Skip column".into(),|column|format!("{} ({})",column.name,preview(&column.data_type))));let selected=this.mapping_source==Some(index);let weak=cx.weak_entity();
-                    div().id(("csv-source-column",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).h(px(28.)).px_2().when(selected,|row|row.bg(crate::style::select())).child(label)
+                    crate::ui::list_row(("csv-source-column",index), selected, true).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).child(label)
                         .on_click(cx.listener(move|this,_,window,cx|{if this.inspection_data(cx).is_some_and(|data|data.inspection_id==id){this.mapping_source=Some(index);window.focus(&this.mapping_focus,cx);cx.notify();}}))
                         .on_a11y_action(gpui::accesskit::Action::Click,move|_,window,cx|{weak.update(cx,|this,cx|{if this.inspection_data(cx).is_some_and(|data|data.inspection_id==id){this.mapping_source=Some(index);window.focus(&this.mapping_focus,cx);cx.notify();}}).ok();}).into_any_element()
-                }).collect()})).h(px(140.))))
+                }).collect()})).h(px(6. * crate::style::ROW))))
             .when_some(selected_text,|body,text|body.child(div().id("csv-source-full-name").role(Role::Label).aria_label(text.clone()).whitespace_normal().child(text))).into_any_element()
     }
     fn review_mapping_element(&self, cx: &Context<Self>) -> AnyElement {
@@ -231,17 +246,18 @@ impl CsvTransferView {
                 pair.target_column
             ))
         });
-        div().child("Exact reviewed column mapping · Unlisted source columns are skipped; unlisted targets use database defaults")
+        div().flex().flex_col().gap(px(crate::style::S3))
+            .child(div().flex().items_center().gap(px(crate::style::S3)).child(crate::ui::section_label("Reviewed mapping")).child(crate::ui::info_hint("csv-reviewed-note","Exact reviewed column mapping. Unlisted source columns are skipped; unlisted targets use database defaults.")))
             .child(div().id("csv-reviewed-mapping-list").role(Role::ListBox).aria_label("Immutable reviewed CSV mapping").track_focus(&self.review_focus).tab_index(0)
                 .on_key_down(cx.listener(move|this,event:&KeyDownEvent,window,cx|{if !this.review_focus.is_focused(window)||this.current_review(cx).is_none_or(|review|review.inspection().inspection_id()!=id||review.attempt_id()!=attempt){return;}let next=match event.keystroke.key.as_str(){"up"=>this.review_pair.unwrap_or(0).saturating_sub(1),"down"=>this.review_pair.map_or(0,|index|(index+1).min(count.saturating_sub(1))),"home"=>0,"end"=>count.saturating_sub(1),_=>return};this.review_pair=Some(next);cx.notify();cx.stop_propagation();}))
                 .child(gpui::uniform_list("csv-reviewed-mapping",count,cx.processor(move|this,range:std::ops::Range<usize>,_,cx|{range.map(|index|{
                     let Some(review)=this.current_review(cx).filter(|review|review.inspection().inspection_id()==id&&review.attempt_id()==attempt)else{return div().into_any_element();};
                     let Some(pair)=review.mapping().get(index)else{return div().into_any_element();};let source=review.inspection().data().source_columns.get(pair.source_index).map_or("Unavailable",|column|column.name.as_str());
                     let label=format!("{}: {} → {}",pair.source_index+1,preview(source),pair.target_column);let selected=this.review_pair==Some(index);let weak=cx.weak_entity();
-                    div().id(("csv-reviewed-pair",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).h(px(28.)).px_2().when(selected,|row|row.bg(crate::style::select())).child(label)
+                    crate::ui::list_row(("csv-reviewed-pair",index), selected, true).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).child(label)
                         .on_click(cx.listener(move|this,_,window,cx|{if this.current_review(cx).is_some_and(|review|review.inspection().inspection_id()==id&&review.attempt_id()==attempt){this.review_pair=Some(index);window.focus(&this.review_focus,cx);cx.notify();}}))
                         .on_a11y_action(gpui::accesskit::Action::Click,move|_,window,cx|{weak.update(cx,|this,cx|{if this.current_review(cx).is_some_and(|review|review.inspection().inspection_id()==id&&review.attempt_id()==attempt){this.review_pair=Some(index);window.focus(&this.review_focus,cx);cx.notify();}}).ok();}).into_any_element()
-                }).collect()})).h(px(140.))))
+                }).collect()})).h(px(6. * crate::style::ROW))))
             .when_some(detail,|body,detail|body.child(div().id("csv-reviewed-pair-detail").role(Role::Label).aria_label(detail.clone()).whitespace_normal().child(detail))).into_any_element()
     }
     fn sample_element(&self, cx: &Context<Self>) -> AnyElement {
@@ -276,7 +292,17 @@ impl CsvTransferView {
             ))
         });
         div()
-            .child(disclosure)
+            .flex()
+            .flex_col()
+            .gap(px(crate::style::S3))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(crate::style::S3))
+                    .child(crate::ui::section_label("Preview"))
+                    .child(crate::ui::info_hint("csv-sample-note", disclosure)),
+            )
             .child(
                 div()
                     .id("csv-sample-list")
@@ -343,46 +369,46 @@ impl CsvTransferView {
                                         );
                                         let selected = this.sample_cell == Some(index);
                                         let weak = cx.weak_entity();
-                                        div()
-                                            .id(("csv-sample-cell", index))
-                                            .role(Role::ListBoxOption)
-                                            .aria_label(label.clone())
-                                            .aria_selected(selected)
-                                            .h(px(28.))
-                                            .px_2()
-                                            .when(selected, |row| row.bg(crate::style::select()))
-                                            .child(label)
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                if this
-                                                    .inspection_data(cx)
-                                                    .is_some_and(|data| data.inspection_id == id)
-                                                {
-                                                    this.sample_cell = Some(index);
-                                                    window.focus(&this.sample_focus, cx);
-                                                    cx.notify();
-                                                }
-                                            }))
-                                            .on_a11y_action(
-                                                gpui::accesskit::Action::Click,
-                                                move |_, window, cx| {
-                                                    weak.update(cx, |this, cx| {
-                                                        if this.inspection_data(cx).is_some_and(
-                                                            |data| data.inspection_id == id,
-                                                        ) {
-                                                            this.sample_cell = Some(index);
-                                                            window.focus(&this.sample_focus, cx);
-                                                            cx.notify();
-                                                        }
-                                                    })
-                                                    .ok();
-                                                },
-                                            )
-                                            .into_any_element()
+                                        crate::ui::list_row(
+                                            ("csv-sample-cell", index),
+                                            selected,
+                                            true,
+                                        )
+                                        .role(Role::ListBoxOption)
+                                        .aria_label(label.clone())
+                                        .aria_selected(selected)
+                                        .child(label)
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            if this
+                                                .inspection_data(cx)
+                                                .is_some_and(|data| data.inspection_id == id)
+                                            {
+                                                this.sample_cell = Some(index);
+                                                window.focus(&this.sample_focus, cx);
+                                                cx.notify();
+                                            }
+                                        }))
+                                        .on_a11y_action(
+                                            gpui::accesskit::Action::Click,
+                                            move |_, window, cx| {
+                                                weak.update(cx, |this, cx| {
+                                                    if this.inspection_data(cx).is_some_and(
+                                                        |data| data.inspection_id == id,
+                                                    ) {
+                                                        this.sample_cell = Some(index);
+                                                        window.focus(&this.sample_focus, cx);
+                                                        cx.notify();
+                                                    }
+                                                })
+                                                .ok();
+                                            },
+                                        )
+                                        .into_any_element()
                                     })
                                     .collect()
                             }),
                         )
-                        .h(px(140.)),
+                        .h(px(6. * crate::style::ROW)),
                     ),
             )
             .when_some(detail, |body, detail| {
@@ -403,24 +429,52 @@ impl Focusable for CsvTransferView {
         self.focus.clone()
     }
 }
+/// A labelled visible well around a bounded text field.
+fn field_well(
+    field: Entity<crate::bounded_field::Field>,
+    label: &'static str,
+    focused: bool,
+) -> AnyElement {
+    crate::ui::labelled(
+        label,
+        crate::ui::input_well(false, focused).child(div().flex_1().min_w_0().child(field)),
+        None,
+    )
+    .into_any_element()
+}
+/// CSV job table: file, direction and state.
+fn job_columns() -> Vec<crate::ui::TableColumn> {
+    vec![
+        crate::ui::TableColumn::flex("File").mono(),
+        crate::ui::TableColumn::fixed("Direction", 120.),
+        crate::ui::TableColumn::fixed("State", 180.),
+    ]
+}
+/// Detail notes (outcome, cleanup, scope sentences) under a property list.
+fn notes(lines: &[String]) -> Vec<AnyElement> {
+    lines
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            crate::overview_view::chrome::note(line.clone())
+                .whitespace_normal()
+                .into_any_element()
+        })
+        .collect()
+}
 impl Render for CsvTransferView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        use crate::overview_view::chrome::{self, ToolConnection};
+        use crate::style;
         self.rebuild_fields(window, cx);
         self.sync_inspection(cx);
         self.freeze_fields(cx);
-        let connection = self
-            .connection
-            .clone()
-            .unwrap_or_else(|| "Select a saved PostgreSQL connection".into());
         let filename = self
             .setup
             .as_ref()
             .and_then(Setup::path)
             .and_then(|path| path.file_name())
-            .map_or_else(
-                || "No file selected".into(),
-                |name| name.to_string_lossy().into_owned(),
-            );
+            .map(|name| name.to_string_lossy().into_owned());
         let store = self.store.read(cx);
         let message = store.message().map(str::to_owned);
         let limits = store.capture().map(|capture| capture.limits());
@@ -461,37 +515,351 @@ impl Render for CsvTransferView {
             .is_none_or(|setup| setup.direction() == CsvDirection::Import);
         let xlsx = self.setup.as_ref().is_some_and(Setup::xlsx);
         let fields = self.fields.clone();
+        let focused = fields
+            .iter()
+            .map(|field| field.focus_handle(cx).contains_focused(window, cx))
+            .collect::<Vec<_>>();
+        let labels = [
+            "Schema",
+            "Table",
+            "Delimiter",
+            "Quote",
+            "Escape",
+            "NULL token",
+        ];
+        let well = |index: usize| {
+            fields.get(index).map(|field| {
+                field_well(
+                    field.clone(),
+                    labels[index],
+                    focused.get(index).copied().unwrap_or(false),
+                )
+            })
+        };
         let workbook = self.workbook_element(cx);
         let has_data = self.inspection_data(cx).is_some();
-        div().id("csv-transfer-view").key_context("CsvTransfer").track_focus(&self.focus).size_full().flex().flex_col().bg(crate::style::bg()).text_color(crate::style::text()).text_size(px(crate::style::FONT))
+        let reviewing = self.current_review(cx).is_some();
+        let connection = ToolConnection::lookup(&self.connections, self.connection.as_deref());
+        let context = chrome::connection_context(connection, self.connection.is_some());
+        let shown = |index: usize| self.enabled(ACTIONS[index].0, cx);
+        let semantics = if xlsx {
+            "A private workbook snapshot supplies the selected sheet. Automatic headers; exact NULL-token matches become SQL NULL. Cached formula values only, no calculation. Dates remain Excel serial text. Oversized or unsupported workbooks are refused."
+        } else if import {
+            "Keep the source file unchanged through completion. Import appends in one transaction; defaults, constraints and triggers run. Unquoted NULL tokens become SQL NULL; quoted tokens remain text."
+        } else {
+            "Export the whole committed table including partitions. Existing destination files are never replaced. Grid filters, loaded rows and staged edits do not change export scope."
+        };
+        let jobs_note = limits.map_or_else(
+            || CLOSING_NOTE.to_owned(),
+            |limits| format!("{limits}\n{CLOSING_NOTE}"),
+        );
+        let parsed_review = review.as_deref().map(chrome::parse_details);
+        let parsed_job = details.as_deref().map(chrome::parse_details);
+        let columns = job_columns();
+        let list_focused = self.list.is_focused(window);
+        let header_actions = vec![
+            crate::ui::segment_group()
+                .children([0, 27, 1].map(|index| self.button(index, cx)))
+                .into_any_element(),
+            self.button(13, cx),
+        ];
+        div().id("csv-transfer-view").key_context("CsvTransfer").track_focus(&self.focus).size_full().flex().flex_col().bg(style::bg()).text_color(style::text()).text_size(px(style::FONT))
             .capture_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|{if this.composing(window,cx){return;}
                 if event.keystroke.key=="tab" && !event.keystroke.modifiers.control && !event.keystroke.modifiers.alt && !event.keystroke.modifiers.platform{let order=this.focus_order(cx);if !order.is_empty(){let current=order.iter().position(|focus|focus.is_focused(window));let next=if event.keystroke.modifiers.shift{current.map_or(order.len()-1,|index|(index+order.len()-1)%order.len())}else{current.map_or(0,|index|(index+1)%order.len())};window.focus(&order[next],cx);cx.stop_propagation();window.prevent_default();}}}))
             .on_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|{if this.scroll_key(event,window,cx){return;}
                 if !this.list.is_focused(window){return;}let rows=this.store.read(cx).capture().map_or_else(Vec::new,|capture|capture.jobs().iter().filter(|row|Some(row.connection_id.as_str())==this.connection.as_deref()).map(|row|row.attempt_id).collect::<Vec<_>>());let current=rows.iter().position(|id|Some(*id)==this.selected);let next=match event.keystroke.key.as_str(){"up"=>current.unwrap_or(0).saturating_sub(1),"down"=>current.map_or(0,|index|(index+1).min(rows.len().saturating_sub(1))),"home"=>0,"end"=>rows.len().saturating_sub(1),"enter" if this.selected_row(cx).is_some()=>{window.focus(&this.details,cx);cx.stop_propagation();return;},_=>return};this.selected=rows.get(next).copied();this.unknown_ack=None;cx.notify();cx.stop_propagation();}))
-            .child(crate::ui::toolbar().child(crate::ui::section_label("Data transfer")).child(crate::ui::separator()).children([0,27,1].map(|index|self.button(index,cx))))
-            .child(div().id("csv-connection").role(Role::Label).aria_label(format!("Connection: {connection}")).px_2().py(px(4.)).font_family(crate::style::MONO).text_color(crate::style::dim()).child(connection))
-            .child(div().id("csv-body").flex_1().min_h_0().overflow_y_scroll().track_scroll(&self.scroll)
-                .children(fields.into_iter().enumerate().filter(|(index,_)| !xlsx || !(2..5).contains(index)).map(|(index,field)|div().px_2().child(div().pt(px(4.)).text_color(crate::style::dim()).text_size(px(crate::style::FONT_SMALL)).child(["Schema","Table","Delimiter · one byte","Quote · one byte","Escape · one byte","NULL token · up to 64 Unicode characters"][index])).child(field)))
-                .when(!xlsx,|body|body.child(crate::ui::toolbar().child(self.button(2,cx)).children((23..27).map(|index|self.button(index,cx))).child("UTF-8")))
-                .child(self.choices_element(cx)).child(div().id("csv-file").role(Role::Label).aria_label(format!("Selected file: {filename}")).p_2().font_family(crate::style::MONO).child(filename))
-                .child(div().px_2().text_color(crate::style::dim()).child(if xlsx{"A private workbook snapshot supplies the selected sheet. Automatic headers; exact NULL-token matches become SQL NULL. Cached formula values only, no calculation. Dates remain Excel serial text. Oversized or unsupported workbooks are refused."}else if import{"Keep the source file unchanged through completion. Import appends in one transaction; defaults, constraints and triggers run. Unquoted NULL tokens become SQL NULL; quoted tokens remain text."}else{"Export the whole committed table including partitions. Existing destination files are never replaced. Grid filters, loaded rows and staged edits do not change export scope."}))
-                .child(crate::ui::toolbar().children([3,4,5,22,13].map(|index|self.button(index,cx))).when(xlsx,|body|body.child(self.button(28,cx))))
-                .child(workbook)
-                .when_some(inspection_status,|body,status|body.child(div().id("csv-inspection-status").role(Role::Label).aria_label(status.clone()).px_2().text_color(crate::style::dim()).child(status)))
-                .when(import&&has_data,|body|body.child(self.mapping_element(cx)).child(self.sample_element(cx)))
-                .child(crate::ui::toolbar().children([6,7,8].map(|index|self.button(index,cx))))
-                .when_some(review,|body,review|body.child(div().id("csv-review").role(Role::Label).aria_label(review.clone()).p_2().whitespace_normal().child(review)).child(self.review_mapping_element(cx)))
-                .child(div().id("csv-status").role(Role::Label).aria_label(self.status.clone()).p_2().text_color(crate::style::dim()).child(self.status.clone()))
-                .when_some(message,|body,message|body.child(div().id("csv-store-message").role(Role::Alert).p_2().child(message)))
-                .child(crate::ui::toolbar().children((9..13).map(|index|self.button(index,cx))))
-                .when_some(limits,|body,limits|body.child(div().px_2().font_family(crate::style::MONO).text_size(px(crate::style::FONT_SMALL)).text_color(crate::style::faint()).child(limits)))
-                .child(div().id("csv-job-list").role(Role::ListBox).aria_label("CSV transfers in this session").track_focus(&self.list).tab_index(0)
-                    .when(jobs.is_empty(),|body|body.child(div().px_2().text_color(crate::style::faint()).child("No observed transfers for this connection.")))
-                    .children(jobs.into_iter().enumerate().map(|(index,(id,label))|{let selected=self.selected==Some(id);let weak=cx.weak_entity();div().id(("csv-job",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).px_2().py_1().when(selected,|row|row.bg(crate::style::select())).child(label)
-                        .on_click(cx.listener(move|this,_,window,cx|{this.selected=Some(id);this.unknown_ack=None;window.focus(&this.list,cx);cx.notify();}))
-                        .on_a11y_action(gpui::accesskit::Action::Click,move|_,window,cx|{weak.update(cx,|this,cx|{this.selected=Some(id);this.unknown_ack=None;window.focus(&this.list,cx);cx.notify();}).ok();})})))
-                .when_some(details,|body,details|body.child(div().id("csv-job-details").role(Role::Label).aria_label(details.clone()).track_focus(&self.details).tab_index(0).p_2().whitespace_normal().child(details)))
-                .when(self.selected.is_some()&&self.selected_row(cx).is_none(),|body|body.child("Selected transfer is missing or expired; no other transfer was selected. Refresh to reconcile."))
-                .child(div().p_2().text_size(px(crate::style::FONT_SMALL)).text_color(crate::style::faint()).child("Closing setup releases its unused inspections; accepted jobs continue. Saving or disconnecting a connection can stop active work. Cancellation cannot promise rollback after commit/publication begins.")))
+            .child(crate::ui::tool_header("CSV transfer", context, header_actions))
+            .child(
+                div()
+                    .id("csv-body")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.scroll)
+                    .px(px(style::INSET_CONTENT))
+                    .py(px(style::S5))
+                    .flex()
+                    .flex_col()
+                    .gap(px(style::S7))
+                    // Target table.
+                    .child(
+                        chrome::tool_column()
+                            .child(crate::ui::heading("Target table"))
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap(px(style::S5))
+                                    .children([0, 1].map(|index| {
+                                        div().flex_1().min_w_0().children(well(index))
+                                    })),
+                            )
+                            .child(self.choices_element(cx)),
+                    )
+                    // Format.
+                    .child(
+                        chrome::tool_column()
+                            .child(crate::ui::heading(if xlsx { "Format" } else { "CSV format" }))
+                            .when(!xlsx, |column| {
+                                column
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_wrap()
+                                            .gap(px(style::S5))
+                                            .children([2, 3, 4].map(|index| {
+                                                div().w(px(SHORT_FIELD)).children(well(index))
+                                            }))
+                                            .child(div().w(px(NULL_FIELD)).children(well(5))),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_wrap()
+                                            .items_center()
+                                            .gap(px(style::S5))
+                                            .child(
+                                                crate::ui::segment_group()
+                                                    .children((23..27).map(|index| self.button(index, cx))),
+                                            )
+                                            .child(self.button(2, cx))
+                                            .child(chrome::note("UTF-8")),
+                                    )
+                            })
+                            .when(xlsx, |column| {
+                                column.child(div().w(px(NULL_FIELD)).children(well(5)))
+                            }),
+                    )
+                    // Source or destination file, then inspection.
+                    .child(
+                        chrome::tool_column()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(style::S3))
+                                    .child(crate::ui::heading(if import { "Source file" } else { "Destination file" }))
+                                    .child(crate::ui::info_hint("csv-semantics", semantics)),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(style::S3))
+                                    .child(
+                                        div()
+                                            .id("csv-file")
+                                            .role(Role::Label)
+                                            .aria_label(format!(
+                                                "Selected file: {}",
+                                                filename.as_deref().unwrap_or("No file selected")
+                                            ))
+                                            .flex_1()
+                                            .min_w_0()
+                                            .h(px(style::FIELD))
+                                            .px(px(style::S4))
+                                            .flex()
+                                            .items_center()
+                                            .rounded(px(style::R_MD))
+                                            .border_1()
+                                            .border_color(style::line())
+                                            .bg(style::bg())
+                                            .overflow_hidden()
+                                            .whitespace_nowrap()
+                                            .text_ellipsis()
+                                            .map(|well| match &filename {
+                                                Some(name) => well
+                                                    .font_family(style::MONO)
+                                                    .text_size(px(style::FONT_DATA))
+                                                    .child(name.clone()),
+                                                None => well
+                                                    .text_color(style::faint())
+                                                    .child("No file selected"),
+                                            }),
+                                    )
+                                    .child(self.button(3, cx))
+                                    .when(xlsx, |row| row.child(self.button(28, cx))),
+                            )
+                            .child(workbook)
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_wrap()
+                                    .items_center()
+                                    .gap(px(style::S2))
+                                    .child(self.button(4, cx))
+                                    .when(shown(5), |row| row.child(self.button(5, cx)))
+                                    .when(shown(22), |row| row.child(self.button(22, cx))),
+                            )
+                            .when_some(inspection_status, |column, status| {
+                                column.child(
+                                    div()
+                                        .id("csv-inspection-status")
+                                        .role(Role::Label)
+                                        .aria_label(status.clone())
+                                        .text_size(px(style::FONT_SMALL))
+                                        .text_color(style::dim())
+                                        .child(status),
+                                )
+                            }),
+                    )
+                    .when(import && has_data, |body| {
+                        body.child(
+                            chrome::tool_column()
+                                .child(crate::ui::heading("Column mapping"))
+                                .child(self.mapping_element(cx))
+                                .child(self.sample_element(cx)),
+                        )
+                    })
+                    // Review and start: revealed once there is something to review.
+                    .when(has_data || reviewing || shown(8), |body| {
+                        body.child(
+                            chrome::tool_column()
+                                .child(crate::ui::heading("Review"))
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_wrap()
+                                        .items_center()
+                                        .gap(px(style::S2))
+                                        .child(self.button(6, cx))
+                                        .when(reviewing || shown(7), |row| row.child(self.button(7, cx)))
+                                        .when(shown(8), |row| row.child(self.button(8, cx))),
+                                )
+                                .when_some(review.clone().zip(parsed_review), |column, (review, parsed)| {
+                                    column
+                                        .child(
+                                            div()
+                                                .id("csv-review")
+                                                .role(Role::Label)
+                                                .aria_label(review)
+                                                .flex()
+                                                .flex_col()
+                                                .children(chrome::detail_rows("csv-review-row", &parsed))
+                                                .children(notes(parsed.notes.get(1..).unwrap_or_default())),
+                                        )
+                                        .child(self.review_mapping_element(cx))
+                                }),
+                        )
+                    })
+                    .when_some(message, |body, message| {
+                        body.child(
+                            div()
+                                .id("csv-store-message")
+                                .role(Role::Alert)
+                                .max_w(px(style::TOOL_COLUMN))
+                                .px(px(style::S4))
+                                .py(px(style::S3))
+                                .rounded(px(style::R_MD))
+                                .border_1()
+                                .border_color(style::line())
+                                .bg(style::panel())
+                                .child(message),
+                        )
+                    })
+                    // Transfers observed in this session.
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(style::S3))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_wrap()
+                                    .items_center()
+                                    .gap(px(style::S2))
+                                    .child(crate::ui::heading("Transfers"))
+                                    .child(crate::ui::info_hint("csv-job-notes", jobs_note))
+                                    .child(crate::ui::grow())
+                                    .children((10..13).filter(|index| shown(*index)).map(|index| self.button(index, cx)))
+                                    .child(self.button(9, cx)),
+                            )
+                            .child(
+                                div()
+                                    .id("csv-job-list")
+                                    .role(Role::ListBox)
+                                    .aria_label("CSV transfers in this session")
+                                    .track_focus(&self.list)
+                                    .tab_index(0)
+                                    .flex()
+                                    .flex_col()
+                                    .when(jobs.is_empty(), |body| {
+                                        body.child(
+                                            div()
+                                                .py(px(style::S3))
+                                                .text_color(style::dim())
+                                                .child("No transfers yet for this connection."),
+                                        )
+                                    })
+                                    .when(!jobs.is_empty(), |body| {
+                                        body.child(crate::ui::data_table_header(&columns))
+                                    })
+                                    .children(jobs.into_iter().enumerate().map(|(index, (id, label))| {
+                                        let selected = self.selected == Some(id);
+                                        let weak = cx.weak_entity();
+                                        let cells = chrome::split_cells(&label, columns.len())
+                                            .into_iter()
+                                            .zip(columns.iter())
+                                            .map(|(value, column)| crate::ui::data_cell(column, Some(value.into())))
+                                            .collect::<Vec<_>>();
+                                        crate::ui::data_table_row(("csv-job", index), cells, selected, list_focused)
+                                            .role(Role::ListBoxOption)
+                                            .aria_label(label)
+                                            .aria_selected(selected)
+                                            .cursor_pointer()
+                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                                this.selected = Some(id);
+                                                this.unknown_ack = None;
+                                                window.focus(&this.list, cx);
+                                                cx.notify();
+                                            }))
+                                            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                                                weak.update(cx, |this, cx| {
+                                                    this.selected = Some(id);
+                                                    this.unknown_ack = None;
+                                                    window.focus(&this.list, cx);
+                                                    cx.notify();
+                                                })
+                                                .ok();
+                                            })
+                                    })),
+                            )
+                            .when_some(details.zip(parsed_job), |body, (details, parsed)| {
+                                body.child(
+                                    div()
+                                        .id("csv-job-details")
+                                        .role(Role::Label)
+                                        .aria_label(details)
+                                        .track_focus(&self.details)
+                                        .tab_index(0)
+                                        .max_w(px(style::TOOL_COLUMN))
+                                        .pt(px(style::S3))
+                                        .flex()
+                                        .flex_col()
+                                        .children(chrome::detail_rows("csv-job-row", &parsed))
+                                        .children(notes(&parsed.notes)),
+                                )
+                            })
+                            .when(self.selected.is_some() && self.selected_row(cx).is_none(), |body| {
+                                body.child(chrome::note(
+                                    "Selected transfer is missing or expired; no other transfer was selected. Refresh to reconcile.",
+                                ))
+                            }),
+                    ),
+            )
+            .child(
+                crate::ui::status_line().child(
+                    div()
+                        .id("csv-status")
+                        .role(Role::Label)
+                        .aria_label(self.status.clone())
+                        .child(self.status.clone()),
+                ),
+            )
     }
 }
+/// Width of the one-character Delimiter, Quote and Escape wells.
+const SHORT_FIELD: f32 = 96.;
+/// Width of the NULL token well.
+const NULL_FIELD: f32 = 176.;
+const CLOSING_NOTE: &str = "Closing setup releases its unused inspections; accepted jobs continue. Saving or disconnecting a connection can stop active work. Cancellation cannot promise rollback after commit/publication begins.";

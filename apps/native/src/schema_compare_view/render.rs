@@ -24,7 +24,13 @@ impl SchemaCompareView {
         let label = if let Some(key) = &copy_key && self.reader.read(cx).state().and_then(|state| state.value(key.value.side)).is_some_and(|reply| matches!(reply,CompareReply::Value { offset,next_offset,.. } if *offset != 0 || *next_offset < key.value.raw_bytes)) { format!("{label} (partial value)") } else { label.to_owned() };
         let enabled = self.enabled(action, cx);
         let weak = cx.weak_entity();
-        crate::ui::tool_button(("comparison-action", index), label, None, enabled, false)
+        let id = ("comparison-action", index);
+        let button = if index == 0 {
+            crate::ui::tool_button_accent(id, label, None, enabled)
+        } else {
+            crate::ui::tool_button(id, label, None, enabled, false)
+        };
+        button
             .track_focus(&self.buttons[index])
             .tab_index(0)
             .tab_stop(enabled)
@@ -39,8 +45,12 @@ impl SchemaCompareView {
             })
             .into_any_element()
     }
-    fn connection_element(&self, side: Side, cx: &Context<Self>) -> AnyElement {
+    fn connection_element(&self, side: Side, window: &Window, cx: &Context<Self>) -> AnyElement {
         let index = side_index(side);
+        let focused = self
+            .fields
+            .get(index)
+            .is_some_and(|field| field.focus_handle(cx).contains_focused(window, cx));
         let id = if index == 0 {
             self.source.as_deref()
         } else {
@@ -79,20 +89,57 @@ impl SchemaCompareView {
             .connections
             .as_ref()
             .map_or(0, |connections| connections.rows().len());
+        // Visible endpoint: name, database and environment, never the id
+        // (the AX label keeps the full endpoint).
+        let shown = current.map_or_else(
+            || {
+                if id.is_some() {
+                    "Missing connection".to_owned()
+                } else {
+                    "Choose a stored PostgreSQL connection".to_owned()
+                }
+            },
+            |connection| {
+                format!(
+                    "{} · {} · {}",
+                    connection.name, connection.database, connection.environment
+                )
+            },
+        );
         div()
             .flex_1()
             .min_w_0()
+            .flex()
+            .flex_col()
+            .gap(px(crate::style::S3))
             .child(
                 div()
-                    .id(("comparison-endpoint", index))
-                    .role(Role::Label)
-                    .aria_label(label.clone())
-                    .child(label),
+                    .flex()
+                    .items_center()
+                    .gap(px(crate::style::S3))
+                    .child(crate::ui::section_label(side_label(side)))
+                    .child(
+                        div()
+                            .id(("comparison-endpoint", index))
+                            .role(Role::Label)
+                            .aria_label(label.clone())
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_color(crate::style::dim())
+                            .child(shown),
+                    ),
             )
             .when(self.connections.is_some(), |body| {
                 body.child(
                     div()
                         .id(("comparison-connections", index))
+                        .py(px(crate::style::S2))
+                        .rounded(px(crate::style::R_MD))
+                        .border_1()
+                        .border_color(crate::style::line())
+                        .bg(crate::style::bg())
                         .role(Role::ListBox)
                         .a11y_synthetic_children(move |builder| {
                             if !setup_enabled {
@@ -158,27 +205,41 @@ impl SchemaCompareView {
                                             } == Some(id.as_str());
                                             let weak = cx.weak_entity();
                                             let accessible_id = id.clone();
-                                            div()
-                                                .id(("comparison-connection-row", position))
-                                                .role(Role::ListBoxOption)
-                                                .a11y_synthetic_children(move |builder| {
-                                                    if !setup_enabled {
-                                                        builder.parent_node().set_disabled();
-                                                    }
-                                                })
-                                                .aria_label(format!("{label} · {id}"))
-                                                .aria_selected(selected)
-                                                .h(px(26.))
-                                                .px_2()
-                                                .when(selected, |row| {
-                                                    row.bg(crate::style::select())
-                                                })
-                                                .child(label)
-                                                .on_click(cx.listener(
-                                                    move |this, _, window, cx| {
+                                            crate::ui::list_row(
+                                                ("comparison-connection-row", position),
+                                                selected,
+                                                true,
+                                            )
+                                            .role(Role::ListBoxOption)
+                                            .a11y_synthetic_children(move |builder| {
+                                                if !setup_enabled {
+                                                    builder.parent_node().set_disabled();
+                                                }
+                                            })
+                                            .aria_label(format!("{label} · {id}"))
+                                            .aria_selected(selected)
+                                            .child(crate::ui::row_label(connection.name.clone()))
+                                            .child(crate::ui::row_meta(format!(
+                                                "{} · {}",
+                                                connection.database, connection.environment
+                                            )))
+                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                                this.select_connection(
+                                                    side,
+                                                    id.clone(),
+                                                    generation,
+                                                    window,
+                                                    cx,
+                                                );
+                                                window.focus(&this.connection_focus[index], cx);
+                                            }))
+                                            .on_a11y_action(
+                                                gpui::accesskit::Action::Click,
+                                                move |_, window, cx| {
+                                                    weak.update(cx, |this, cx| {
                                                         this.select_connection(
                                                             side,
-                                                            id.clone(),
+                                                            accessible_id.clone(),
                                                             generation,
                                                             window,
                                                             cx,
@@ -187,43 +248,27 @@ impl SchemaCompareView {
                                                             &this.connection_focus[index],
                                                             cx,
                                                         );
-                                                    },
-                                                ))
-                                                .on_a11y_action(
-                                                    gpui::accesskit::Action::Click,
-                                                    move |_, window, cx| {
-                                                        weak.update(cx, |this, cx| {
-                                                            this.select_connection(
-                                                                side,
-                                                                accessible_id.clone(),
-                                                                generation,
-                                                                window,
-                                                                cx,
-                                                            );
-                                                            window.focus(
-                                                                &this.connection_focus[index],
-                                                                cx,
-                                                            );
-                                                        })
-                                                        .ok();
-                                                    },
-                                                )
-                                                .into_any_element()
+                                                    })
+                                                    .ok();
+                                                },
+                                            )
+                                            .into_any_element()
                                         })
                                         .collect()
                                 }),
                             )
                             .track_scroll(&self.connection_scroll[index])
-                            .h(px(82.)),
+                            .h(px(3. * crate::style::ROW)),
                         ),
                 )
             })
             .when_some(self.fields.get(index).cloned(), |body, field| {
-                body.child(format!(
-                    "Exact {} schema · 1–63 UTF-8 bytes",
-                    side_label(side).to_lowercase()
+                body.child(crate::ui::labelled(
+                    format!("{} schema", side_label(side)),
+                    crate::ui::input_well(false, focused)
+                        .child(div().flex_1().min_w_0().child(field)),
+                    None,
                 ))
-                .child(field)
             })
             .child(self.schema_choices(side, cx))
             .into_any_element()
@@ -233,11 +278,10 @@ impl SchemaCompareView {
         let count = self.cached_schemas(side).len();
         let setup_enabled = self.setup_enabled(cx);
         if count == 0 {
-            return div()
-                .child(
-                    "No cached schema names. Enter the exact schema; no lookup runs while typing.",
-                )
-                .into_any_element();
+            return crate::overview_view::chrome::note(
+                "Type the exact schema name; no lookup runs while typing.",
+            )
+            .into_any_element();
         }
         let connection = match side {
             Side::Source => self.source.clone(),
@@ -247,7 +291,12 @@ impl SchemaCompareView {
         let keyboard_connection = connection.clone();
         let generation = self.generation;
         div()
-            .child("Cached schema names from open Objects tabs; exact text entry remains available")
+            .flex()
+            .flex_col()
+            .gap(px(crate::style::S2))
+            .child(crate::overview_view::chrome::note(
+                "Schemas from open Objects tabs; typing an exact name still works",
+            ))
             .child(
                 div()
                     .id(("comparison-cached-schemas", index))
@@ -312,55 +361,57 @@ impl SchemaCompareView {
                                         let click_connection = connection.clone();
                                         let accessible_connection = connection.clone();
                                         let weak = cx.weak_entity();
-                                        div()
-                                            .id(("comparison-cached-schema", row))
-                                            .role(Role::ListBoxOption)
-                                            .a11y_synthetic_children(move |builder| {
-                                                if !setup_enabled {
-                                                    builder.parent_node().set_disabled();
-                                                }
-                                            })
-                                            .aria_label(label.clone())
-                                            .aria_selected(selected)
-                                            .h(px(26.))
-                                            .px_2()
-                                            .when(selected, |row| row.bg(crate::style::select()))
-                                            .child(label)
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.select_schema(
-                                                    side,
-                                                    &click_connection,
-                                                    schema.clone(),
-                                                    generation,
-                                                    window,
-                                                    cx,
-                                                );
-                                                window.focus(&this.schema_focus[index], cx);
-                                            }))
-                                            .on_a11y_action(
-                                                gpui::accesskit::Action::Click,
-                                                move |_, window, cx| {
-                                                    weak.update(cx, |this, cx| {
-                                                        this.select_schema(
-                                                            side,
-                                                            &accessible_connection,
-                                                            accessible_schema.clone(),
-                                                            generation,
-                                                            window,
-                                                            cx,
-                                                        );
-                                                        window.focus(&this.schema_focus[index], cx);
-                                                    })
-                                                    .ok();
-                                                },
-                                            )
-                                            .into_any_element()
+                                        crate::ui::list_row(
+                                            ("comparison-cached-schema", row),
+                                            selected,
+                                            true,
+                                        )
+                                        .role(Role::ListBoxOption)
+                                        .a11y_synthetic_children(move |builder| {
+                                            if !setup_enabled {
+                                                builder.parent_node().set_disabled();
+                                            }
+                                        })
+                                        .aria_label(label.clone())
+                                        .aria_selected(selected)
+                                        .font_family(crate::style::MONO)
+                                        .text_size(px(crate::style::FONT_DATA))
+                                        .child(label)
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.select_schema(
+                                                side,
+                                                &click_connection,
+                                                schema.clone(),
+                                                generation,
+                                                window,
+                                                cx,
+                                            );
+                                            window.focus(&this.schema_focus[index], cx);
+                                        }))
+                                        .on_a11y_action(
+                                            gpui::accesskit::Action::Click,
+                                            move |_, window, cx| {
+                                                weak.update(cx, |this, cx| {
+                                                    this.select_schema(
+                                                        side,
+                                                        &accessible_connection,
+                                                        accessible_schema.clone(),
+                                                        generation,
+                                                        window,
+                                                        cx,
+                                                    );
+                                                    window.focus(&this.schema_focus[index], cx);
+                                                })
+                                                .ok();
+                                            },
+                                        )
+                                        .into_any_element()
                                     })
                                     .collect()
                             }),
                         )
                         .track_scroll(&self.schema_scroll[index])
-                        .h(px(78.)),
+                        .h(px(3. * crate::style::ROW)),
                     ),
             )
             .into_any_element()
@@ -431,8 +482,7 @@ impl SchemaCompareView {
             items,
         }) = state.objects()
         else {
-            return div()
-                .child("Object page unread or unavailable.")
+            return crate::overview_view::chrome::note("Object page unread or unavailable.")
                 .into_any_element();
         };
         let count = items.len();
@@ -450,7 +500,10 @@ impl SchemaCompareView {
         div()
             .flex_1()
             .min_w_0()
-            .child(header)
+            .flex()
+            .flex_col()
+            .gap(px(crate::style::S2))
+            .child(crate::ui::section_label(header))
             .child(
                 div()
                     .flex()
@@ -525,44 +578,44 @@ impl SchemaCompareView {
                                         let click_request = request.clone();
                                         let accessible_request = request.clone();
                                         let accessible_object = object.clone();
-                                        div()
-                                            .id(("comparison-object", index))
-                                            .role(Role::ListBoxOption)
-                                            .aria_label(label.clone())
-                                            .aria_selected(selected)
-                                            .h(px(28.))
-                                            .px_2()
-                                            .when(selected, |row| row.bg(crate::style::select()))
-                                            .child(label)
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.choose_object(
-                                                    &click_request,
-                                                    object.clone(),
-                                                    window,
-                                                    cx,
-                                                )
-                                            }))
-                                            .on_a11y_action(
-                                                gpui::accesskit::Action::Click,
-                                                move |_, window, cx| {
-                                                    weak.update(cx, |this, cx| {
-                                                        this.choose_object(
-                                                            &accessible_request,
-                                                            accessible_object.clone(),
-                                                            window,
-                                                            cx,
-                                                        )
-                                                    })
-                                                    .ok();
-                                                },
+                                        crate::ui::list_row(
+                                            ("comparison-object", index),
+                                            selected,
+                                            true,
+                                        )
+                                        .role(Role::ListBoxOption)
+                                        .aria_label(label.clone())
+                                        .aria_selected(selected)
+                                        .child(crate::ui::row_label(label))
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.choose_object(
+                                                &click_request,
+                                                object.clone(),
+                                                window,
+                                                cx,
                                             )
-                                            .into_any_element()
+                                        }))
+                                        .on_a11y_action(
+                                            gpui::accesskit::Action::Click,
+                                            move |_, window, cx| {
+                                                weak.update(cx, |this, cx| {
+                                                    this.choose_object(
+                                                        &accessible_request,
+                                                        accessible_object.clone(),
+                                                        window,
+                                                        cx,
+                                                    )
+                                                })
+                                                .ok();
+                                            },
+                                        )
+                                        .into_any_element()
                                     })
                                     .collect()
                             }),
                         )
                         .track_scroll(&self.object_scroll)
-                        .h(px(190.)),
+                        .h(px(8. * crate::style::ROW)),
                     ),
             )
             .into_any_element()
@@ -604,7 +657,10 @@ impl SchemaCompareView {
         div()
             .flex_1()
             .min_w_0()
-            .child(header)
+            .flex()
+            .flex_col()
+            .gap(px(crate::style::S2))
+            .child(crate::ui::section_label(header))
             .child(
                 div()
                     .flex()
@@ -693,46 +749,46 @@ impl SchemaCompareView {
                                         let accessible_path = path.clone();
                                         let click_object = captured_object.clone();
                                         let accessible_object = captured_object.clone();
-                                        div()
-                                            .id(("comparison-field", index))
-                                            .role(Role::ListBoxOption)
-                                            .aria_label(label.clone())
-                                            .aria_selected(selected)
-                                            .h(px(28.))
-                                            .px_2()
-                                            .when(selected, |row| row.bg(crate::style::select()))
-                                            .child(label)
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.choose_field(
-                                                    &click_request,
-                                                    &click_object,
-                                                    path.clone(),
-                                                    window,
-                                                    cx,
-                                                )
-                                            }))
-                                            .on_a11y_action(
-                                                gpui::accesskit::Action::Click,
-                                                move |_, window, cx| {
-                                                    weak.update(cx, |this, cx| {
-                                                        this.choose_field(
-                                                            &accessible_request,
-                                                            &accessible_object,
-                                                            accessible_path.clone(),
-                                                            window,
-                                                            cx,
-                                                        )
-                                                    })
-                                                    .ok();
-                                                },
+                                        crate::ui::list_row(
+                                            ("comparison-field", index),
+                                            selected,
+                                            true,
+                                        )
+                                        .role(Role::ListBoxOption)
+                                        .aria_label(label.clone())
+                                        .aria_selected(selected)
+                                        .child(crate::ui::row_label(label))
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.choose_field(
+                                                &click_request,
+                                                &click_object,
+                                                path.clone(),
+                                                window,
+                                                cx,
                                             )
-                                            .into_any_element()
+                                        }))
+                                        .on_a11y_action(
+                                            gpui::accesskit::Action::Click,
+                                            move |_, window, cx| {
+                                                weak.update(cx, |this, cx| {
+                                                    this.choose_field(
+                                                        &accessible_request,
+                                                        &accessible_object,
+                                                        accessible_path.clone(),
+                                                        window,
+                                                        cx,
+                                                    )
+                                                })
+                                                .ok();
+                                            },
+                                        )
+                                        .into_any_element()
                                     })
                                     .collect()
                             }),
                         )
                         .track_scroll(&self.field_scroll)
-                        .h(px(190.)),
+                        .h(px(8. * crate::style::ROW)),
                     ),
             )
             .into_any_element()
@@ -777,18 +833,23 @@ impl SchemaCompareView {
         div()
             .flex_1()
             .min_w_0()
-            .child(state.selected_value(side).map_or_else(
-                || side_label(side).to_owned(),
-                |value| {
-                    format!(
-                        "{} · {} · {} B",
-                        side_label(side),
-                        model::value_kind_label(value.value_kind),
-                        value.raw_bytes
-                    )
-                },
+            .flex()
+            .flex_col()
+            .gap(px(crate::style::S2))
+            .child(crate::ui::section_label(
+                state.selected_value(side).map_or_else(
+                    || side_label(side).to_owned(),
+                    |value| {
+                        format!(
+                            "{} · {} · {} B",
+                            side_label(side),
+                            model::value_kind_label(value.value_kind),
+                            value.raw_bytes
+                        )
+                    },
+                ),
             ))
-            .child(crate::ui::toolbar().children(
+            .child(div().flex().flex_wrap().gap(px(crate::style::S2)).children(
                 [12 + index * 2, 13 + index * 2, 16 + index].map(|index| self.button(index, cx)),
             ))
             .child(
@@ -798,31 +859,57 @@ impl SchemaCompareView {
                     .aria_label(format!("{} value: {text}", side_label(side)))
                     .track_focus(&self.value_focus[index])
                     .tab_index(0)
-                    .p_2()
+                    .px(px(crate::style::S4))
+                    .py(px(crate::style::S3))
+                    .rounded(px(crate::style::R_MD))
+                    .border_1()
+                    .border_color(crate::style::line())
+                    .bg(crate::style::panel())
+                    .font_family(crate::style::MONO)
+                    .text_size(px(crate::style::FONT_DATA))
                     .whitespace_normal()
                     .child(text),
             )
             .into_any_element()
     }
     fn jobs_element(&self, cx: &Context<Self>) -> AnyElement {
+        use crate::overview_view::chrome;
         let rows = self
             .store
             .read(cx)
             .capture()
             .map_or(&[][..], |capture| capture.rows());
-        div().child("Session comparisons · up to 2 active and 2 terminal jobs; completed results expire")
-            .child(crate::ui::toolbar().children([1,2,3,4].map(|index|self.button(index,cx))))
-            .child(div().id("comparison-jobs").role(Role::ListBox).aria_label("Session schema comparison jobs").track_focus(&self.jobs_focus).tab_index(0)
+        let columns = vec![
+            crate::ui::TableColumn::fixed("State", 140.),
+            crate::ui::TableColumn::flex("Source → target"),
+            crate::ui::TableColumn::fixed("Objects", 260.),
+        ];
+        let focused = true;
+        div().flex().flex_col().gap(px(crate::style::S3))
+            .child(div().flex().flex_wrap().items_center().gap(px(crate::style::S2))
+                .child(crate::ui::heading("Comparisons"))
+                .child(crate::ui::info_hint("comparison-job-notes","This session keeps up to 2 active and 2 finished comparisons; completed results expire. Accepted endpoints stay fixed when setup changes. Closing this tab keeps accepted jobs alive. Cancel waits for owned work; no schema writes are performed. A missing observation does not prove a queued admission failed."))
+                .child(crate::ui::grow())
+                .children([2,3,4].into_iter().filter(|index|self.enabled(ACTIONS[*index].0,cx)).map(|index|self.button(index,cx)))
+                .child(self.button(1,cx)))
+            .child(div().id("comparison-jobs").role(Role::ListBox).aria_label("Session schema comparison jobs").track_focus(&self.jobs_focus).tab_index(0).flex().flex_col()
                 .on_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|{if !this.jobs_focus.is_focused(window){return;}let rows=this.store.read(cx).capture().map_or(&[][..],|capture|capture.rows());let current=rows.iter().position(|job|Some(job.job_id.as_str())==this.selected.as_deref());if let Some(next)=navigation(&event.keystroke.key,current,rows.len()){let id=rows[next].job_id.clone();this.select_job(id,window,cx);cx.stop_propagation();}}))
-                .when(rows.is_empty(),|body|body.child("No comparison jobs observed. A missing observation does not prove a queued admission failed."))
+                .when(rows.is_empty(),|body|body.child(div().py(px(crate::style::S3)).text_color(crate::style::dim()).child("No comparisons yet. Choose a source and target, then Compare.")))
+                .when(!rows.is_empty(),|body|body.child(crate::ui::data_table_header(&columns)))
                 .children(rows.iter().enumerate().map(|(index,job)|{
                     let label=format!("{} · {} → {} · {} source / {} target objects{}",model::phase_label(&job.state),self.endpoint_label(&job.source),self.endpoint_label(&job.target),job.source_objects,job.target_objects,match &job.state{StatusState::Failed{failure}=>format!(" · {}",model::job_failure_text(failure)),_=>String::new()});let selected=self.selected.as_deref()==Some(job.job_id.as_str());let id=job.job_id.clone();let accessible_id=id.clone();let weak=cx.weak_entity();
-                    div().id(("comparison-job",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).p_2().when(selected,|row|row.bg(crate::style::select())).child(label)
+                    let failure=match &job.state{StatusState::Failed{failure}=>format!(" · {}",model::job_failure_text(failure)),_=>String::new()};
+                    let cells=vec![
+                        crate::ui::data_cell(&columns[0],Some(model::phase_label(&job.state).to_string().into())),
+                        crate::ui::data_cell(&columns[1],Some(format!("{} → {}",self.endpoint_label(&job.source),self.endpoint_label(&job.target)).into())),
+                        crate::ui::data_cell(&columns[2],Some(format!("{} source / {} target{failure}",job.source_objects,job.target_objects).into())),
+                    ];
+                    crate::ui::data_table_row(("comparison-job",index),cells,selected,focused).role(Role::ListBoxOption).aria_label(label).aria_selected(selected).cursor_pointer()
                         .on_click(cx.listener(move|this,_,window,cx|this.select_job(id.clone(),window,cx)))
                         .on_a11y_action(gpui::accesskit::Action::Click,move|_,window,cx|{weak.update(cx,|this,cx|this.select_job(accessible_id.clone(),window,cx)).ok();})
                 })))
-            .when(self.selected.is_some()&&self.selected_job(cx).is_none(),|body|body.child("Selected job is missing or expired. No other job was selected."))
-            .child("Accepted endpoints stay fixed when setup changes. Closing this tab keeps accepted jobs alive. Cancel waits for owned work; no schema writes are performed.").into_any_element()
+            .when(self.selected.is_some()&&self.selected_job(cx).is_none(),|body|body.child(chrome::note("Selected job is missing or expired. No other job was selected.")))
+            .into_any_element()
     }
 }
 impl Focusable for SchemaCompareView {
@@ -875,6 +962,7 @@ Draft endpoints differ from this comparison."
                 }
             ))
         });
+        let result_actions = [5, 6, 7];
         div()
             .id("schema-comparison-view")
             .key_context("SchemaComparison")
@@ -925,12 +1013,20 @@ Draft endpoints differ from this comparison."
                     cx.stop_propagation();
                 }
             }))
-            .child(
-                crate::ui::toolbar()
-                    .child(crate::ui::section_label("Schema comparison"))
-                    .child(crate::ui::badge("read-only"))
-                    .child("PostgreSQL 16 ordinary tables"),
-            )
+            .child(crate::ui::tool_header(
+                "Schema comparison",
+                Some(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(crate::style::S3))
+                        .text_color(crate::style::dim())
+                        .child(crate::ui::badge("Read-only"))
+                        .child("PostgreSQL 16 ordinary tables")
+                        .into_any_element(),
+                ),
+                vec![self.button(0, cx)],
+            ))
             .child(
                 div()
                     .id("comparison-body")
@@ -938,38 +1034,50 @@ Draft endpoints differ from this comparison."
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
+                    .px(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S5))
+                    .flex()
+                    .flex_col()
+                    .gap(px(crate::style::S6))
                     .child(
                         div()
                             .flex()
-                            .gap_2()
-                            .p_2()
-                            .child(self.connection_element(Side::Source, cx))
-                            .child(self.connection_element(Side::Target, cx)),
+                            .gap(px(crate::style::S6))
+                            .child(self.connection_element(Side::Source, window, cx))
+                            .child(self.connection_element(Side::Target, window, cx)),
                     )
-                    .child(
-                        crate::ui::toolbar()
-                            .children([0, 5, 6, 7].map(|index| self.button(index, cx))),
-                    )
-                    .child(
-                        div()
-                            .id("comparison-status")
-                            .role(Role::Label)
-                            .aria_label(self.status.clone())
-                            .p_2()
-                            .text_color(crate::style::dim())
-                            .child(self.status.clone()),
+                    // Result actions appear once there is a result to act on.
+                    .when(
+                        result_actions
+                            .iter()
+                            .any(|index| self.enabled(ACTIONS[*index].0, cx)),
+                        |body| {
+                            body.child(
+                                div()
+                                    .flex()
+                                    .flex_wrap()
+                                    .items_center()
+                                    .gap(px(crate::style::S2))
+                                    .children(
+                                        result_actions
+                                            .into_iter()
+                                            .filter(|index| self.enabled(ACTIONS[*index].0, cx))
+                                            .map(|index| self.button(index, cx)),
+                                    ),
+                            )
+                        },
                     )
                     .when_some(store_message, |body, message| {
-                        body.child(div().p_2().child(crate::ui::shake(
+                        body.child(crate::ui::shake(
                             format!("comparison-store-error-shake-{message}"),
                             crate::ui::error_banner("comparison-store-error", message),
-                        )))
+                        ))
                     })
                     .when_some(reader_message, |body, message| {
-                        body.child(div().p_2().child(crate::ui::shake(
+                        body.child(crate::ui::shake(
                             format!("comparison-reader-error-shake-{message}"),
                             crate::ui::error_banner("comparison-reader-error", message),
-                        )))
+                        ))
                     })
                     .when_some(accepted, |body, text| {
                         body.child(
@@ -977,7 +1085,7 @@ Draft endpoints differ from this comparison."
                                 .id("comparison-accepted-endpoints")
                                 .role(Role::Label)
                                 .aria_label(text.clone())
-                                .p_2()
+                                .text_color(crate::style::dim())
                                 .whitespace_normal()
                                 .child(text),
                         )
@@ -988,8 +1096,7 @@ Draft endpoints differ from this comparison."
                                 .id("comparison-result-summary")
                                 .role(Role::Label)
                                 .aria_label(text.clone())
-                                .p_2()
-                                .child(text),
+                                .child(crate::ui::heading(text)),
                         )
                     })
                     .when(self.coverage, |body| {
@@ -1001,7 +1108,7 @@ Draft endpoints differ from this comparison."
                                     .aria_label(text.clone())
                                     .track_focus(&self.coverage_focus)
                                     .tab_index(0)
-                                    .p_2()
+                                    .text_color(crate::style::dim())
                                     .whitespace_normal()
                                     .child(text),
                             )
@@ -1010,8 +1117,7 @@ Draft endpoints differ from this comparison."
                     .child(
                         div()
                             .flex()
-                            .gap_2()
-                            .p_2()
+                            .gap(px(crate::style::S6))
                             .child(self.objects_element(cx))
                             .child(self.fields_element(cx)),
                     )
@@ -1021,7 +1127,6 @@ Draft endpoints differ from this comparison."
                                 .id("comparison-selected-object")
                                 .role(Role::Label)
                                 .aria_label(text.clone())
-                                .p_2()
                                 .whitespace_normal()
                                 .child(text),
                         )
@@ -1032,7 +1137,6 @@ Draft endpoints differ from this comparison."
                                 .id("comparison-selected-field")
                                 .role(Role::Label)
                                 .aria_label(text.clone())
-                                .p_2()
                                 .whitespace_normal()
                                 .child(text),
                         )
@@ -1040,12 +1144,20 @@ Draft endpoints differ from this comparison."
                     .child(
                         div()
                             .flex()
-                            .gap_2()
-                            .p_2()
+                            .gap(px(crate::style::S6))
                             .child(self.value_element(Side::Source, cx))
                             .child(self.value_element(Side::Target, cx)),
                     )
                     .child(self.jobs_element(cx)),
+            )
+            .child(
+                crate::ui::status_line().child(
+                    div()
+                        .id("comparison-status")
+                        .role(Role::Label)
+                        .aria_label(self.status.clone())
+                        .child(self.status.clone()),
+                ),
             )
     }
 }

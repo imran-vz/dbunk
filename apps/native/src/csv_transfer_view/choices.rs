@@ -258,17 +258,24 @@ impl CsvTransferView {
             .capture
             .as_ref()
             .is_some_and(|capture| !capture.catalog.truncated.is_empty());
-        div().child(crate::ui::toolbar().children((14..19).map(|index|self.button(index,cx))))
-            .child("Ordinary and partitioned tables. Typing does not query PostgreSQL. Enter exact names when choices are missing.")
-            .when(truncated,|body|body.child(div().id("csv-choice-limit").role(Role::Alert).px_2().text_color(crate::style::warn()).child("Catalog choices are truncated; missing names are not proof of absence.")))
+        let loaded = self.metadata.capture.is_some();
+        let busy = self.metadata.busy();
+        // Choice controls appear once choices are loaded; Cancel only while reading.
+        div().flex().flex_col().gap(px(crate::style::S3))
+            .child(div().flex().flex_wrap().items_center().gap(px(crate::style::S2))
+                .child(self.button(14,cx))
+                .when(loaded,|row|row.child(crate::ui::segment_group().child(self.button(15,cx)).child(self.button(16,cx))).child(self.button(17,cx)))
+                .when(busy,|row|row.child(self.button(18,cx)))
+                .child(crate::ui::info_hint("csv-choice-note","Ordinary and partitioned tables. Typing does not query PostgreSQL. Enter exact names when choices are missing.")))
+            .when(truncated,|body|body.child(div().id("csv-choice-limit").role(Role::Alert).text_color(crate::style::warn()).child("Catalog choices are truncated; missing names are not proof of absence.")))
             .when(self.metadata.capture.is_some(),|body|body.child(div().id("csv-choice-list").role(Role::ListBox).aria_label("CSV schema and table choices").track_focus(&self.choice_focus).tab_index(0)
                 .on_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|{if !this.choice_focus.is_focused(window){return;}let count=this.metadata.capture.as_ref().map_or(0,|capture|capture.visible.len());match event.keystroke.key.as_str(){"up"=>this.metadata.selected=Some(this.metadata.selected.unwrap_or(0).saturating_sub(1)),"down"=>this.metadata.selected=Some(this.metadata.selected.map_or(0,|index|(index+1).min(count.saturating_sub(1)))),"home"=>this.metadata.selected=Some(0),"end"=>this.metadata.selected=count.checked_sub(1),"enter"=>{this.use_choice(window,cx);},_=>return}cx.notify();cx.stop_propagation();}))
                 .child(gpui::uniform_list("csv-choices",count,cx.processor(|this,range:std::ops::Range<usize>,_,cx|{range.map(|index|{
                     let Some(row)=this.metadata.capture.as_ref().and_then(|capture|capture.visible.get(index).and_then(|row|capture.catalog.rows.get(*row)))else{return div().into_any_element();};
                     let label=row.entry.name.clone();let revision=this.metadata.revision;let filter=this.metadata.filter_revision;let selected=this.metadata.selected==Some(index);let weak=cx.weak_entity();
-                    div().id(("csv-choice",index)).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).h(px(28.)).px_2().when(selected,|row|row.bg(crate::style::select())).child(label)
+                    crate::ui::list_row(("csv-choice",index), selected, true).role(Role::ListBoxOption).aria_label(label.clone()).aria_selected(selected).child(label)
                         .on_click(cx.listener(move|this,_,window,cx|{if revision==this.metadata.revision&&filter==this.metadata.filter_revision{this.metadata.selected=Some(index);window.focus(&this.choice_focus,cx);cx.notify();}}))
                         .on_a11y_action(gpui::accesskit::Action::Click,move|_,window,cx|{weak.update(cx,|this,cx|{if revision==this.metadata.revision&&filter==this.metadata.filter_revision{this.metadata.selected=Some(index);window.focus(&this.choice_focus,cx);cx.notify();}}).ok();}).into_any_element()
-                }).collect()})).h(px(112.)).track_scroll(&self.choice_scroll)))).into_any_element()
+                }).collect()})).h(px(5. * crate::style::ROW)).track_scroll(&self.choice_scroll)))).into_any_element()
     }
 }

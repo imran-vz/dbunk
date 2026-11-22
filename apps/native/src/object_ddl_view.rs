@@ -330,3 +330,59 @@ impl Drop for ObjectDdlView {
         self.flow = None;
     }
 }
+
+/// A visible `FIELD` well around a bounded text field. Shared by the
+/// object and table change documents; candidate for `ui` (B4 report).
+pub(crate) fn well(field: Entity<Field>) -> gpui::Div {
+    crate::ui::input_frame(false).child(div().flex_1().min_w_0().child(field))
+}
+
+/// An on/off option (D6): a `check_box` and its label on a `CONTROL` row, with
+/// the outside focus ring. Styling only; callers add focus, click and AX
+/// actions.
+pub(crate) fn check_row(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    on: bool,
+    enabled: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let label = label.into();
+    crate::ui::press(
+        div()
+            .id(id)
+            .role(Role::CheckBox)
+            .aria_label(label.clone())
+            .aria_toggled(on.into())
+            .flex_none()
+            .h(px(crate::style::CONTROL))
+            .px(px(crate::style::S3))
+            .flex()
+            .items_center()
+            .gap(px(crate::style::S3))
+            .rounded(px(crate::style::R_SM))
+            .text_sm()
+            .whitespace_nowrap()
+            .text_color(if enabled {
+                crate::style::text()
+            } else {
+                crate::style::faint()
+            })
+            .when(enabled, |b| {
+                b.cursor_pointer().hover(|s| s.bg(crate::style::hover()))
+            })
+            .when(!enabled, |b| b.opacity(0.5))
+            .focus(|s| s.shadow(vec![crate::ui::ring()]))
+            .a11y_synthetic_children(move |b| {
+                if !enabled {
+                    b.parent_node().set_disabled();
+                }
+            })
+            .child(
+                div()
+                    .flex_none()
+                    .mb(px(crate::style::S1))
+                    .child(crate::ui::check_box(on)),
+            )
+            .child(label),
+    )
+}

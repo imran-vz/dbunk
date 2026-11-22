@@ -135,10 +135,12 @@ fn icon_tool(
     label: impl Into<SharedString>,
     icon: &'static str,
     enabled: bool,
-    primary: bool,
 ) -> gpui::Stateful<gpui::Div> {
-    ui::tool_button(id, label, Some(icon), enabled, primary).tab_index(0)
+    ui::tool_button(id, label, Some(icon), enabled, false).tab_index(0)
 }
+
+/// Minimum width of a confirmation sentence before its buttons wrap.
+const CONFIRM_TEXT_MIN: f32 = 200.;
 
 /// The Data | Structure switch; the other side opens its own tab.
 fn table_switch<V: EventEmitter<SqliteDocEvent>>(
@@ -431,15 +433,14 @@ impl Render for SqliteQueryView {
             .child(
                 ui::toolbar()
                     .child(
-                        icon_tool(
+                        ui::tool_button_accent(
                             "sqlite-run",
                             "Run",
-                            "icons/play_filled.svg",
+                            Some("⌘↵"),
                             connected && !running,
-                            true,
                         )
+                        .tab_index(0)
                         .aria_keyshortcuts("Meta+Enter")
-                        .child(ui::shortcut("⌘↵"))
                         .tooltip(ui::tooltip(
                             "Run statement at cursor or selection (Cmd-Enter); \
                              run all (Cmd-Shift-Enter)",
@@ -451,7 +452,7 @@ impl Render for SqliteQueryView {
                         }),
                     )
                     .child(
-                        icon_tool("sqlite-stop", "Stop", "icons/stop.svg", running, false)
+                        icon_tool("sqlite-stop", "Stop", "icons/stop.svg", running)
                             .aria_keyshortcuts("Meta+Period")
                             .when(running, |button| {
                                 button.on_click(cx.listener(|this, _, _, cx| this.stop(cx)))
@@ -464,8 +465,7 @@ impl Render for SqliteQueryView {
                             .id("sqlite-query-summary")
                             .role(Role::Status)
                             .aria_label(self.summary.clone())
-                            .font_family(style::MONO)
-                            .text_color(style::faint())
+                            .text_color(style::dim())
                             .child(self.summary.clone()),
                     ),
             )
@@ -475,7 +475,7 @@ impl Render for SqliteQueryView {
                     .flex_none()
                     .min_h_0()
                     .border_b_1()
-                    .border_color(style::line())
+                    .border_color(style::line_soft())
                     .child(self.accessible.clone()),
             )
             .when_some(self.confirmation.clone(), |root, (_, text)| {
@@ -488,14 +488,14 @@ impl Render for SqliteQueryView {
                         .flex()
                         .flex_wrap()
                         .items_center()
-                        .gap(px(8.))
-                        .px(px(10.))
-                        .py(px(6.))
+                        .gap(px(style::S4))
+                        .px(px(style::INSET_BAR))
+                        .py(px(style::S3))
                         .bg(style::warn_fill())
                         .border_b_1()
-                        .border_color(style::line())
+                        .border_color(style::line_soft())
                         .text_color(style::text())
-                        .child(div().flex_1().min_w(px(200.)).child(text))
+                        .child(div().flex_1().min_w(px(CONFIRM_TEXT_MIN)).child(text))
                         .child(
                             ui::button("sqlite-confirm", "Run anyway", ui::Variant::Danger, true)
                                 .tab_index(0)
@@ -514,10 +514,16 @@ impl Render for SqliteQueryView {
                 )
             })
             .when_some(self.error.clone(), |root, error| {
-                root.child(div().flex_none().p(px(6.)).child(ui::shake(
-                    ("sqlite-query-error", self.attempt),
-                    ui::error_banner("sqlite-query-error-banner", error),
-                )))
+                root.child(
+                    div()
+                        .flex_none()
+                        .px(px(style::S4))
+                        .py(px(style::S3))
+                        .child(ui::shake(
+                            ("sqlite-query-error", self.attempt),
+                            ui::error_banner("sqlite-query-error-banner", error),
+                        )),
+                )
             })
             .when(sets.len() > 1, |root| {
                 root.child(ui::segmented().children(sets.into_iter().map(
@@ -735,10 +741,16 @@ impl Render for SqliteDataView {
                     ),
             )
             .when_some(self.error.clone(), |root, error| {
-                root.child(div().flex_none().p(px(6.)).child(ui::shake(
-                    ("sqlite-data-error", self.attempt),
-                    ui::error_banner("sqlite-data-error-banner", error),
-                )))
+                root.child(
+                    div()
+                        .flex_none()
+                        .px(px(style::S4))
+                        .py(px(style::S3))
+                        .child(ui::shake(
+                            ("sqlite-data-error", self.attempt),
+                            ui::error_banner("sqlite-data-error-banner", error),
+                        )),
+                )
             })
             .child(div().flex_1().min_h_0().child(self.grid.clone()))
             .when_some(self.page.as_ref(), |root, page| {
@@ -1015,16 +1027,22 @@ impl Render for SqliteStructureView {
             .when(self.loading.is_some() && editor.is_none(), |root| {
                 root.child(
                     div()
-                        .p(px(10.))
-                        .text_color(style::faint())
+                        .p(px(style::INSET_CONTENT))
+                        .text_color(style::dim())
                         .child("Loading structure…"),
                 )
             })
             .when_some(self.error.clone(), |root, error| {
-                root.child(div().flex_none().p(px(6.)).child(ui::shake(
-                    ("sqlite-structure-error", self.attempt),
-                    ui::error_banner("sqlite-structure-error-banner", error),
-                )))
+                root.child(
+                    div()
+                        .flex_none()
+                        .px(px(style::S4))
+                        .py(px(style::S3))
+                        .child(ui::shake(
+                            ("sqlite-structure-error", self.attempt),
+                            ui::error_banner("sqlite-structure-error-banner", error),
+                        )),
+                )
             })
             .when(editor.is_none(), |root| {
                 root.child(

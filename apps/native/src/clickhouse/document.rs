@@ -555,12 +555,11 @@ impl ClickHouseDocument {
             Mode::Query => {
                 bar = bar
                     .child(
-                        ui::tool_button(
+                        ui::tool_button_accent(
                             "clickhouse-run",
                             "Run",
-                            Some("icons/play_filled.svg"),
+                            Some("⌘↵"),
                             connected && !running,
-                            true,
                         )
                         .on_click(cx.listener(|this, _, _, cx| this.run_statement(cx)))
                         .tooltip(ui::tooltip("Run statement at cursor (Cmd-Enter)"))
@@ -668,7 +667,15 @@ impl ClickHouseDocument {
                 format!("{database} ·"),
                 format!("{name} ({})", kind.label()),
             ),
-            None => ui::crumbs("ClickHouse", "query"),
+            // The engine name is chrome, so it stays sans (D3).
+            None => div()
+                .flex_none()
+                .flex()
+                .items_center()
+                .gap(px(style::S2))
+                .text_color(style::dim())
+                .child("ClickHouse")
+                .child(div().text_color(style::text()).child("Query")),
         }
     }
 
@@ -722,10 +729,11 @@ impl Render for ClickHouseDocument {
                         div()
                             .h(gpui::relative(0.38))
                             .flex_none()
-                            .p(px(6.))
+                            .p(px(style::S3))
                             .border_b_1()
-                            .border_color(style::line())
+                            .border_color(style::line_soft())
                             .font_family(style::MONO)
+                            .text_size(px(style::FONT_DATA))
                             .children(editor),
                     )
                     .child(div().flex_1().min_h_0().child(self.grid.clone()))
@@ -770,9 +778,9 @@ impl Render for ClickHouseDocument {
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(8.))
-                        .px(px(8.))
-                        .py(px(5.))
+                        .gap(px(style::S4))
+                        .px(px(style::INSET_BAR))
+                        .py(px(style::S3))
                         .bg(style::bad_fill())
                         .border_b_1()
                         .border_color(style::bad_line())
@@ -809,7 +817,7 @@ impl Render for ClickHouseDocument {
                 )
             })
             .when_some(self.error.clone(), |root, error| {
-                root.child(div().p(px(6.)).child(ui::shake(
+                root.child(div().px(px(style::S4)).py(px(style::S3)).child(ui::shake(
                     ("clickhouse-error-shake", self.error_seq as usize),
                     ui::error_banner("clickhouse-error", error),
                 )))

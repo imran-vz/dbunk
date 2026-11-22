@@ -6,7 +6,9 @@ use crate::{
 use gpui::{AnyElement, SharedString, Stateful};
 
 const OUTLINE: f32 = 176.;
-const DETAILS: f32 = 380.;
+const DETAILS: f32 = 340.;
+/// Height of the exact catalog text under Diagnostics.
+const DIAGNOSTICS: f32 = 220.;
 
 impl StructureView {
     /// Focus, AX, click and keyboard wiring shared by every control.
@@ -89,12 +91,20 @@ impl StructureView {
             .child(crate::ui::badge(self.capture.kind_label()))
             .child(
                 div()
+                    .id("structure-updated")
                     .min_w_0()
                     .truncate()
-                    .font_family(style::MONO)
                     .text_size(px(style::FONT_SMALL))
-                    .text_color(style::faint())
-                    .child(format!("captured {}", self.capture.captured_at())),
+                    .text_color(style::dim())
+                    .tooltip(crate::ui::tooltip(format!(
+                        "Captured {}",
+                        self.capture.captured_at()
+                    )))
+                    .tooltip_show_delay(crate::ui::tooltip_delay())
+                    .child(
+                        super::details::updated_label(self.capture.captured_at())
+                            .unwrap_or_else(|| format!("Captured {}", self.capture.captured_at())),
+                    ),
             )
             .child(crate::ui::grow())
             .when(self.busy, |bar| {
@@ -120,8 +130,7 @@ impl StructureView {
             .flex_none()
             .w(px(OUTLINE))
             .h_full()
-            .py(px(8.))
-            .px(px(6.))
+            .py(px(style::S4))
             .flex()
             .flex_col()
             .gap(px(1.))
@@ -132,41 +141,45 @@ impl StructureView {
                 let count = self.capture.count(*section);
                 let selected = self.section == *section;
                 let label = format!("{} ({count})", section.label());
-                let item = div()
-                    .id(("structure-control", ACTIONS.len() + index))
-                    .role(Role::Tab)
-                    .aria_label(label)
-                    .flex_none()
-                    .h(px(24.))
-                    .px(px(8.))
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .rounded(px(4.))
-                    .text_sm()
-                    .cursor_pointer()
-                    .text_color(if selected {
-                        style::text()
-                    } else if count == 0 {
-                        style::faint()
-                    } else {
-                        style::dim()
-                    })
-                    .when(selected, |item| item.bg(style::raised()))
-                    .hover(|s| s.bg(style::hover()).text_color(style::text()))
-                    .focus(|s| s.border_1().border_color(style::accent()))
-                    .child(div().flex_1().min_w_0().truncate().child(section.label()))
-                    .child(
-                        div()
-                            .flex_none()
-                            .font_family(style::MONO)
-                            .text_size(px(style::FONT_SMALL))
-                            .text_color(style::faint())
-                            .child(count.to_string()),
-                    );
+                // The shared list row: full-width inset pill, `raised` for
+                // the open section (the page, not the outline, holds focus).
+                let item = crate::ui::list_row(
+                    ("structure-control", ACTIONS.len() + index),
+                    selected,
+                    false,
+                )
+                .role(Role::Tab)
+                .aria_label(label)
+                .flex_none()
+                .gap(px(style::S3))
+                .text_sm()
+                .cursor_pointer()
+                .text_color(if selected {
+                    style::text()
+                } else if count == 0 {
+                    style::faint()
+                } else {
+                    style::dim()
+                })
+                .child(div().flex_1().min_w_0().truncate().child(section.label()))
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(px(style::FONT_SMALL))
+                        .text_color(style::dim())
+                        .child(count.to_string()),
+                );
                 self.wire(Action::Section(index), item, cx)
             }))
             .into_any_element()
+    }
+    /// A section's column layout; Columns uses the content-fitted one.
+    fn layout(&self, section: Section) -> &[table::ColumnSpec] {
+        if section == Section::Columns && !self.columns_layout.is_empty() {
+            self.columns_layout.as_slice()
+        } else {
+            section.columns()
+        }
     }
     fn item(&self, position: usize, cx: &Context<Self>) -> AnyElement {
         let line = table::line();
@@ -191,14 +204,14 @@ impl StructureView {
                         .min_w_0()
                         .truncate()
                         .text_size(px(style::FONT_SMALL))
-                        .text_color(style::faint())
+                        .text_color(style::dim())
                         .tooltip(crate::ui::tooltip(
                             crate::table_structure_model::RELATION_ACL_SCOPE,
                         ))
                         .child(crate::table_structure_model::RELATION_ACL_SCOPE),
                 )
                 .into_any_element(),
-            Item::Head(section) => table::head_line(section.columns()).into_any_element(),
+            Item::Head(section) => table::head_line(self.layout(section)).into_any_element(),
             Item::Row(section, index) => {
                 let selected = self.section == section && self.selected == Some(index);
                 let last = index + 1 == self.capture.count(section);
@@ -232,8 +245,7 @@ impl StructureView {
                                 card.group_hover("structure-row", |s| s.bg(style::row_hover()))
                             })
                             .children(
-                                section
-                                    .columns()
+                                self.layout(section)
                                     .iter()
                                     .map(|spec| table::cell(spec, cells.next())),
                             ),
@@ -271,7 +283,7 @@ impl StructureView {
             .flex_1()
             .min_w_0()
             .h_full()
-            .pb(px(12.))
+            .pb(px(style::S5))
             .child(
                 uniform_list(
                     "structure-rows",
@@ -283,6 +295,53 @@ impl StructureView {
                 .track_scroll(&self.scroll)
                 .size_full(),
             )
+            .into_any_element()
+    }
+    /// The Diagnostics disclosure: the exact catalog text, ids and capture
+    /// time, read only.
+    fn diagnostics_toggle(&self, cx: &Context<Self>) -> AnyElement {
+        let open = self.show_raw;
+        let weak = cx.weak_entity();
+        div()
+            .id("structure-diagnostics")
+            .role(Role::Button)
+            .aria_label("Diagnostics")
+            .aria_expanded(open)
+            .flex_none()
+            .h(px(style::CONTROL + style::S2))
+            .px(px(style::S5))
+            .flex()
+            .items_center()
+            .gap(px(style::S3))
+            .border_t_1()
+            .border_color(style::line_soft())
+            .text_sm()
+            .text_color(style::dim())
+            .cursor_pointer()
+            .hover(|s| s.text_color(style::text()))
+            .child(
+                gpui::svg()
+                    .path(if open {
+                        "icons/chevron_down.svg"
+                    } else {
+                        "icons/chevron_right.svg"
+                    })
+                    .size(px(style::ICON))
+                    .flex_none()
+                    .text_color(style::dim()),
+            )
+            .child("Diagnostics")
+            .on_click(cx.listener(|this, _, _, cx| {
+                this.show_raw = !this.show_raw;
+                cx.notify();
+            }))
+            .on_a11y_action(gpui::accesskit::Action::Click, move |_, _, cx| {
+                weak.update(cx, |this, cx| {
+                    this.show_raw = !this.show_raw;
+                    cx.notify();
+                })
+                .ok();
+            })
             .into_any_element()
     }
     /// Exact selected details with the actions that apply to the selection.
@@ -330,22 +389,54 @@ impl StructureView {
                     })
                     .child(self.button(Action::Copy, Some("icons/copy.svg"), cx)),
             )
-            .child(div().flex_1().min_h_0().map(|body| match &self.editor {
-                Some(editor) => body.child(editor.accessible.clone()),
-                None => body.p(px(12.)).text_color(style::faint()).child(
-                    if self.capture.count(self.section) == 0 {
-                        self.capture.empty_label(self.section)
-                    } else {
-                        "Select a row to see its exact catalog details"
-                    },
-                ),
-            }))
+            .child(
+                div()
+                    .id("structure-details-body")
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_col()
+                    .map(|body| match &self.editor {
+                        Some(editor) => body
+                            .child(
+                                div()
+                                    .id("structure-properties")
+                                    .role(Role::Group)
+                                    .aria_label("Selected structure properties")
+                                    .flex_1()
+                                    .min_h_0()
+                                    .overflow_y_scroll()
+                                    .px(px(style::S5))
+                                    .py(px(style::S4))
+                                    .child(crate::ui::property_list(self.properties.clone())),
+                            )
+                            .child(self.diagnostics_toggle(cx))
+                            .when(self.show_raw, |body| {
+                                body.child(
+                                    div()
+                                        .flex_none()
+                                        .h(px(DIAGNOSTICS))
+                                        .border_t_1()
+                                        .border_color(style::line_soft())
+                                        .child(editor.accessible.clone()),
+                                )
+                            }),
+                        None => body
+                            .p(px(style::S5))
+                            .text_sm()
+                            .text_color(style::dim())
+                            .child(if self.capture.count(self.section) == 0 {
+                                self.capture.empty_label(self.section)
+                            } else {
+                                "Select a row to see its details"
+                            }),
+                    }),
+            )
             .into_any_element()
     }
 }
 impl Render for StructureView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let identity = self.identity();
         let status = self.message.clone().unwrap_or_else(|| self.status.clone());
         div()
             .id("table-structure")
@@ -390,7 +481,7 @@ impl Render for StructureView {
                         .aria_label("Retained capture may be stale. Refresh before navigation.")
                         .flex_none()
                         .px(px(INSET))
-                        .py(px(4.))
+                        .py(px(style::S2))
                         .bg(style::warn_fill())
                         .border_b_1()
                         .border_color(style::line_soft())
@@ -408,22 +499,17 @@ impl Render for StructureView {
                     .when(self.show_details, |body| body.child(self.details(cx))),
             )
             .child(
-                crate::ui::status_line()
-                    .child(
-                        div()
-                            .id("structure-runtime-status")
-                            .role(Role::Status)
-                            .aria_label(status.clone())
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_color(style::dim())
-                            .child(status),
-                    )
-                    .child(format!(
-                        "database OID {} · relation OID {}",
-                        identity.database_oid, identity.relation_oid
-                    )),
+                crate::ui::status_line().child(
+                    div()
+                        .id("structure-runtime-status")
+                        .role(Role::Status)
+                        .aria_label(status.clone())
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_color(style::dim())
+                        .child(status),
+                ),
             )
     }
 }

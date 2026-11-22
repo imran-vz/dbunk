@@ -113,6 +113,9 @@ pub struct Form {
     tunnel: Option<tunnel::State>,
     engine: engine::Engine,
     toggles: engine::Toggles,
+    /// The field whose editor has focus at the last render; its well shows
+    /// the accent edge.
+    focused_field: Option<&'static str>,
 }
 impl EventEmitter<FormEvent> for Form {}
 impl Form {
@@ -146,6 +149,7 @@ impl Form {
             tunnel: None,
             engine: engine::Engine::Postgres,
             toggles: engine::Toggles::default(),
+            focused_field: None,
         }
     }
     fn say(&mut self, text: impl Into<String>, tone: Tone) {
@@ -627,6 +631,11 @@ impl Form {
                         || self.mode == DevelopmentStorageMode::EncryptedSqlite)
             }
             Kind::Connection { .. } if !self.engine.shows(key) => false,
+            Kind::Connection { .. }
+                if render::TLS_FILES.contains(&key) && self.tls == DevelopmentTlsMode::Disable =>
+            {
+                false
+            }
             _ if key.starts_with("tunnel-") => {
                 self.tunnel.as_ref().is_some_and(|tunnel| tunnel.enabled)
             }
@@ -1013,9 +1022,14 @@ impl Form {
                 | FormAction::EngineToggle(_)
                 | FormAction::Bastion(bastions::Action::ClearPassphrase)
         );
+        // File choosers sit inside their field's well as a folder icon; the
+        // label stays the AX name and tooltip.
+        let pick = matches!(action, FormAction::Pick(_));
         let weak = cx.weak_entity();
         let element = if choice {
             render::chip(key, label, selected, enabled, chip_dot(action))
+        } else if pick {
+            crate::ui::icon_button(key, label, "icons/folder.svg", enabled)
         } else if toggle {
             render::toggle_row(key, label, selected, enabled)
         } else {

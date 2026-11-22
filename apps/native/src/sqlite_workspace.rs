@@ -471,50 +471,82 @@ impl SqliteWorkspace {
         window.focus(&handle, cx);
     }
 
+    /// The document area with no tab (D16): one centred state with its next
+    /// step.
     fn empty_state(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let (message, retry) = match &self.phase {
-            ConnectionPhase::Connecting => ("Opening the SQLite database…".to_string(), false),
-            ConnectionPhase::Failed(error) => {
-                (format!("Could not open the database: {error}"), true)
-            }
+        let (glyph, title, body, retry) = match &self.phase {
+            ConnectionPhase::Connecting => (
+                None,
+                "Opening the SQLite database…".to_string(),
+                None,
+                false,
+            ),
+            ConnectionPhase::Failed(error) => (
+                Some("icons/warning.svg"),
+                "Could not open the database".to_string(),
+                Some(error.to_string()),
+                true,
+            ),
             ConnectionPhase::Idle => (
-                "Disconnected. Connect to browse this database.".into(),
+                Some("icons/database_zap.svg"),
+                "Disconnected".to_string(),
+                Some("Connect to browse this database.".to_string()),
                 true,
             ),
             ConnectionPhase::Connected => (
-                "Open a table from the sidebar, or press ⌘T for a query".into(),
+                Some("icons/table.svg"),
+                "Open a table or start a query".to_string(),
+                Some("Pick a table in the sidebar, or press ⌘T for a new query.".to_string()),
                 false,
             ),
         };
-        div()
+        // The AX status keeps the full sentence it always announced.
+        let message = match &self.phase {
+            ConnectionPhase::Failed(error) => format!("Could not open the database: {error}"),
+            ConnectionPhase::Idle => "Disconnected. Connect to browse this database.".to_string(),
+            ConnectionPhase::Connected => {
+                "Open a table from the sidebar, or press ⌘T for a query".to_string()
+            }
+            ConnectionPhase::Connecting => title.clone(),
+        };
+        let action = retry.then(|| {
+            crate::ui::button(
+                "sqlite-connect",
+                if matches!(self.phase, ConnectionPhase::Failed(_)) {
+                    "Retry"
+                } else {
+                    "Connect"
+                },
+                crate::ui::Variant::Secondary,
+                true,
+            )
+            .tab_index(0)
+            .on_click(cx.listener(|this, _, window, cx| this.connect(window, cx)))
+            .into_any_element()
+        });
+        let root = div()
             .id("sqlite-empty")
             .role(Role::Status)
-            .aria_label(message.clone())
+            .aria_label(message)
             .size_full()
             .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .gap(px(8.))
-            .text_color(style::faint())
-            .child(message)
-            .when(retry, |root| {
-                root.child(
-                    crate::ui::button(
-                        "sqlite-connect",
-                        if matches!(self.phase, ConnectionPhase::Failed(_)) {
-                            "Retry"
-                        } else {
-                            "Connect"
-                        },
-                        crate::ui::Variant::Secondary,
-                        true,
-                    )
-                    .tab_index(0)
-                    .on_click(cx.listener(|this, _, window, cx| this.connect(window, cx))),
-                )
-            })
-            .into_any_element()
+            .flex_col();
+        match glyph {
+            Some(glyph) => root
+                .child(crate::ui::empty_state(
+                    glyph,
+                    title,
+                    body.map(SharedString::from),
+                    action,
+                ))
+                .into_any_element(),
+            None => root
+                .items_center()
+                .justify_center()
+                .text_color(style::dim())
+                .child(title)
+                .into_any_element(),
+        }
     }
 }
 
@@ -546,7 +578,7 @@ impl Render for SqliteWorkspace {
                 root.child(
                     crate::ui::error_banner("sqlite-message", message)
                         .flex_none()
-                        .m(px(8.)),
+                        .m(px(style::S4)),
                 )
             })
     }
@@ -812,10 +844,15 @@ fn singular(kind: ObjectKind) -> &'static str {
     }
 }
 
+/// Left edge of sidebar text: the `list_row` margin plus its padding.
+const TEXT_INSET: f32 = style::S2 + style::S3;
+/// Indent per tree level.
+const TREE_INDENT: f32 = style::S5;
+
 fn row_icon(row: &TreeRow) -> (&'static str, gpui::Rgba) {
     match &row.kind {
         RowKind::Database { .. } => style::kind_icon(style::TreeKind::Database),
-        RowKind::Group { kind, .. } => (kind.icon(), style::faint()),
+        RowKind::Group { kind, .. } => (kind.icon(), style::dim()),
         RowKind::Object { kind, .. } => (kind.icon(), style::dim()),
         RowKind::Truncated { .. } => ("icons/warning.svg", style::warn()),
     }
@@ -841,13 +878,13 @@ impl Render for SqliteTree {
             .on_key_down(cx.listener(Self::key_down))
             .child(
                 div()
-                    .h(px(26.))
+                    .h(px(style::ROW + style::S2))
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(px(2.))
-                    .pl(px(10.))
-                    .pr(px(6.))
+                    .gap(px(style::S1))
+                    .pl(px(TEXT_INSET))
+                    .pr(px(style::S2))
                     .child(
                         div()
                             .flex_1()
@@ -861,12 +898,12 @@ impl Render for SqliteTree {
                             .role(Role::Button)
                             .aria_label("Refresh objects")
                             .tab_index(0)
-                            .size(px(style::TOOL))
+                            .size(px(style::CONTROL - style::S2))
                             .flex()
                             .items_center()
                             .justify_center()
-                            .rounded(px(4.))
-                            .focus(|s| s.bg(style::hover()))
+                            .rounded(px(style::R_SM))
+                            .focus(|s| s.shadow(vec![crate::ui::ring()]))
                             .tooltip(crate::ui::tooltip("Refresh objects"))
                             .tooltip_show_delay(crate::ui::tooltip_delay())
                             .child(
@@ -892,28 +929,30 @@ impl Render for SqliteTree {
             )
             .child(
                 div()
-                    .mx(px(8.))
-                    .mb(px(4.))
-                    .h(px(20.))
+                    .mx(px(style::S2))
+                    .mb(px(style::S2))
+                    .h(px(style::CONTROL))
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .px(px(6.))
-                    .rounded(px(4.))
+                    .gap(px(style::S3))
+                    .px(px(style::S3))
+                    .rounded(px(style::R_SM))
                     .border_1()
-                    .border_color(style::line_soft())
+                    .border_color(style::line())
+                    .bg(style::bg())
                     .child(
                         gpui::svg()
                             .path("icons/filter.svg")
                             .size(px(style::ICON))
+                            .flex_none()
                             .text_color(style::faint()),
                     )
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
-                            .h(px(16.))
+                            .h(px(style::CONTROL - style::S3))
                             .child(self.filter_field.clone()),
                     ),
             )
@@ -923,13 +962,13 @@ impl Render for SqliteTree {
                         .id("sqlite-tree-status")
                         .role(Role::Status)
                         .aria_label(status.clone())
-                        .px(px(10.))
-                        .pb(px(2.))
+                        .px(px(TEXT_INSET))
+                        .pb(px(style::S2))
                         .text_size(px(style::FONT_SMALL))
                         .text_color(if self.error.is_some() {
                             style::bad_text()
                         } else {
-                            style::faint()
+                            style::dim()
                         })
                         .child(status),
                 )
@@ -959,27 +998,21 @@ impl Render for SqliteTree {
                                         let row = &this.rows[position];
                                         let (path, color) = row_icon(row);
                                         let selected = position == this.selected;
-                                        div()
-                                            .id(("sqlite-tree-row", position))
+                                        let item = crate::ui::list_row(
+                                            ("sqlite-tree-row", position),
+                                            selected,
+                                            focused,
+                                        )
                                             .role(Role::TreeItem)
                                             .aria_label(Self::row_label(row))
                                             .aria_selected(selected)
                                             .when_some(row.expanded, |item, open| item.aria_expanded(open))
-                                            .h(px(style::ROW))
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(5.))
-                                            .pl(px(8. + 12. * row.depth as f32))
-                                            .pr(px(8.))
-                                            .overflow_hidden()
-                                            .whitespace_nowrap()
+                                            .gap(px(style::S2 + 1.))
+                                            .pl(px(style::S2 + TREE_INDENT * row.depth as f32))
+                                            .pr(px(style::S3))
                                             .text_color(match row.kind {
                                                 RowKind::Truncated { .. } => style::warn(),
                                                 _ => style::text(),
-                                            })
-                                            .hover(|s| s.bg(style::hover()))
-                                            .when(selected, |item| {
-                                                item.bg(if focused { style::select() } else { style::raised() })
                                             })
                                             .child(match row.expanded {
                                                 Some(open) => gpui::svg()
@@ -1001,21 +1034,16 @@ impl Render for SqliteTree {
                                                     .flex_none()
                                                     .text_color(color),
                                             )
-                                            .child(
-                                                div()
-                                                    .flex_1()
-                                                    .min_w_0()
-                                                    .overflow_hidden()
-                                                    .when(matches!(row.kind, RowKind::Object { .. }), |label| {
-                                                        label.font_family(style::MONO)
-                                                    })
-                                                    .child(SharedString::from(row.label.clone())),
-                                            )
+                                            // Sans like every other tree (D3).
+                                            .child(crate::ui::row_label(SharedString::from(
+                                                row.label.clone(),
+                                            )))
                                             .when_some(row.count, |item, count| {
                                                 item.child(
                                                     div()
+                                                        .flex_none()
                                                         .text_size(px(style::FONT_SMALL))
-                                                        .text_color(style::faint())
+                                                        .text_color(style::dim())
                                                         .child(count.to_string()),
                                                 )
                                             })
@@ -1033,7 +1061,10 @@ impl Render for SqliteTree {
                                                     }
                                                     cx.notify();
                                                 },
-                                            ))
+                                            ));
+                                        // A full-width flex column, so the
+                                        // highlight spans the sidebar.
+                                        div().w_full().flex().flex_col().child(item)
                                     })
                                     .collect()
                             }),

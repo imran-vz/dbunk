@@ -1,0 +1,748 @@
+{
+ "macros": {
+  "close-popover": [
+   {
+    "key": "escape"
+   },
+   {
+    "wait": 0.3
+   }
+  ],
+  "add-connection": [
+   {
+    "press": "New connection"
+   },
+   {
+    "wait": 0.8
+   },
+   {
+    "click": "=Name",
+    "role": "AXTextField"
+   },
+   {
+    "key": "cmd+a"
+   },
+   {
+    "type": "$1"
+   },
+   {
+    "click": "=Database password"
+   },
+   {
+    "type": "dbunk"
+   },
+   {
+    "press": "=$2",
+    "role": "AXRadioButton"
+   },
+   {
+    "click": "=Project",
+    "role": "AXTextField"
+   },
+   {
+    "type": "Billing"
+   },
+   {
+    "press": "=Save connection"
+   },
+   {
+    "wait": 1.2
+   }
+  ]
+ },
+ "scenarios": [
+  {
+   "name": "first-run",
+   "steps": [
+    {
+     "shot": "01-setup-credentials"
+    },
+    {
+     "press": "=Unencrypted SQLite"
+    },
+    {
+     "shot": "02-setup-unencrypted"
+    },
+    {
+     "press": "I understand database passwords"
+    },
+    {
+     "press": "=Continue"
+    },
+    {
+     "wait": 1.5
+    },
+    {
+     "shot": "03-empty-workspace"
+    }
+   ]
+  },
+  {
+   "name": "connection-form",
+   "continue": true,
+   "steps": [
+    {
+     "press": "New connection"
+    },
+    {
+     "wait": 0.8
+    },
+    {
+     "shot": "04-connection-form"
+    },
+    {
+     "scroll": [
+      720,
+      600,
+      -900
+     ]
+    },
+    {
+     "wait": 0.4
+    },
+    {
+     "shot": "05-connection-form-bottom"
+    },
+    {
+     "scroll": [
+      720,
+      400,
+      2000
+     ]
+    },
+    {
+     "wait": 0.3
+    },
+    {
+     "click": "=Name",
+     "role": "AXTextField"
+    },
+    {
+     "key": "cmd+a"
+    },
+    {
+     "type": "billing-dev"
+    },
+    {
+     "click": "=Database password"
+    },
+    {
+     "type": "dbunk"
+    },
+    {
+     "click": "=Project",
+     "role": "AXTextField"
+    },
+    {
+     "type": "Billing"
+    },
+    {
+     "press": "=Save connection"
+    },
+    {
+     "wait": 1.2
+    },
+    {
+     "macro": "add-connection",
+     "args": [
+      "billing-staging",
+      "Staging"
+     ]
+    },
+    {
+     "macro": "add-connection",
+     "args": [
+      "billing-prod",
+      "Production"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "query",
+   "continue": true,
+   "steps": [
+    {
+     "click": "billing-dev, PostgreSQL"
+    },
+    {
+     "wait": 2.0
+    },
+    {
+     "shot": "06-query-empty"
+    },
+    {
+     "click": "=SQL editor"
+    },
+    {
+     "type": "select c.full_name, c.company, c.country, count(*) as invoices, sum(i.amount_usd) as billed_usd, max(i.issued_at) as last_invoice from billing.customers c inner join billing.invoices i on i.customer_id = c.id where i.status = 'paid' group by 1, 2, 3 order by 5 desc limit 200 "
+    },
+    {
+     "key": "escape",
+     "optional": true
+    },
+    {
+     "key": "cmd+return"
+    },
+    {
+     "wait": 1.5
+    },
+    {
+     "key": "cmd+up",
+     "optional": true
+    },
+    {
+     "wait": 0.3
+    },
+    {
+     "shot": "07-query-results"
+    },
+    {
+     "key": "cmd+t"
+    },
+    {
+     "wait": 0.8
+    },
+    {
+     "press": "=Connect",
+     "role": "AXButton",
+     "optional": true
+    },
+    {
+     "wait": 1.5
+    },
+    {
+     "click": "=SQL editor"
+    },
+    {
+     "type": "select id, numbr, amount_usd from billing.invoices where status = 'paid' "
+    },
+    {
+     "key": "escape",
+     "optional": true
+    },
+    {
+     "key": "cmd+return"
+    },
+    {
+     "wait": 1.2
+    },
+    {
+     "shot": "07b-query-error"
+    },
+    {
+     "press": "Query 1",
+     "role": "AXTabButton"
+    },
+    {
+     "wait": 0.5
+    }
+   ]
+  },
+  {
+   "name": "table",
+   "continue": true,
+   "steps": [
+    {
+     "click": "Schema, billing"
+    },
+    {
+     "key": "right"
+    },
+    {
+     "wait": 0.6
+    },
+    {
+     "click": "Table, invoices",
+     "double": true
+    },
+    {
+     "wait": 1.5
+    },
+    {
+     "shot": "08-table-data"
+    },
+    {
+     "click": "=7",
+     "role": "AXCell"
+    },
+    {
+     "hover": [
+      700,
+      246
+     ]
+    },
+    {
+     "shot": "09-table-cell-selected-row-hover"
+    },
+    {
+     "press": "=Filter",
+     "role": "AXButton"
+    },
+    {
+     "wait": 0.5
+    },
+    {
+     "shot": "10-table-filter",
+     "optional": true
+    },
+    {
+     "press": "=Sort",
+     "role": "AXButton"
+    },
+    {
+     "wait": 0.5
+    },
+    {
+     "shot": "10b-table-sort",
+     "optional": true
+    },
+    {
+     "key": "escape"
+    },
+    {
+     "press": "=Columns",
+     "role": "AXButton"
+    },
+    {
+     "wait": 0.5
+    },
+    {
+     "shot": "10c-table-columns",
+     "optional": true
+    },
+    {
+     "key": "escape"
+    },
+    {
+     "macro": "close-popover"
+    },
+    {
+     "press": "More table actions"
+    },
+    {
+     "wait": 0.5
+    },
+    {
+     "shot": "11-table-more-menu"
+    },
+    {
+     "macro": "close-popover"
+    },
+    {
+     "press": "=Structure",
+     "role": "AXButton"
+    },
+    {
+     "wait": 1.2
+    },
+    {
+     "shot": "12-table-structure"
+    },
+    {
+     "press": "billing.invoices",
+     "role": "AXTabButton"
+    },
+    {
+     "wait": 0.8
+    }
+   ]
+  },
+  {
+   "name": "staged-edit",
+   "continue": true,
+   "steps": [
+    {
+     "click": "=79.00",
+     "role": "AXCell",
+     "double": true
+    },
+    {
+     "wait": 0.4
+    },
+    {
+     "key": "cmd+a"
+    },
+    {
+     "type": "1250.00"
+    },
+    {
+     "key": "return"
+    },
+    {
+     "wait": 0.4
+    },
+    {
+     "click": "=INV-2025-00009",
+     "role": "AXCell"
+    },
+    {
+     "key": "delete",
+     "optional": true
+    },
+    {
+     "key": "return",
+     "optional": true
+    },
+    {
+     "wait": 0.3
+    },
+    {
+     "clickat": [
+      700,
+      500
+     ]
+    },
+    {
+     "wait": 0.4
+    },
+    {
+     "shot": "13-table-staged-edits"
+    },
+    {
+     "key": "cmd+s"
+    },
+    {
+     "wait": 0.8
+    },
+    {
+     "shot": "14-review-changes-dialog"
+    },
+    {
+     "key": "escape"
+    },
+    {
+     "wait": 0.4
+    },
+    {
+     "key": "cmd+z",
+     "optional": true
+    },
+    {
+     "key": "cmd+z",
+     "optional": true
+    }
+   ]
+  },
+  {
+   "name": "menus",
+   "continue": true,
+   "steps": [
+    {
+     "press": "=Tools",
+     "role": "AXButton"
+    },
+    {
+     "wait": 0.5
+    },
+    {
+     "shot": "15-tools-menu"
+    },
+    {
+     "macro": "close-popover"
+    },
+    {
+     "key": "cmd+k"
+    },
+    {
+     "wait": 0.5
+    },
+    {
+     "type": "inv"
+    },
+    {
+     "wait": 0.5
+    },
+    {
+     "shot": "16-command-palette"
+    },
+    {
+     "macro": "close-popover"
+    },
+    {
+     "press": "Actions for billing-dev"
+    },
+    {
+     "wait": 0.5
+    },
+    {
+     "shot": "17-connection-actions-menu"
+    },
+    {
+     "macro": "close-popover"
+    }
+   ]
+  },
+  {
+   "name": "tools",
+   "continue": true,
+   "steps": [
+    {
+     "press": "=Tools",
+     "role": "AXButton"
+    },
+    {
+     "press": "=Administration",
+     "role": "AXMenuItem"
+    },
+    {
+     "wait": 2.0
+    },
+    {
+     "press": "=Connect",
+     "role": "AXButton",
+     "optional": true
+    },
+    {
+     "wait": 1.5
+    },
+    {
+     "press": "=Refresh",
+     "role": "AXButton",
+     "optional": true
+    },
+    {
+     "wait": 2.0
+    },
+    {
+     "shot": "18-administration"
+    },
+    {
+     "press": "=Tools",
+     "role": "AXButton"
+    },
+    {
+     "press": "=Objects",
+     "role": "AXMenuItem"
+    },
+    {
+     "wait": 1.0
+    },
+    {
+     "press": "Catalog",
+     "role": "AXButton",
+     "optional": true
+    },
+    {
+     "wait": 1.2
+    },
+    {
+     "wait": 2.0
+    },
+    {
+     "shot": "19-objects-overview"
+    },
+    {
+     "press": "=Tools",
+     "role": "AXButton"
+    },
+    {
+     "press": "=Schema map",
+     "role": "AXMenuItem"
+    },
+    {
+     "wait": 1.0
+    },
+    {
+     "press": "=Connect",
+     "role": "AXButton",
+     "optional": true
+    },
+    {
+     "wait": 1.5
+    },
+    {
+     "press": "=Refresh map",
+     "optional": true
+    },
+    {
+     "wait": 3.0
+    },
+    {
+     "wait": 2.0
+    },
+    {
+     "shot": "20-schema-map"
+    },
+    {
+     "press": "=Tools",
+     "role": "AXButton"
+    },
+    {
+     "press": "=Compare schemas",
+     "role": "AXMenuItem"
+    },
+    {
+     "wait": 1.5
+    },
+    {
+     "shot": "21-compare-schemas"
+    },
+    {
+     "press": "=Tools",
+     "role": "AXButton"
+    },
+    {
+     "press": "=CSV transfer",
+     "role": "AXMenuItem"
+    },
+    {
+     "wait": 1.5
+    },
+    {
+     "shot": "22-csv-transfer"
+    },
+    {
+     "press": "=Tools",
+     "role": "AXButton"
+    },
+    {
+     "press": "=Backup / Restore",
+     "role": "AXMenuItem"
+    },
+    {
+     "wait": 1.5
+    },
+    {
+     "shot": "23-backup-restore"
+    },
+    {
+     "press": "=Tools",
+     "role": "AXButton"
+    },
+    {
+     "press": "=Query history",
+     "role": "AXMenuItem"
+    },
+    {
+     "wait": 1.5
+    },
+    {
+     "shot": "24-query-history"
+    }
+   ]
+  },
+  {
+   "name": "production",
+   "continue": true,
+   "steps": [
+    {
+     "click": "billing-prod, PostgreSQL"
+    },
+    {
+     "wait": 2.0
+    },
+    {
+     "click": "Schema, billing"
+    },
+    {
+     "key": "right",
+     "optional": true
+    },
+    {
+     "wait": 0.6
+    },
+    {
+     "click": "Table, customers",
+     "double": true
+    },
+    {
+     "wait": 1.5
+    },
+    {
+     "shot": "25-production-table"
+    },
+    {
+     "click": "=Soylent",
+     "role": "AXCell",
+     "double": true
+    },
+    {
+     "wait": 0.4
+    },
+    {
+     "key": "cmd+a"
+    },
+    {
+     "type": "Initech Holdings"
+    },
+    {
+     "key": "return"
+    },
+    {
+     "wait": 0.4
+    },
+    {
+     "key": "cmd+s"
+    },
+    {
+     "wait": 0.8
+    },
+    {
+     "shot": "25b-production-review"
+    },
+    {
+     "key": "escape"
+    },
+    {
+     "wait": 0.4
+    },
+    {
+     "key": "cmd+z",
+     "optional": true
+    }
+   ]
+  },
+  {
+   "name": "chrome",
+   "continue": true,
+   "steps": [
+    {
+     "press": "Toggle console"
+    },
+    {
+     "wait": 0.6
+    },
+    {
+     "shot": "26-console-open"
+    },
+    {
+     "press": "Toggle console"
+    },
+    {
+     "key": "cmd+\\"
+    },
+    {
+     "wait": 0.8
+    },
+    {
+     "shot": "27-sidebar-hidden"
+    },
+    {
+     "key": "cmd+\\"
+    },
+    {
+     "wait": 0.6
+    },
+    {
+     "size": [
+      1024,
+      680
+     ]
+    },
+    {
+     "wait": 0.8
+    },
+    {
+     "shot": "28-narrow-window"
+    },
+    {
+     "size": [
+      1440,
+      900
+     ]
+    }
+   ]
+  }
+ ]
+}

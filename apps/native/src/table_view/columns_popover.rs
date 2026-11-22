@@ -155,7 +155,7 @@ impl TableView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(2.))
+                    .gap(px(crate::style::S1))
                     .child(
                         crate::ui::popover::check_item(
                             ("column-visible", source),
@@ -220,10 +220,10 @@ impl TableView {
         if shown == 0 {
             list = list.child(
                 div()
-                    .px(px(8.))
-                    .py(px(4.))
+                    .px(px(crate::style::S4))
+                    .py(px(crate::style::S2))
                     .text_sm()
-                    .text_color(crate::style::faint())
+                    .text_color(crate::style::dim())
                     .child("No matching columns"),
             );
         }
@@ -235,8 +235,8 @@ impl TableView {
             .on_mouse_down_out(self.dismiss_outside(anchor, cx))
             .child(
                 div()
-                    .px(px(6.))
-                    .pb(px(4.))
+                    .px(px(crate::style::S3))
+                    .pb(px(crate::style::S2))
                     .child(crate::ui::field().child(div().flex_1().child(field))),
             )
             .child(crate::ui::popover::heading(format!(

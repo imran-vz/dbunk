@@ -77,6 +77,117 @@ enum Control {
     Plan,
     EditCell,
 }
+/// The two transaction selects at the right of the query toolbar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransactionMenu {
+    Mode,
+    Isolation,
+}
+impl TransactionMenu {
+    fn index(self) -> usize {
+        match self {
+            Self::Mode => 0,
+            Self::Isolation => 1,
+        }
+    }
+    /// The trigger's `toolbar_focus` slot (the old first radio of its group).
+    fn focus_index(self) -> usize {
+        match self {
+            Self::Mode => 10,
+            Self::Isolation => 12,
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Self::Mode => "Transaction mode",
+            Self::Isolation => "Isolation level",
+        }
+    }
+    fn owns(self, control: TransactionControl) -> bool {
+        matches!(
+            (self, control),
+            (Self::Mode, TransactionControl::Mode(_))
+                | (Self::Isolation, TransactionControl::Isolation(_))
+        )
+    }
+}
+
+/// Commit, Rollback and Recheck belong to manual transactions; they also
+/// stay reachable whenever the session state needs attention (active,
+/// failed or unknown), so recovery never hides behind a mode switch.
+fn transaction_actions_visible(
+    connected: bool,
+    snapshot: Option<&QueryTransactionSnapshot>,
+) -> bool {
+    match snapshot {
+        Some(snapshot) => {
+            snapshot.mode == QueryTransactionMode::Manual
+                || snapshot.status != QueryTransactionStatus::Idle
+        }
+        None => connected,
+    }
+}
+
+/// Short visible transaction state beside the selects. `None` when the
+/// selects already say everything (an idle, direct session).
+fn transaction_note(
+    connected: bool,
+    pending: bool,
+    snapshot: Option<&QueryTransactionSnapshot>,
+) -> Option<String> {
+    if !connected {
+        return None;
+    }
+    if pending {
+        return Some("Updating…".into());
+    }
+    let Some(snapshot) = snapshot else {
+        return Some("State unknown".into());
+    };
+    let status = match snapshot.status {
+        QueryTransactionStatus::Idle => None,
+        QueryTransactionStatus::Active => Some("Active"),
+        QueryTransactionStatus::Failed => Some("Failed; roll back"),
+        QueryTransactionStatus::Unknown => Some("Unknown; recheck"),
+    };
+    let pooler = match snapshot.pooling {
+        ConnectionPooling::TransactionPooler => Some("Transaction pooler"),
+        ConnectionPooling::Pooler => Some("Connection pooler"),
+        ConnectionPooling::Direct | ConnectionPooling::SessionPooler => None,
+    };
+    match (status, pooler) {
+        (Some(status), Some(pooler)) => Some(format!("{status} · {pooler}")),
+        (Some(text), None) | (None, Some(text)) => Some(text.into()),
+        (None, None) => None,
+    }
+}
+
+/// The `?` toolbar icon: keyboard hints as a tooltip, also its AX label.
+fn keyboard_hint(text: &'static str) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id("query-keyboard-hints")
+        .role(Role::Image)
+        .aria_label(text)
+        .flex_none()
+        .size(px(crate::style::CONTROL))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(crate::style::R_SM))
+        .hover(|s| s.bg(crate::style::hover()))
+        .child(
+            gpui::svg()
+                .path("icons/circle_help.svg")
+                .size(px(crate::style::ICON))
+                .text_color(crate::style::dim()),
+        )
+        .tooltip(crate::ui::tooltip(text))
+        .tooltip_show_delay(crate::ui::tooltip_delay())
+}
+
+const KEYBOARD_HINTS: &str =
+    "F8 controls · Tab next · Enter activate · Esc return · F6 SQL / results";
+
 struct Execution {
     id: String,
     started: Instant,
@@ -168,6 +279,10 @@ pub struct Workbench {
     transaction: Option<QueryTransactionSnapshot>,
     transaction_pending: bool,
     transaction_error: Option<String>,
+    /// The open transaction select and its keyboard row.
+    transaction_menu: Option<(TransactionMenu, crate::ui::popover::MenuNav)>,
+    transaction_anchors: [crate::ui::popover::AnchorSlot; 2],
+    transaction_menu_focus: FocusHandle,
     connected: bool,
     connecting: bool,
     /// Why the last session failed; cleared by a new attempt or a normal close.
@@ -245,7 +360,11 @@ impl Workbench {
             cx.notify();
         });
         let grid = cx.new(ResultGrid::new);
-        grid.update(cx, |grid, _| grid.set_export_host(host.clone()));
+        grid.update(cx, |grid, _| {
+            grid.set_export_host(host.clone());
+            // The results header carries the row summary and Export.
+            grid.set_embedded_status(true);
+        });
         let activation = cx.observe_window_activation(window, |this, window, _| {
             if let Some(controls) = &this.controls {
                 controls.focus(window.is_window_active());
@@ -293,6 +412,12 @@ impl Workbench {
             transaction: None,
             transaction_pending: false,
             transaction_error: None,
+            transaction_menu: None,
+            transaction_anchors: [
+                crate::ui::popover::anchor_slot(),
+                crate::ui::popover::anchor_slot(),
+            ],
+            transaction_menu_focus: cx.focus_handle(),
             connected: false,
             connecting: false,
             connect_error: None,
@@ -1011,7 +1136,7 @@ impl Workbench {
                         _ => (
                             crate::console_model::Severity::Info,
                             format!(
-                                "Query {} · {retained} rows retained · {elapsed} ms",
+                                "Query {} · {retained} rows loaded · {elapsed} ms",
                                 label.to_lowercase()
                             ),
                         ),
@@ -1264,6 +1389,224 @@ impl Workbench {
                 format!("{mode} · {status}")
             }
         }
+    }
+
+    /// The options of one transaction select, in menu order.
+    fn transaction_options(menu: TransactionMenu) -> Vec<(&'static str, TransactionControl)> {
+        Self::transaction_controls()
+            .into_iter()
+            .filter(|(_, control, _)| menu.owns(*control))
+            .map(|(label, control, _)| (label, control))
+            .collect()
+    }
+
+    fn transaction_selected(&self, control: TransactionControl) -> bool {
+        self.transaction
+            .as_ref()
+            .is_some_and(|snapshot| match control {
+                TransactionControl::Mode(mode) => snapshot.mode == mode,
+                TransactionControl::Isolation(isolation) => snapshot.manual_isolation == isolation,
+                _ => false,
+            })
+    }
+
+    /// The select's face: the selected option, or `Unknown` before the first
+    /// snapshot.
+    fn transaction_value(&self, menu: TransactionMenu) -> &'static str {
+        Self::transaction_options(menu)
+            .into_iter()
+            .find(|(_, control)| self.transaction_selected(*control))
+            .map_or("Unknown", |(label, _)| label)
+    }
+
+    fn transaction_menu_enabled(&self, menu: TransactionMenu) -> bool {
+        Self::transaction_options(menu)
+            .into_iter()
+            .any(|(_, control)| self.can_control_transaction(control))
+    }
+
+    /// Toolbar focus slots of the transaction cluster, in visual order.
+    fn transaction_focus_order(&self) -> Vec<usize> {
+        let mut order = Vec::new();
+        for menu in [TransactionMenu::Mode, TransactionMenu::Isolation] {
+            if self.transaction_menu_enabled(menu) {
+                order.push(menu.focus_index());
+            }
+        }
+        if transaction_actions_visible(self.connected, self.transaction.as_ref()) {
+            order.extend(
+                Self::transaction_controls()
+                    .into_iter()
+                    .filter(|(_, control, _)| {
+                        matches!(
+                            control,
+                            TransactionControl::Commit
+                                | TransactionControl::Rollback
+                                | TransactionControl::Recheck
+                        ) && self.can_control_transaction(*control)
+                    })
+                    .map(|(_, _, index)| index),
+            );
+        }
+        order
+    }
+
+    fn toggle_transaction_menu(
+        &mut self,
+        menu: TransactionMenu,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.transaction_menu.is_some_and(|(open, _)| open == menu) {
+            self.close_transaction_menu(window, cx);
+            return;
+        }
+        if !self.transaction_menu_enabled(menu) {
+            return;
+        }
+        let options = Self::transaction_options(menu);
+        let mut nav = crate::ui::popover::MenuNav::new(options.len());
+        nav.highlighted = options
+            .iter()
+            .position(|(_, control)| self.transaction_selected(*control))
+            .unwrap_or(0);
+        self.transaction_menu = Some((menu, nav));
+        window.focus(&self.transaction_menu_focus, cx);
+        cx.notify();
+    }
+
+    fn close_transaction_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some((menu, _)) = self.transaction_menu.take() {
+            if self.transaction_menu_focus.contains_focused(window, cx) {
+                window.focus(&self.toolbar_focus[menu.focus_index()], cx);
+            }
+            cx.notify();
+        }
+    }
+
+    /// Runs one option of a transaction select with the same command the
+    /// old radio buttons sent.
+    fn choose_transaction(
+        &mut self,
+        control: TransactionControl,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let menu = self.transaction_menu.take().map(|(menu, _)| menu);
+        self.control_transaction(control, window, cx);
+        if let Some(menu) = menu
+            && self.transaction_menu_focus.contains_focused(window, cx)
+        {
+            window.focus(&self.toolbar_focus[menu.focus_index()], cx);
+        }
+        cx.notify();
+    }
+
+    fn transaction_menu_key(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((menu, nav)) = self.transaction_menu.as_mut() else {
+            return;
+        };
+        let menu = *menu;
+        match nav.key(&event.keystroke.key) {
+            crate::ui::popover::MenuKey::Moved => cx.notify(),
+            crate::ui::popover::MenuKey::Dismiss => self.close_transaction_menu(window, cx),
+            crate::ui::popover::MenuKey::Activate(index) => {
+                if let Some((_, control)) = Self::transaction_options(menu).get(index).copied()
+                    && self.can_control_transaction(control)
+                {
+                    self.choose_transaction(control, window, cx);
+                }
+            }
+            crate::ui::popover::MenuKey::Ignored => return,
+        }
+        cx.stop_propagation();
+    }
+
+    /// The closed face of one transaction select.
+    fn transaction_select(&self, menu: TransactionMenu, cx: &Context<Self>) -> impl IntoElement {
+        let enabled = self.transaction_menu_enabled(menu);
+        let open = self.transaction_menu.is_some_and(|(open, _)| open == menu);
+        let weak = cx.weak_entity();
+        crate::ui::popover::select_trigger(
+            ("transaction-select", menu.index()),
+            menu.label(),
+            self.transaction_value(menu),
+            open,
+            enabled,
+        )
+        .w(px(match menu {
+            TransactionMenu::Mode => 112.,
+            TransactionMenu::Isolation => 136.,
+        }))
+        .relative()
+        .child(crate::ui::popover::probe(
+            self.transaction_anchors[menu.index()].clone(),
+        ))
+        .key_context("NativeToolbar")
+        .track_focus(&self.toolbar_focus[menu.focus_index()])
+        .tab_index(0)
+        .tab_stop(enabled)
+        .on_a11y_action(Action::Click, move |_, window, cx| {
+            weak.update(cx, |this, cx| {
+                this.toggle_transaction_menu(menu, window, cx)
+            })
+            .ok();
+        })
+        .on_click(
+            cx.listener(move |this, _, window, cx| this.toggle_transaction_menu(menu, window, cx)),
+        )
+    }
+
+    /// The open transaction select's option list.
+    fn render_transaction_menu(&self, cx: &Context<Self>) -> Option<gpui::AnyElement> {
+        let (menu, nav) = self.transaction_menu?;
+        let anchor = self.transaction_anchors[menu.index()].get()?;
+        let mut panel = crate::ui::popover::panel("transaction-menu", Role::Menu, menu.label())
+            .track_focus(&self.transaction_menu_focus)
+            .min_w(px(180.))
+            .on_key_down(cx.listener(Self::transaction_menu_key))
+            .on_mouse_down_out(
+                cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                    // The trigger's own click toggles; closing here would reopen it.
+                    if !anchor.contains(&event.position) {
+                        this.transaction_menu = None;
+                        cx.notify();
+                    }
+                }),
+            );
+        for (index, (label, control)) in Self::transaction_options(menu).into_iter().enumerate() {
+            let enabled = self.can_control_transaction(control);
+            let weak = cx.weak_entity();
+            panel = panel.child(
+                crate::ui::popover::check_item(
+                    ("transaction-option", index),
+                    label,
+                    self.transaction_selected(control),
+                    nav.highlighted == index,
+                    enabled,
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    if enabled {
+                        this.choose_transaction(control, window, cx);
+                    }
+                }))
+                .on_a11y_action(Action::Click, move |_, window, cx| {
+                    if enabled {
+                        weak.update(cx, |this, cx| this.choose_transaction(control, window, cx))
+                            .ok();
+                    }
+                }),
+            );
+        }
+        Some(
+            crate::ui::popover::layer(anchor, crate::ui::popover::Placement::BelowEnd, panel)
+                .into_any_element(),
+        )
     }
 
     fn explain_draft(&mut self, analyze: bool, cx: &mut Context<Self>) {
@@ -1534,7 +1877,9 @@ impl Workbench {
                 self.editor.focus_handle(cx),
                 self.grid.read(cx).pane_focus(cx),
             ];
-            handles.extend(self.grid.read(cx).export_focus());
+            if self.grid.read(cx).can_export() {
+                handles.extend(self.grid.read(cx).export_focus());
+            }
             if let Some(view) = &self.query_changes.view {
                 handles.extend(view.read(cx).focus_handles(cx));
             }
@@ -1605,13 +1950,9 @@ impl Workbench {
         if self.closing {
             return;
         }
-        let mut controls = vec![4, 5, 6];
-        if self.can_edit_query_cell(cx) {
-            controls.push(24);
-        }
-        if self.document.is_some() {
-            controls.extend([20, 21, 22]);
-        }
+        // Visual order: run group, draft tools, cell edit, connect, then the
+        // transaction cluster and layout at the right.
+        let mut controls = Vec::new();
         if self.connected
             && self.execution.is_none()
             && !self.transaction_pending
@@ -1627,9 +1968,19 @@ impl Workbench {
         {
             controls.push(2);
         }
+        if self.document.is_some() {
+            controls.extend([20, 21, 22]);
+        }
+        if self.can_edit_query_cell(cx) {
+            controls.push(24);
+        }
         if !self.connected && !self.connecting {
             controls.push(3);
         }
+        if self.document.is_some() {
+            controls.extend(self.transaction_focus_order());
+        }
+        controls.extend([4, 5, 6]);
         if self.layout == Layout::ResultsFirst {
             controls.push(7);
         }
@@ -1638,11 +1989,6 @@ impl Workbench {
         }
         if self.review.is_some() {
             controls.extend([18, 19]);
-        }
-        if self.document.is_some() {
-            controls.extend(Self::transaction_controls().into_iter().filter_map(
-                |(_, control, index)| self.can_control_transaction(control).then_some(index),
-            ));
         }
         let mut focus = controls
             .into_iter()
@@ -1789,18 +2135,15 @@ impl Workbench {
         let id = SharedString::from(format!("{control:?}"));
         let button = if matches!(
             control,
-            Control::Result(_) | Control::Notices | Control::Plan
+            Control::Result(_) | Control::Notices | Control::Plan | Control::Layout(_)
         ) {
             crate::ui::segment(id, label, selected, enabled)
+        } else if matches!(control, Control::Run | Control::ConfirmQuery) {
+            // The toolbar's one primary action; the shortcut is added below.
+            crate::ui::tool_button_accent(id, label, None, enabled)
         } else {
             crate::ui::pressed(
-                crate::ui::tool_button(
-                    id,
-                    label,
-                    icon,
-                    enabled,
-                    matches!(control, Control::Run | Control::ConfirmQuery),
-                ),
+                crate::ui::tool_button(id, label, icon, enabled, false),
                 selected,
             )
         };
@@ -1884,6 +2227,7 @@ impl Render for Workbench {
             .is_some_and(|execution| execution.terminal.is_none())
             && !self.closing
             && self.review.is_none();
+        let show_edit_cell = self.can_edit_query_cell(cx) || self.query_changes.view.is_some();
         let wide = window.viewport_size().width > px(860.);
         let side = self.layout == Layout::SideBySide && wide;
         let compact = self.layout == Layout::ResultsFirst && !self.expanded;
@@ -1901,30 +2245,6 @@ impl Render for Workbench {
             .border_color(crate::style::line())
             .flex()
             .flex_col()
-            .child(
-                crate::ui::segmented()
-                    .child(div().px(px(2.)).text_color(crate::style::faint()).child(
-                        if self.document.is_some() {
-                            "SQL"
-                        } else {
-                            "Query 1"
-                        },
-                    ))
-                    .when(self.layout == Layout::ResultsFirst, |pane| {
-                        pane.child(self.button(
-                            if self.expanded {
-                                "Compact editor"
-                            } else {
-                                "Expand editor"
-                            },
-                            Control::Expand,
-                            7,
-                            !self.closing,
-                            false,
-                            cx,
-                        ))
-                    }),
-            )
             .when_some(self.find.clone(), |editor, find| editor.child(find))
             .child(div().flex_1().min_h_0().child(self.accessible.clone()));
         let result_count = self.grid.read(cx).model().sets.len();
@@ -1987,6 +2307,11 @@ impl Render for Workbench {
                 model.native_omitted_metadata
             ));
         }
+        let no_results = model.sets.is_empty();
+        let summary = self.grid.read(cx).summary();
+        let can_export = self.grid.read(cx).can_export() && !self.show_notices && !self.show_plan;
+        let export_focus = self.grid.read(cx).export_focus();
+        let status = self.status.clone();
         let results = div()
             .flex_1()
             .min_w_0()
@@ -2002,11 +2327,11 @@ impl Render for Workbench {
                 // same red wash.
                 let details = div()
                     .w_full()
-                    .pl(px(crate::style::ICON + 6.))
+                    .pl(px(crate::style::ICON + crate::style::S3))
                     .flex()
                     .flex_col()
                     .items_start()
-                    .gap_1()
+                    .gap(px(crate::style::S2))
                     .child(
                         div()
                             .id("query-failure-message")
@@ -2041,8 +2366,8 @@ impl Render for Workbench {
                         .flex_shrink_0()
                         .max_h(px(180.))
                         .overflow_y_scroll()
-                        .px(px(8.))
-                        .py(px(6.))
+                        .px(px(crate::style::INSET_BAR))
+                        .py(px(crate::style::S3))
                         // A new identity per failure replays the shake, even
                         // for an identical repeated error.
                         .child(crate::ui::shake(
@@ -2054,29 +2379,118 @@ impl Render for Workbench {
                 )
             })
             .child(
-                crate::ui::segmented()
-                    .id("result-tabs")
-                    .overflow_x_scroll()
-                    .flex_nowrap()
-                    .children(tabs)
-                    .when(self.plan.is_some(), |pane| {
-                        pane.child(self.button(
-                            "Plan",
-                            Control::Plan,
-                            23,
-                            !self.closing,
-                            self.show_plan,
-                            cx,
-                        ))
+                // One header row: result tabs at the left; row summary, query
+                // status and Export at the right.
+                div()
+                    .id("results-header")
+                    .flex_none()
+                    .h(px(crate::style::CONTROL + crate::style::S1))
+                    .pl(px(crate::style::INSET_BAR))
+                    .pr(px(crate::style::S2))
+                    .flex()
+                    .items_center()
+                    .gap(px(crate::style::S4))
+                    .border_b_1()
+                    .border_color(crate::style::line_soft())
+                    .text_sm()
+                    .text_color(crate::style::dim())
+                    .child(
+                        div()
+                            .id("result-tabs")
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .flex()
+                            .flex_nowrap()
+                            .items_center()
+                            .gap(px(crate::style::S1))
+                            .overflow_x_scroll()
+                            .when(no_results, |row| {
+                                row.child(
+                                    div()
+                                        .flex_none()
+                                        .pr(px(crate::style::S2))
+                                        .text_color(crate::style::dim())
+                                        .child("No results"),
+                                )
+                            })
+                            .children(tabs)
+                            .when(self.plan.is_some(), |pane| {
+                                pane.child(self.button(
+                                    "Plan",
+                                    Control::Plan,
+                                    23,
+                                    !self.closing,
+                                    self.show_plan,
+                                    cx,
+                                ))
+                            })
+                            .child(self.button(
+                                format!("Notices {notices_count}"),
+                                Control::Notices,
+                                8,
+                                true,
+                                self.show_notices,
+                                cx,
+                            )),
+                    )
+                    .when(!no_results, |row| {
+                        row.child(
+                            div()
+                                .id("result-summary")
+                                .role(Role::Label)
+                                .aria_label(summary.clone())
+                                .flex_none()
+                                .max_w(px(320.))
+                                .truncate()
+                                .text_size(px(crate::style::FONT_SMALL))
+                                .child(summary),
+                        )
                     })
-                    .child(self.button(
-                        format!("Notices {notices_count}"),
-                        Control::Notices,
-                        8,
-                        true,
-                        self.show_notices,
-                        cx,
-                    )),
+                    .child(
+                        div()
+                            .id("query-status")
+                            .role(Role::Status)
+                            .aria_label("Query status")
+                            .a11y_synthetic_children(move |builder| {
+                                builder.parent_node().set_value(status.clone())
+                            })
+                            .flex_shrink_1()
+                            .min_w_0()
+                            .max_w(px(360.))
+                            .truncate()
+                            .text_size(px(crate::style::FONT_SMALL))
+                            .text_color(crate::style::dim())
+                            .tooltip(crate::ui::tooltip(self.status.clone()))
+                            .tooltip_show_delay(crate::ui::tooltip_delay())
+                            .child(self.status.clone()),
+                    )
+                    .when(can_export, |row| {
+                        let grid = self.grid.clone();
+                        row.child(
+                            crate::ui::icon_button(
+                                "open-result-export",
+                                "Export results",
+                                "icons/download.svg",
+                                true,
+                            )
+                            .aria_label(
+                                "Export selected cells, or all retained rows when no selection",
+                            )
+                            .when_some(export_focus.clone(), |button, focus| {
+                                button.track_focus(&focus).tab_stop(true).tab_index(0)
+                            })
+                            .on_a11y_action(Action::Click, move |_, window, cx| {
+                                grid.update(cx, |grid, cx| grid.open_export(window, cx));
+                            })
+                            .on_click(cx.listener(
+                                |this, _, window, cx| {
+                                    this.grid
+                                        .update(cx, |grid, cx| grid.open_export(window, cx));
+                                },
+                            )),
+                        )
+                    }),
             )
             .child(
                 div()
@@ -2089,9 +2503,9 @@ impl Render for Workbench {
                     .when(self.show_plan, |pane| pane.children(self.plan.clone()))
                     .when(self.show_notices, |pane| {
                         pane.overflow_y_scroll()
-                            .px_2()
-                            .py_1()
-                            .text_sm()
+                            .px(px(crate::style::INSET_BAR))
+                            .py(px(crate::style::S2))
+                            .text_size(px(crate::style::FONT_DATA))
                             .font_family(crate::style::MONO)
                             .role(Role::Group)
                             .aria_label("Query notices")
@@ -2113,8 +2527,8 @@ impl Render for Workbench {
                         .max_h(px(90.))
                         .overflow_y_scroll()
                         .text_sm()
-                        .px_2()
-                        .py_1()
+                        .px(px(crate::style::INSET_BAR))
+                        .py(px(crate::style::S2))
                         .border_t_1()
                         .border_color(crate::style::line_soft())
                         .text_color(crate::style::warn())
@@ -2127,7 +2541,6 @@ impl Render for Workbench {
                         })),
                 )
             });
-        let status = self.status.clone();
         let announcement = self
             .failure
             .as_ref()
@@ -2199,14 +2612,20 @@ impl Render for Workbench {
                 crate::ui::toolbar()
                     .child(self.button("Run", Control::Run, 0, can_run, false, cx))
                     .child(self.button("Run script", Control::Script, 1, can_run, false, cx))
-                    .child(self.button("Stop", Control::Stop, 2, can_stop, false, cx))
+                    // Stop belongs to a running query; it appears with one.
+                    .when(can_stop, |toolbar| {
+                        toolbar.child(self.button("Stop", Control::Stop, 2, can_stop, false, cx))
+                    })
                     .when(self.document.is_some(), |toolbar| toolbar
                         .child(crate::ui::separator())
                         .child(self.button("Explain draft", Control::Explain(false), 21, !self.closing, false, cx))
                         .child(self.button("Analyze draft", Control::Explain(true), 22, !self.closing, false, cx))
                         .child(self.button("Bindings", Control::Bindings, 20, !self.closing, self.show_parameters, cx)))
-                    .child(crate::ui::separator())
-                    .child(self.button("Edit selected cell", Control::EditCell, 24, self.can_edit_query_cell(cx), false, cx))
+                    // Result-cell editing is a later step: shown once a cell
+                    // can be edited or an edit is open.
+                    .when(show_edit_cell, |toolbar| toolbar
+                        .child(crate::ui::separator())
+                        .child(self.button("Edit selected cell", Control::EditCell, 24, self.can_edit_query_cell(cx), false, cx)))
                     .when(!self.connected, |toolbar| {
                         toolbar.child(self.button(
                             if self.document.is_some() { "Connect" } else { "Reconnect" },
@@ -2218,14 +2637,34 @@ impl Render for Workbench {
                         ))
                     })
                     .child(crate::ui::grow())
+                    .when(self.document.is_some(), |toolbar| {
+                        let transaction_label = self.transaction_label();
+                        let note = transaction_note(self.connected, self.transaction_pending, self.transaction.as_ref());
+                        let actions = transaction_actions_visible(self.connected, self.transaction.as_ref());
+                        toolbar.child(
+                            div().id("transaction-controls").role(Role::Group).aria_label("Transaction controls")
+                                .flex().items_center().gap(px(crate::style::S2))
+                                .child(div().id("transaction-state").role(Role::Status).aria_label("Transaction state")
+                                    .a11y_synthetic_children(move |builder| { builder.parent_node().set_value(transaction_label.clone()); })
+                                    .when_some(note, |state, note| state.pr(px(crate::style::S2)).text_size(px(crate::style::FONT_SMALL)).text_color(crate::style::dim()).child(note)))
+                                .child(self.transaction_select(TransactionMenu::Mode, cx))
+                                .child(self.transaction_select(TransactionMenu::Isolation, cx))
+                                .when(actions, |group| {
+                                    group.children(Self::transaction_controls().into_iter().filter(|(_, control, _)| matches!(
+                                        control,
+                                        TransactionControl::Commit | TransactionControl::Rollback | TransactionControl::Recheck
+                                    )).map(|(label, control, index)| {
+                                        self.button(label, Control::Transaction(control), index, self.can_control_transaction(control), false, cx)
+                                    }))
+                                }),
+                        )
+                        .child(crate::ui::separator())
+                    })
                     .child(
-                        div()
+                        crate::ui::segment_group()
                             .id("layout-choices")
                             .role(Role::RadioGroup)
                             .aria_label("Layout")
-                            .flex()
-                            .items_center()
-                            .gap(px(2.))
                             .child(self.button(
                                 "Stacked",
                                 Control::Layout(Layout::Stacked),
@@ -2251,33 +2690,44 @@ impl Render for Workbench {
                                 cx,
                             )),
                     )
-                    .child(crate::ui::separator())
-                    .child(crate::ui::crumbs(
-                        "",
-                        if self.document.is_some() { "PostgreSQL" } else { "dbunk_demo · 127.0.0.1:15432" },
-                    )),
+                    .when(self.layout == Layout::ResultsFirst, |toolbar| {
+                        toolbar.child(self.button(
+                            if self.expanded { "Compact editor" } else { "Expand editor" },
+                            Control::Expand,
+                            7,
+                            !self.closing,
+                            false,
+                            cx,
+                        ))
+                    })
+                    .child(keyboard_hint(KEYBOARD_HINTS))
+                    .when(self.document.is_none(), |toolbar| {
+                        toolbar
+                            .child(crate::ui::separator())
+                            .child(crate::ui::crumbs("", "dbunk_demo · 127.0.0.1:15432"))
+                    }),
             )
             .when(self.document.is_some() && self.show_parameters, |pane| pane.child(self.parameters.clone()))
             .when_some(self.review.as_ref(), |pane, review| {
                 let reviewed_sql = review.sql.clone();
                 pane.child(
                     div().id("query-confirmation").role(Role::Group).aria_label("Safe Mode query review")
-                        .flex().flex_col().flex_shrink_0().px_2().py_1().gap_1().text_sm()
+                        .flex().flex_col().flex_shrink_0().px(px(crate::style::INSET_BAR)).py(px(crate::style::S3)).gap(px(crate::style::S2)).text_sm()
                         .bg(crate::style::panel()).border_b_1().border_l_2().border_color(crate::style::warn())
                         .child(div().id("query-confirmation-announcement").role(Role::Alert)
                             .aria_label("Safe Mode requires confirmation. Review the exact SQL, then confirm or cancel. Query has not run.")
-                            .flex().items_center().gap(px(6.)).text_color(crate::style::warn())
+                            .flex().items_center().gap(px(crate::style::S3)).text_color(crate::style::text()).font_weight(gpui::FontWeight::SEMIBOLD)
                             .child(gpui::svg().path("icons/warning.svg").size(px(crate::style::ICON)).flex_none().text_color(crate::style::warn()))
-                            .child("Safe Mode requires confirmation"))
+                            .child("Safe mode requires confirmation"))
                         .child(div().text_color(crate::style::dim()).child(review.classification.clone()))
                         .child(div().id("query-review-bindings").role(Role::Document).aria_label("Bound parameters and row limit")
                             .a11y_synthetic_children({ let value = review.bindings.clone(); move |builder| { builder.parent_node().set_value(value.clone()); } })
                             .max_h(px(120.)).overflow_y_scroll().font_family(crate::style::MONO).text_color(crate::style::dim()).child(review.bindings.clone()))
                         .child(div().id("query-review-sql").role(Role::Document).aria_label("SQL requiring confirmation")
                             .a11y_synthetic_children(move |builder| { builder.parent_node().set_value(reviewed_sql.clone()); })
-                            .max_h(px(160.)).overflow_y_scroll().p_1().rounded(px(4.)).bg(crate::style::bg())
-                            .border_1().border_color(crate::style::line_soft()).font_family(crate::style::MONO).child(review.sql.clone()))
-                        .child(div().flex().gap(px(4.))
+                            .max_h(px(160.)).overflow_y_scroll().p(px(crate::style::S3)).rounded(px(crate::style::R_MD)).bg(crate::style::bg())
+                            .border_1().border_color(crate::style::line_soft()).font_family(crate::style::MONO).text_size(px(crate::style::FONT_DATA)).child(review.sql.clone()))
+                        .child(div().flex().gap(px(crate::style::S2))
                             .child(self.button("Cancel review", Control::CancelReview, 18, !self.closing, false, cx))
                             .child(self.button("Confirm and run", Control::ConfirmQuery, 19, !self.closing, false, cx)))
                 )
@@ -2302,49 +2752,13 @@ impl Render for Workbench {
                     .child(editor)
                     .child(results),
             )
-            .when(self.document.is_some(), |pane| {
-                let transaction_label = self.transaction_label();
-                pane.child(div().id("transaction-controls").role(Role::Group).aria_label("Transaction controls")
-                    .flex().flex_col().flex_shrink_0().border_t_1().border_color(crate::style::line_soft())
-                    .child(crate::ui::toolbar().border_b_0()
-                        .child(div().id("transaction-state").role(Role::Status).aria_label("Transaction state")
-                            .a11y_synthetic_children(move |builder| { builder.parent_node().set_value(transaction_label.clone()); })
-                            .pr_1().text_color(crate::style::text()).child(self.transaction_label()))
-                        .children(Self::transaction_controls().into_iter().flat_map(|(label, control, index)| {
-                            let selected = self.transaction.as_ref().is_some_and(|snapshot| match control {
-                                TransactionControl::Mode(mode) => snapshot.mode == mode,
-                                TransactionControl::Isolation(isolation) => snapshot.manual_isolation == isolation,
-                                _ => false,
-                            });
-                            let separator = matches!(index, 10 | 12 | 15).then(|| crate::ui::separator().into_any_element());
-                            separator.into_iter().chain([self.button(label, Control::Transaction(control), index, self.can_control_transaction(control), selected, cx).into_any_element()])
-                        })))
-                    .when_some(self.transaction_error.as_ref(), |footer, message| {
-                        footer.child(div().px_2().pb_1().child(crate::ui::shake(format!("transaction-error-shake-{message}"), crate::ui::error_banner("transaction-error", message.clone()))))
-                    }))
+            .when_some(self.transaction_error.as_ref(), |pane, message| {
+                pane.child(div().flex_shrink_0().px(px(crate::style::INSET_BAR)).py(px(crate::style::S2)).border_t_1().border_color(crate::style::line_soft())
+                    .child(crate::ui::shake(format!("transaction-error-shake-{message}"), crate::ui::error_banner("transaction-error", message.clone()))))
             })
-            .when_some(self.query_changes.unavailable.clone(), |content, reason| content.child(div().id("query-editing-unavailable").role(Role::Status).aria_label(reason.clone()).px_2().py_1().text_sm().text_color(crate::style::dim()).border_t_1().border_color(crate::style::line_soft()).child(reason)))
-            .when_some(self.completion.as_ref().map(|completion| completion.status()), |content, status| content.child(div().id("sql-completion-status").role(Role::Status).aria_label(status.clone()).px_2().py_1().text_sm().text_color(crate::style::dim()).border_t_1().border_color(crate::style::line_soft()).child(status)))
+            .when_some(self.query_changes.unavailable.clone(), |content, reason| content.child(div().id("query-editing-unavailable").role(Role::Status).aria_label(reason.clone()).px(px(crate::style::INSET_BAR)).py(px(crate::style::S2)).text_size(px(crate::style::FONT_SMALL)).text_color(crate::style::dim()).border_t_1().border_color(crate::style::line_soft()).child(reason)))
             .when_some(self.query_changes.view.clone(), |content, changes| content.child(div().id("query-change-scroll").max_h(px(260.)).overflow_y_scroll().child(changes)))
-            .child(
-                crate::ui::status_line()
-                    .child(
-                        div()
-                            .id("query-status")
-                            .role(Role::Status)
-                            .aria_label("Query status")
-                            .a11y_synthetic_children(move |builder| {
-                                builder.parent_node().set_value(status.clone())
-                            })
-                            .min_w_0()
-                            .text_color(crate::style::dim())
-                            .child(self.status.clone()),
-                    )
-                    .child(crate::ui::grow())
-                    .child(
-                        "F8 controls · Tab next · Enter activate · Esc return · F6 SQL / results",
-                    ),
-            )
+            .children(self.render_transaction_menu(cx))
     }
 }
 
@@ -2414,5 +2828,84 @@ mod binding_review_tests {
             "Row limit: 1\n:null = NULL\n:empty = \"\"\n:text = \"NULL\\n'🧪\""
         );
         assert!(!format!("{:?}", values).contains("🧪"));
+    }
+}
+
+#[cfg(test)]
+mod transaction_chrome_tests {
+    use super::*;
+
+    #[test]
+    fn transaction_actions_show_in_manual_mode_or_when_state_needs_attention() {
+        let idle = QueryTransactionSnapshot::default();
+        assert!(!transaction_actions_visible(true, Some(&idle)));
+        let manual = QueryTransactionSnapshot {
+            mode: QueryTransactionMode::Manual,
+            ..Default::default()
+        };
+        assert!(transaction_actions_visible(true, Some(&manual)));
+        for status in [
+            QueryTransactionStatus::Active,
+            QueryTransactionStatus::Failed,
+            QueryTransactionStatus::Unknown,
+        ] {
+            let snapshot = QueryTransactionSnapshot {
+                status,
+                ..Default::default()
+            };
+            assert!(transaction_actions_visible(true, Some(&snapshot)));
+        }
+        // Recheck stays reachable before the first snapshot arrives.
+        assert!(transaction_actions_visible(true, None));
+        assert!(!transaction_actions_visible(false, None));
+    }
+
+    #[test]
+    fn transaction_note_is_silent_for_an_idle_direct_session() {
+        let idle = QueryTransactionSnapshot::default();
+        assert_eq!(transaction_note(true, false, Some(&idle)), None);
+        assert_eq!(transaction_note(false, false, Some(&idle)), None);
+        assert_eq!(
+            transaction_note(true, true, Some(&idle)).as_deref(),
+            Some("Updating…")
+        );
+        assert_eq!(
+            transaction_note(true, false, None).as_deref(),
+            Some("State unknown")
+        );
+        let failed = QueryTransactionSnapshot {
+            status: QueryTransactionStatus::Failed,
+            pooling: ConnectionPooling::TransactionPooler,
+            ..Default::default()
+        };
+        assert_eq!(
+            transaction_note(true, false, Some(&failed)).as_deref(),
+            Some("Failed; roll back · Transaction pooler")
+        );
+        let pooled = QueryTransactionSnapshot {
+            pooling: ConnectionPooling::Pooler,
+            ..Default::default()
+        };
+        assert_eq!(
+            transaction_note(true, false, Some(&pooled)).as_deref(),
+            Some("Connection pooler")
+        );
+    }
+
+    #[test]
+    fn each_transaction_select_lists_only_its_own_options() {
+        let modes = Workbench::transaction_options(TransactionMenu::Mode)
+            .into_iter()
+            .map(|(label, _)| label)
+            .collect::<Vec<_>>();
+        assert_eq!(modes, ["Autocommit", "Manual"]);
+        let isolation = Workbench::transaction_options(TransactionMenu::Isolation)
+            .into_iter()
+            .map(|(label, _)| label)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            isolation,
+            ["Read committed", "Repeatable read", "Serializable"]
+        );
     }
 }

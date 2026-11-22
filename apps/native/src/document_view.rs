@@ -819,6 +819,16 @@ impl DocumentView {
             Content::Query(view) => {
                 view.update(cx, |view, cx| view.set_connection_metadata(connections, cx))
             }
+            // Tool headers show the connection's display name, never its id.
+            Content::SchemaMap(view) => {
+                view.update(cx, |view, cx| view.set_connection_metadata(connections, cx))
+            }
+            Content::CsvTransfer(view) => {
+                view.update(cx, |view, cx| view.set_connection_metadata(connections, cx))
+            }
+            Content::PgTools(view) => {
+                view.update(cx, |view, cx| view.set_connection_metadata(connections, cx))
+            }
             _ => {}
         }
     }

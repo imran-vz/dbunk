@@ -14,7 +14,7 @@ use dbunk_lib::backend::{
 };
 use gpui::{
     Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role, Subscription,
-    Window, div, prelude::*,
+    Window, div, prelude::*, px,
 };
 use std::{cell::Cell, rc::Rc, sync::Arc};
 mod configurations;
@@ -390,25 +390,23 @@ impl WholeTableExportView {
             _ => name.into(),
         };
         let weak = cx.weak_entity();
-        let primary = matches!(action, Action::Save);
-        crate::ui::tool_button(
-            ("whole-export-action", index),
-            label,
-            None,
-            enabled,
-            primary,
-        )
-        .track_focus(&self.buttons[index])
-        .tab_stop(enabled)
-        .tab_index(0)
-        // GPUI maps a focused Enter/Space pair to this click on key-up.
-        // A separate key-down activation would run the action twice.
-        .on_click(cx.listener(move |this, _, window, cx| this.click_button(index, window, cx)))
-        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-            weak.update(cx, |this, cx| this.click_button(index, window, cx))
-                .ok();
-        })
-        .into_any_element()
+        let button = if matches!(action, Action::Save) {
+            crate::ui::tool_button_accent(("whole-export-action", index), label, None, enabled)
+        } else {
+            crate::ui::tool_button(("whole-export-action", index), label, None, enabled, false)
+        };
+        button
+            .track_focus(&self.buttons[index])
+            .tab_stop(enabled)
+            .tab_index(0)
+            // GPUI maps a focused Enter/Space pair to this click on key-up.
+            // A separate key-down activation would run the action twice.
+            .on_click(cx.listener(move |this, _, window, cx| this.click_button(index, window, cx)))
+            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                weak.update(cx, |this, cx| this.click_button(index, window, cx))
+                    .ok();
+            })
+            .into_any_element()
     }
 }
 impl Drop for WholeTableExportView {
@@ -434,7 +432,7 @@ impl Render for WholeTableExportView {
             .flex_col()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
-            .text_size(gpui::px(crate::style::FONT))
+            .text_size(px(crate::style::FONT))
             .on_action(cx.listener(|this, _: &NextControl, window, cx| {
                 this.focus_control(false, window, cx);
                 cx.stop_propagation();
@@ -446,38 +444,47 @@ impl Render for WholeTableExportView {
             .capture_key_down(cx.listener(|this, event, window, cx| this.key(event, window, cx)))
             .child(
                 crate::ui::toolbar()
-                    .children((0..ACTIONS.len()).map(|index| self.button(index, cx))),
+                    .children((0..ACTIONS.len()).map(|index| self.button(index, cx)))
+                    .child(crate::ui::grow())
+                    .child(crate::ui::info_hint(
+                        "whole-export-scope-disclosure",
+                        scope_disclosure,
+                    ))
+                    .child(crate::ui::info_hint(
+                        "whole-export-format-disclosure",
+                        format_disclosure,
+                    )),
             )
             .child(
                 div()
-                    .id("whole-export-target")
-                    .role(Role::Label)
-                    .aria_label(target.clone())
-                    .px_2()
-                    .pt_1()
-                    .font_family(crate::style::MONO)
-                    .text_color(crate::style::dim())
-                    .child(target),
-            )
-            .child(div().p_2().child(self.null.clone()))
-            .child(
-                div()
-                    .id("whole-export-scope-disclosure")
-                    .role(Role::Label)
-                    .aria_label(scope_disclosure)
-                    .px_2()
-                    .text_color(crate::style::dim())
-                    .child(scope_disclosure),
-            )
-            .child(
-                div()
-                    .id("whole-export-format-disclosure")
-                    .role(Role::Label)
-                    .aria_label(format_disclosure)
-                    .px_2()
-                    .py_1()
-                    .text_color(crate::style::dim())
-                    .child(format_disclosure),
+                    .w_full()
+                    .max_w(px(
+                        crate::style::TOOL_COLUMN + 2. * crate::style::INSET_CONTENT
+                    ))
+                    .px(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S5))
+                    .flex()
+                    .flex_col()
+                    .gap(px(crate::style::S5))
+                    .child(
+                        div()
+                            .id("whole-export-target")
+                            .role(Role::Label)
+                            .aria_label(target.clone())
+                            .flex()
+                            .items_center()
+                            .gap(px(crate::style::S3))
+                            .child(crate::ui::heading("Whole table"))
+                            .child(
+                                crate::ui::mono(format!("{:?}.{:?}", self.schema, self.table))
+                                    .text_color(crate::style::dim()),
+                            ),
+                    )
+                    .child(crate::ui::labelled(
+                        "NULL token",
+                        crate::object_ddl_view::well(self.null.clone()),
+                        None,
+                    )),
             )
             .child(crate::ui::grow())
             .child(

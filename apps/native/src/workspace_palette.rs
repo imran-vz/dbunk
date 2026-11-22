@@ -47,6 +47,14 @@ const COMMANDS: &[(&str, &str)] = &[
 /// Commands only the general PostgreSQL profile offers.
 const GENERAL_ONLY: [&str; 2] = ["bastions", "managed"];
 
+/// One palette snapshot: items, the route `Target` cannot express (projects,
+/// engine tabs) and each item's connection environment, all parallel.
+struct PaletteIndex {
+    items: Vec<Item<&'static str>>,
+    routes: Vec<Option<Route>>,
+    environments: Vec<Option<DevelopmentEnvironment>>,
+}
+
 /// Palette entries whose destination `Target` cannot carry.
 #[derive(Clone)]
 enum Route {
@@ -125,7 +133,7 @@ fn command(id: &str) -> Option<Operation> {
 impl Workspace {
     /// Every entry, each with the route `Target` cannot express (projects,
     /// engine tabs); `None` routes through [`Self::open_target`].
-    fn palette_items(&self, cx: &Context<Self>) -> (Vec<Item<&'static str>>, Vec<Option<Route>>) {
+    fn palette_items(&self, cx: &Context<Self>) -> PaletteIndex {
         let general = self.general_profile();
         let mut items: Vec<_> = COMMANDS
             .iter()
@@ -156,13 +164,27 @@ impl Workspace {
             ));
             routes.push(Some(Route::Project(project)));
         }
+        let mut environments: Vec<Option<DevelopmentEnvironment>> = vec![None; items.len()];
         let name = |id: Option<&String>| {
             id.and_then(|id| self.connections.iter().find(|c| &c.id == id))
                 .map(|c| c.name.clone())
                 .unwrap_or_default()
         };
+        let environment = |id: &str| {
+            self.connections
+                .iter()
+                .find(|c| c.id == id)
+                .map(|c| c.environment)
+        };
         for document in &self.documents {
             let connection = name(document.metadata.connection_id.as_ref());
+            environments.push(
+                document
+                    .metadata
+                    .connection_id
+                    .as_deref()
+                    .and_then(environment),
+            );
             items.push(Item::new(
                 format!("tab:{}", document.metadata.id),
                 ItemKind::Tab,
@@ -185,9 +207,11 @@ impl Workspace {
         }
         for (connection, tab, item) in self.engine_palette_items(cx) {
             items.push(item);
+            environments.push(environment(&connection));
             routes.push(Some(Route::EngineTab { connection, tab }));
         }
         for connection in &self.connections {
+            environments.push(Some(connection.environment));
             items.push(Item::new(
                 format!("connection:{}", connection.id),
                 ItemKind::Connection,
@@ -208,11 +232,13 @@ impl Workspace {
         }
         if let Some((connection, catalog)) = self.navigator.read(cx).catalog() {
             let connection_name = name(Some(&connection.to_owned()));
+            let catalog_environment = environment(connection);
             for row in &catalog.rows {
                 let Kind::Object(kind) = row.kind else {
                     continue;
                 };
                 if kind == PgObjectKind::Schema {
+                    environments.push(catalog_environment);
                     items.push(Item::new(
                         format!("schema:{connection}:{}", row.entry.name),
                         ItemKind::Schema,
@@ -235,6 +261,7 @@ impl Workspace {
                 };
                 let description = format!("{} · {schema} · {connection_name}", row.kind.label());
                 let keywords = format!("{schema}.{} {}", row.entry.name, row.kind.label());
+                environments.push(catalog_environment);
                 items.push(if row.kind.relation() {
                     Item::new(
                         format!("relation:{connection}:{schema}:{}", row.entry.name),
@@ -268,7 +295,12 @@ impl Workspace {
         }
         // Catalog entries come last and route through `open_target`.
         routes.resize(items.len(), None);
-        (items, routes)
+        environments.resize(items.len(), None);
+        PaletteIndex {
+            items,
+            routes,
+            environments,
+        }
     }
 
     pub(super) fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -284,15 +316,19 @@ impl Workspace {
             return;
         }
         self.previous_focus = window.focused(cx);
-        let (items, routes) = self.palette_items(cx);
-        let note = if self.navigator.read(cx).catalog().is_none() {
-            "Schemas and objects appear after Load objects in the Navigator. Saved queries and history are in their Tool tabs."
-        } else {
-            "Objects come from the Navigator's retained capture for the selected connection. Saved queries and history are in their Tool tabs."
-        };
+        let PaletteIndex {
+            items,
+            routes,
+            environments,
+        } = self.palette_items(cx);
+        // Only a partial index explains itself (A0-7); a loaded catalog
+        // needs no provenance note.
+        let note = (self.selected_connection.is_some()
+            && self.navigator.read(cx).catalog().is_none())
+        .then(|| "Tables appear after the objects load".to_owned());
         let frecency = &self.frecency;
         let palette =
-            cx.new(|cx| PaletteView::new(items.clone(), frecency, Some(note.into()), window, cx));
+            cx.new(|cx| PaletteView::new(items.clone(), environments, frecency, note, window, cx));
         self._palette_events = Some(cx.subscribe_in(
             &palette,
             window,

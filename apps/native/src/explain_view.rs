@@ -153,7 +153,7 @@ impl ExplainView {
                     Mode::Sql => &self.data.sql,
                 };
                 cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
-                self.status = "Copied exact retained text".into();
+                self.status = "Copied plan text".into();
             }
             Action::Close => cx.emit(Close),
         }
@@ -314,9 +314,8 @@ impl Render for ExplainView {
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .font_family(crate::style::MONO)
                             .text_size(px(crate::style::FONT_SMALL))
-                            .text_color(crate::style::faint())
+                            .text_color(crate::style::dim())
                             .child(summary),
                     )
                     .child(self.button(3, "Copy", Action::Copy, cx))
@@ -354,10 +353,10 @@ impl Render for ExplainView {
                                                 })
                                                 .h(px(crate::style::ROW))
                                                 .pl(px((node.depth * 14 + 8) as f32))
-                                                .pr_2()
+                                                .pr(gpui::px(crate::style::S4))
                                                 .flex()
                                                 .items_center()
-                                                .gap(px(4.))
+                                                .gap(px(crate::style::S2))
                                                 .overflow_hidden()
                                                 .whitespace_nowrap()
                                                 .font_family(crate::style::MONO)
@@ -406,8 +405,8 @@ impl Render for ExplainView {
                         .aria_label(details.clone())
                         .max_h(px(140.))
                         .overflow_y_scroll()
-                        .px_2()
-                        .py_1()
+                        .px(gpui::px(crate::style::S4))
+                        .py(gpui::px(crate::style::S2))
                         .border_t_1()
                         .border_color(crate::style::line())
                         .bg(crate::style::panel())
@@ -430,8 +429,8 @@ impl Render for ExplainView {
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
-                        .px_2()
-                        .py_1()
+                        .px(gpui::px(crate::style::S4))
+                        .py(gpui::px(crate::style::S2))
                         .font_family(crate::style::MONO)
                         .child(text),
                 )

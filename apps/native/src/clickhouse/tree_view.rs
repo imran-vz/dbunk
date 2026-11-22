@@ -327,11 +327,12 @@ impl ClickHouseTree {
             .aria_label(label)
             .tab_stop(enabled)
             .tab_index(0)
-            .size(px(20.))
+            .size(px(style::CONTROL - style::S2))
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(4.))
+            .rounded(px(style::R_SM))
+            .focus(|s| s.shadow(vec![crate::ui::ring()]))
             .when(enabled, |button| {
                 crate::ui::press(button.cursor_pointer().hover(|s| s.bg(style::hover())))
                     .on_click(cx.listener(move |this, _, _, cx| action(this, cx)))
@@ -353,6 +354,11 @@ impl ClickHouseTree {
             )
     }
 }
+
+/// Left edge of sidebar text: the `list_row` margin plus its padding.
+const TEXT_INSET: f32 = style::S2 + style::S3;
+/// Indent per tree level.
+const TREE_INDENT: f32 = style::S5;
 
 fn row_icon(row: &Row) -> (&'static str, gpui::Rgba) {
     use crate::style::TreeKind as T;
@@ -412,13 +418,13 @@ impl Render for ClickHouseTree {
             .on_key_down(cx.listener(Self::key_down))
             .child(
                 div()
-                    .h(px(26.))
+                    .h(px(style::ROW + style::S2))
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(px(2.))
-                    .pl(px(10.))
-                    .pr(px(6.))
+                    .gap(px(style::S1))
+                    .pl(px(TEXT_INSET))
+                    .pr(px(style::S2))
                     .child(
                         div()
                             .flex_1()
@@ -449,24 +455,32 @@ impl Render for ClickHouseTree {
             )
             .child(
                 div()
-                    .mx(px(8.))
-                    .mb(px(4.))
-                    .h(px(20.))
+                    .mx(px(style::S2))
+                    .mb(px(style::S2))
+                    .h(px(style::CONTROL))
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .px(px(6.))
-                    .rounded(px(4.))
+                    .gap(px(style::S3))
+                    .px(px(style::S3))
+                    .rounded(px(style::R_SM))
                     .border_1()
-                    .border_color(style::line_soft())
+                    .border_color(style::line())
+                    .bg(style::bg())
                     .child(
                         gpui::svg()
                             .path("icons/filter.svg")
                             .size(px(style::ICON))
+                            .flex_none()
                             .text_color(style::faint()),
                     )
-                    .child(div().flex_1().min_w_0().h(px(16.)).child(self.accessible.clone())),
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h(px(style::CONTROL - style::S3))
+                            .child(self.accessible.clone()),
+                    ),
             )
             .when_some(status, |root, status| {
                 root.child(
@@ -474,10 +488,10 @@ impl Render for ClickHouseTree {
                         .id("clickhouse-objects-status")
                         .role(Role::Status)
                         .aria_label(status.clone())
-                        .px(px(10.))
-                        .pb(px(2.))
+                        .px(px(TEXT_INSET))
+                        .pb(px(style::S2))
                         .text_size(px(style::FONT_SMALL))
-                        .text_color(style::faint())
+                        .text_color(style::dim())
                         .child(status),
                 )
             })
@@ -511,28 +525,21 @@ impl Render for ClickHouseTree {
                                             _ => None,
                                         };
                                         let object = matches!(row.kind, RowKind::Object { .. });
-                                        div()
-                                            .id(("clickhouse-row", position))
-                                            .group("clickhouse-row")
+                                        let item = crate::ui::list_row(
+                                            ("clickhouse-row", position),
+                                            selected,
+                                            focused,
+                                        )
                                             .role(Role::TreeItem)
                                             .aria_label(row_label(row))
                                             .aria_selected(selected)
-                                            .h(px(style::ROW))
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(5.))
-                                            .pl(px(8. + 12. * row.level as f32))
-                                            .pr(px(6.))
-                                            .overflow_hidden()
-                                            .whitespace_nowrap()
+                                            .gap(px(style::S2 + 1.))
+                                            .pl(px(style::S2 + TREE_INDENT * row.level as f32))
+                                            .pr(px(style::S2))
                                             .text_color(match row.kind {
                                                 RowKind::Note { warning: true } => style::warn(),
-                                                RowKind::Note { .. } => style::faint(),
+                                                RowKind::Note { .. } => style::dim(),
                                                 _ => style::text(),
-                                            })
-                                            .hover(|s| s.bg(style::hover()))
-                                            .when(selected, |row| {
-                                                row.bg(if focused { style::select() } else { style::raised() })
                                             })
                                             .child(match expanded {
                                                 Some(open) => gpui::svg()
@@ -554,22 +561,18 @@ impl Render for ClickHouseTree {
                                                     .flex_none()
                                                     .text_color(color),
                                             )
-                                            .child(
-                                                div()
-                                                    .flex_1()
-                                                    .min_w_0()
-                                                    .overflow_hidden()
-                                                    .child(SharedString::from(row.label.clone())),
-                                            )
+                                            .child(crate::ui::row_label(SharedString::from(
+                                                row.label.clone(),
+                                            )))
                                             .when_some(row.detail.clone(), |row, detail| {
                                                 row.child(
                                                     div()
                                                         .flex_none()
                                                         .max_w(px(110.))
                                                         .overflow_hidden()
-                                                        .font_family(style::MONO)
+                                                        .text_ellipsis()
                                                         .text_size(px(style::FONT_SMALL))
-                                                        .text_color(style::faint())
+                                                        .text_color(style::dim())
                                                         .child(detail),
                                                 )
                                             })
@@ -584,9 +587,9 @@ impl Render for ClickHouseTree {
                                                         .flex()
                                                         .items_center()
                                                         .justify_center()
-                                                        .rounded(px(3.))
+                                                        .rounded(px(style::R_SM))
                                                         .invisible()
-                                                        .group_hover("clickhouse-row", |s| s.visible())
+                                                        .group_hover(crate::ui::LIST_ROW_GROUP, |s| s.visible())
                                                         .hover(|s| s.bg(style::raised()))
                                                         .tooltip(crate::ui::tooltip("Structure (Shift-Enter)"))
                                                         .tooltip_show_delay(crate::ui::tooltip_delay())
@@ -615,7 +618,10 @@ impl Render for ClickHouseTree {
                                                     }
                                                     cx.notify();
                                                 },
-                                            ))
+                                            ));
+                                        // A full-width flex column, so the
+                                        // highlight spans the sidebar.
+                                        div().w_full().flex().flex_col().child(item)
                                     })
                                     .collect()
                             }),

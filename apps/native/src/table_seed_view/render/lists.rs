@@ -1,4 +1,9 @@
 use super::*;
+/// Fixed heights of the seed pick lists (connections and jobs; columns;
+/// modes and reviewed columns).
+const LIST_HEIGHT: f32 = 120.;
+const COLUMNS_HEIGHT: f32 = 160.;
+const CHOICES_HEIGHT: f32 = 150.;
 impl TableSeedView {
     pub(super) fn choices(&self, cx: &mut Context<Self>) -> AnyElement {
         let count = self
@@ -8,51 +13,51 @@ impl TableSeedView {
         uniform_list(
             "seed-connection-list",
             count,
-            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+            cx.processor(|this, range: std::ops::Range<usize>, window, cx| {
+                let focused = this.choice_focus.is_focused(window);
                 range
                     .filter_map(|index| {
                         let (id, name) = this.connections.as_ref()?.rows.get(index)?;
+                        // The AX label keeps the id to tell same-named
+                        // connections apart; the row shows the name only.
                         let text = format!("{name} ({id})");
+                        let name = name.clone();
                         let revision = this.connection_revision;
                         let weak = cx.weak_entity();
                         Some(
-                            div()
-                                .id(("seed-connection", index))
-                                .role(Role::ListBoxOption)
-                                .aria_label(text.clone())
-                                .aria_selected(this.choice == Some(index))
-                                .bg(if this.choice == Some(index) {
-                                    crate::style::hover()
-                                } else {
-                                    crate::style::bg()
-                                })
-                                .on_click(cx.listener(move |this, _, window, cx| {
+                            crate::ui::list_row(
+                                ("seed-connection", index),
+                                this.choice == Some(index),
+                                focused,
+                            )
+                            .role(Role::ListBoxOption)
+                            .aria_label(text)
+                            .aria_selected(this.choice == Some(index))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.choose(index, revision, window, cx)
+                            }))
+                            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                                weak.update(cx, |this, cx| {
                                     this.choose(index, revision, window, cx)
-                                }))
-                                .on_a11y_action(
-                                    gpui::accesskit::Action::Click,
-                                    move |_, window, cx| {
-                                        weak.update(cx, |this, cx| {
-                                            this.choose(index, revision, window, cx)
-                                        })
-                                        .ok();
-                                    },
-                                )
-                                .child(text),
+                                })
+                                .ok();
+                            })
+                            .child(crate::ui::row_label(name)),
                         )
                     })
                     .collect()
             }),
         )
         .track_scroll(&self.choices_scroll)
-        .h(px(120.))
+        .h(px(LIST_HEIGHT))
         .into_any_element()
     }
     pub(super) fn jobs_list(&self, cx: &mut Context<Self>) -> AnyElement {
         uniform_list(
             "seed-job-list",
             self.ids(cx).len(),
-            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+            cx.processor(|this, range: std::ops::Range<usize>, window, cx| {
+                let focused = this.job_focus.is_focused(window);
                 let ids = this.ids(cx);
                 range
                     .filter_map(|index| {
@@ -60,34 +65,29 @@ impl TableSeedView {
                         let text = this.job_label(id, cx);
                         let weak = cx.weak_entity();
                         Some(
-                            div()
-                                .id(("seed-job", index))
-                                .role(Role::ListBoxOption)
-                                .aria_label(text.clone())
-                                .aria_selected(this.selected == Some(id))
-                                .bg(if this.selected == Some(id) {
-                                    crate::style::hover()
-                                } else {
-                                    crate::style::bg()
-                                })
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    this.select_job(id, window, cx)
-                                }))
-                                .on_a11y_action(
-                                    gpui::accesskit::Action::Click,
-                                    move |_, window, cx| {
-                                        weak.update(cx, |this, cx| this.select_job(id, window, cx))
-                                            .ok();
-                                    },
-                                )
-                                .child(text),
+                            crate::ui::list_row(
+                                ("seed-job", index),
+                                this.selected == Some(id),
+                                focused,
+                            )
+                            .role(Role::ListBoxOption)
+                            .aria_label(text.clone())
+                            .aria_selected(this.selected == Some(id))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.select_job(id, window, cx)
+                            }))
+                            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                                weak.update(cx, |this, cx| this.select_job(id, window, cx))
+                                    .ok();
+                            })
+                            .child(crate::ui::row_label(text)),
                         )
                     })
                     .collect()
             }),
         )
         .track_scroll(&self.jobs_scroll)
-        .h(px(120.))
+        .h(px(LIST_HEIGHT))
         .into_any_element()
     }
     pub(super) fn columns(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -98,7 +98,8 @@ impl TableSeedView {
         uniform_list(
             "seed-column-list",
             count,
-            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+            cx.processor(|this, range: std::ops::Range<usize>, window, cx| {
+                let focused = this.column_focus.is_focused(window);
                 range
                     .filter_map(|index| {
                         let recipe = this.recipe.as_ref()?;
@@ -117,43 +118,39 @@ impl TableSeedView {
                         let id = recipe.setup.attempt;
                         let weak = cx.weak_entity();
                         Some(
-                            div()
-                                .id(("seed-column", index))
-                                .role(Role::ListBoxOption)
-                                .aria_label(text.clone())
-                                .aria_selected(this.column == Some(index))
-                                .bg(if this.column == Some(index) {
-                                    crate::style::hover()
-                                } else {
-                                    crate::style::bg()
-                                })
-                                .on_click(cx.listener(move |this, _, window, cx| {
+                            crate::ui::list_row(
+                                ("seed-column", index),
+                                this.column == Some(index),
+                                focused,
+                            )
+                            .role(Role::ListBoxOption)
+                            .aria_label(text.clone())
+                            .aria_selected(this.column == Some(index))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.select_column(id, index, window, cx)
+                            }))
+                            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                                weak.update(cx, |this, cx| {
                                     this.select_column(id, index, window, cx)
-                                }))
-                                .on_a11y_action(
-                                    gpui::accesskit::Action::Click,
-                                    move |_, window, cx| {
-                                        weak.update(cx, |this, cx| {
-                                            this.select_column(id, index, window, cx)
-                                        })
-                                        .ok();
-                                    },
-                                )
-                                .child(text),
+                                })
+                                .ok();
+                            })
+                            .child(crate::ui::row_label(text)),
                         )
                     })
                     .collect()
             }),
         )
         .track_scroll(&self.columns_scroll)
-        .h(px(160.))
+        .h(px(COLUMNS_HEIGHT))
         .into_any_element()
     }
     pub(super) fn modes(&self, cx: &mut Context<Self>) -> AnyElement {
         uniform_list(
             "seed-mode-list",
             recipe::MODE_COUNT,
-            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+            cx.processor(|this, range: std::ops::Range<usize>, window, cx| {
+                let focused = this.mode_focus.is_focused(window);
                 range
                     .filter_map(|index| {
                         let mode = recipe::mode_at(index)?;
@@ -162,36 +159,31 @@ impl TableSeedView {
                         let text = recipe::mode_label(mode);
                         let weak = cx.weak_entity();
                         Some(
-                            div()
-                                .id(("seed-mode", index))
-                                .role(Role::ListBoxOption)
-                                .aria_label(text)
-                                .aria_selected(this.mode_choice == Some(index))
-                                .bg(if this.mode_choice == Some(index) {
-                                    crate::style::hover()
-                                } else {
-                                    crate::style::bg()
-                                })
-                                .on_click(cx.listener(move |this, _, window, cx| {
+                            crate::ui::list_row(
+                                ("seed-mode", index),
+                                this.mode_choice == Some(index),
+                                focused,
+                            )
+                            .role(Role::ListBoxOption)
+                            .aria_label(text)
+                            .aria_selected(this.mode_choice == Some(index))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.select_mode(id, column, index, window, cx)
+                            }))
+                            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                                weak.update(cx, |this, cx| {
                                     this.select_mode(id, column, index, window, cx)
-                                }))
-                                .on_a11y_action(
-                                    gpui::accesskit::Action::Click,
-                                    move |_, window, cx| {
-                                        weak.update(cx, |this, cx| {
-                                            this.select_mode(id, column, index, window, cx)
-                                        })
-                                        .ok();
-                                    },
-                                )
-                                .child(text),
+                                })
+                                .ok();
+                            })
+                            .child(crate::ui::row_label(text)),
                         )
                     })
                     .collect()
             }),
         )
         .track_scroll(&self.modes_scroll)
-        .h(px(150.))
+        .h(px(CHOICES_HEIGHT))
         .into_any_element()
     }
     pub(super) fn review_columns(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -204,7 +196,8 @@ impl TableSeedView {
         uniform_list(
             "seed-review-column-list",
             count,
-            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+            cx.processor(|this, range: std::ops::Range<usize>, window, cx| {
+                let focused = this.review_focus.is_focused(window);
                 range
                     .filter_map(|index| {
                         let review = this
@@ -221,36 +214,31 @@ impl TableSeedView {
                         );
                         let weak = cx.weak_entity();
                         Some(
-                            div()
-                                .id(("seed-reviewed-column", index))
-                                .role(Role::ListBoxOption)
-                                .aria_label(text.clone())
-                                .aria_selected(this.review_column == Some(index))
-                                .bg(if this.review_column == Some(index) {
-                                    crate::style::hover()
-                                } else {
-                                    crate::style::bg()
-                                })
-                                .on_click(cx.listener(move |this, _, window, cx| {
+                            crate::ui::list_row(
+                                ("seed-reviewed-column", index),
+                                this.review_column == Some(index),
+                                focused,
+                            )
+                            .role(Role::ListBoxOption)
+                            .aria_label(text.clone())
+                            .aria_selected(this.review_column == Some(index))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.select_review_column(id, index, window, cx)
+                            }))
+                            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                                weak.update(cx, |this, cx| {
                                     this.select_review_column(id, index, window, cx)
-                                }))
-                                .on_a11y_action(
-                                    gpui::accesskit::Action::Click,
-                                    move |_, window, cx| {
-                                        weak.update(cx, |this, cx| {
-                                            this.select_review_column(id, index, window, cx)
-                                        })
-                                        .ok();
-                                    },
-                                )
-                                .child(text),
+                                })
+                                .ok();
+                            })
+                            .child(crate::ui::row_label(text)),
                         )
                     })
                     .collect()
             }),
         )
         .track_scroll(&self.review_scroll)
-        .h(px(150.))
+        .h(px(CHOICES_HEIGHT))
         .into_any_element()
     }
     fn select_review_column(

@@ -119,6 +119,10 @@ use settings::{DEFAULT_KEYMAP_PATH, KeymapFile};
 use std::process::ExitCode;
 use workbench::*;
 
+/// Height of the macOS traffic-light buttons, for centring them in the
+/// title row.
+const TRAFFIC_LIGHT_HEIGHT: f32 = 14.;
+
 // App-level shell commands. Their handlers find the workspace window so the
 // shell keeps owning its own state.
 actions!(native_app, [SwitchProject, FocusConnectionSearch]);
@@ -598,7 +602,11 @@ fn run() -> anyhow::Result<()> {
                             titlebar: Some(gpui::TitlebarOptions {
                                 title: Some("dbunk".into()),
                                 appears_transparent: true,
-                                traffic_light_position: Some(gpui::point(px(12.), px(11.))),
+                                // Centred on the title row (`style::BAR`).
+                                traffic_light_position: Some(gpui::point(
+                                    px(12.),
+                                    px((style::BAR - TRAFFIC_LIGHT_HEIGHT) / 2. + 1.),
+                                )),
                             }),
                             is_movable: true,
                             app_owns_titlebar_drag: true,

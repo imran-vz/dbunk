@@ -76,14 +76,13 @@ impl State {
             .aria_label("Connection diagnosis")
             .flex()
             .flex_col()
-            .gap(px(3.))
-            .p(px(8.))
-            .rounded(px(5.))
+            .gap(px(crate::style::S1))
+            .p(px(crate::style::S4))
+            .rounded(px(crate::style::R_MD))
             .border_1()
             .border_color(crate::style::line())
             .bg(crate::style::panel())
-            .font_family(crate::style::MONO)
-            .text_size(px(crate::style::FONT_SMALL))
+            .text_sm()
             .text_color(crate::style::dim());
         for (index, stage) in report.stages.iter().enumerate() {
             let label = stage_line(stage);

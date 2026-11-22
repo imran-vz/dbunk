@@ -10,7 +10,7 @@ use gpui::{
 use std::{cell::Cell, rc::Rc};
 
 /// Margin kept between a panel and the window edges.
-const MARGIN: f32 = 8.;
+const MARGIN: f32 = style::S4;
 /// Gap between a trigger and the panel it opens.
 const GAP: f32 = 2.;
 
@@ -66,9 +66,9 @@ pub fn layer(anchor: Bounds<Pixels>, placement: Placement, panel: impl IntoEleme
     .with_priority(1)
 }
 
-/// The popover surface: `panel` fill, 8 px radius, line border, large shadow
-/// and 4 px vertical padding. Occludes, so clicks inside never reach the
-/// document behind.
+/// The popover surface: `panel` fill, `R_LG` radius, line border, large
+/// shadow and `S2` vertical padding. Occludes, so clicks inside never reach
+/// the document behind. Every menu, select list and palette uses it.
 pub fn panel(
     id: impl Into<ElementId>,
     role: Role,
@@ -81,8 +81,8 @@ pub fn panel(
         .occlude()
         .flex()
         .flex_col()
-        .py(px(4.))
-        .rounded(px(8.))
+        .py(px(style::S2))
+        .rounded(px(style::R_LG))
         .border_1()
         .border_color(style::line())
         .bg(style::panel())
@@ -91,7 +91,8 @@ pub fn panel(
         .text_color(style::text())
 }
 
-/// Shared 22 px menu row; `leading` is the icon or check column.
+/// Shared `ROW` menu row, inset `S2` from the panel edges so the highlight
+/// is a rounded pill; `leading` is the icon or check column.
 fn row(
     id: impl Into<ElementId>,
     label: SharedString,
@@ -102,14 +103,14 @@ fn row(
         .id(id)
         .aria_label(label.clone())
         .flex_none()
-        .min_w(px(170.))
-        .h(px(22.))
-        .mx(px(4.))
-        .px(px(6.))
+        .min_w(px(180.))
+        .h(px(style::ROW))
+        .mx(px(style::S2))
+        .px(px(style::S3 + 1.))
         .flex()
         .items_center()
-        .gap(px(6.))
-        .rounded(px(4.))
+        .gap(px(style::S4))
+        .rounded(px(style::R_SM))
         .whitespace_nowrap()
         .text_color(if enabled {
             style::text()
@@ -139,8 +140,9 @@ fn leading(icon: Option<&'static str>, color: gpui::Rgba) -> Div {
         })
 }
 
-/// A menu row: optional icon, label and a trailing hint (an SQL badge or a
-/// shortcut). `highlighted` marks the keyboard row from `MenuNav`.
+/// A menu row: optional icon, label and a trailing hint (a shortcut or an
+/// SQL badge) in sans `dim`. `highlighted` marks the keyboard row from
+/// `MenuNav`. A menu gives every row an icon or none (`icons_consistent`).
 pub fn item(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -149,29 +151,69 @@ pub fn item(
     highlighted: bool,
     enabled: bool,
 ) -> Stateful<Div> {
-    let label = label.into();
+    styled_item(id, label.into(), icon, hint, highlighted, enabled, false)
+}
+
+/// A destructive menu row ("Delete…"): label and icon in `bad_text`. Put it
+/// in its own group at the bottom of the menu, after a `divider`.
+pub fn danger_item(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    icon: Option<&'static str>,
+    highlighted: bool,
+    enabled: bool,
+) -> Stateful<Div> {
+    styled_item(id, label.into(), icon, None, highlighted, enabled, true)
+}
+
+fn styled_item(
+    id: impl Into<ElementId>,
+    label: SharedString,
+    icon: Option<&'static str>,
+    hint: Option<SharedString>,
+    highlighted: bool,
+    enabled: bool,
+    danger: bool,
+) -> Stateful<Div> {
+    let color = match (enabled, danger) {
+        (false, _) => style::faint(),
+        (true, true) => style::bad_text(),
+        (true, false) => style::dim(),
+    };
     row(id, label.clone(), highlighted, enabled)
         .role(Role::MenuItem)
         .when(highlighted, |row| row.aria_active_descendant())
-        .child(leading(
-            icon,
-            if enabled {
-                style::dim()
-            } else {
-                style::faint()
-            },
-        ))
-        .child(div().flex_1().min_w_0().overflow_hidden().child(label))
+        .when(danger && enabled, |row| row.text_color(style::bad_text()))
+        .child(leading(icon, color))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .text_ellipsis()
+                .child(label),
+        )
         .when_some(hint, |row, hint| {
             row.child(
                 div()
                     .flex_none()
-                    .font_family(style::MONO)
+                    .pl(px(style::S5))
                     .text_size(px(style::FONT_SMALL))
-                    .text_color(style::faint())
+                    .text_color(style::dim())
                     .child(hint),
             )
         })
+}
+
+/// True when every row of a menu has an icon or none does. Menus that mix
+/// them get a ragged label column.
+#[cfg(test)]
+pub fn icons_consistent(icons: impl IntoIterator<Item = bool>) -> bool {
+    let mut icons = icons.into_iter();
+    match icons.next() {
+        None => true,
+        Some(first) => icons.all(|has| has == first),
+    }
 }
 
 /// A menu row with a check column; AX toggled follows `checked`.
@@ -194,25 +236,27 @@ pub fn check_item(
         .child(div().flex_1().min_w_0().overflow_hidden().child(label))
 }
 
+/// A rule between groups of a menu.
 pub fn divider() -> Div {
     div()
         .flex_none()
         .h(px(1.))
-        .my(px(4.))
+        .my(px(style::S2))
         .bg(style::line_soft())
 }
 
-/// A small group heading inside a menu.
+/// A small sentence-case group heading inside a menu, aligned with the row
+/// labels' leading edge.
 pub fn heading(label: impl Into<SharedString>) -> Div {
     div()
         .flex_none()
-        .h(px(20.))
-        .px(px(10.))
+        .h(px(style::ROW - 2.))
+        .px(px(style::S2 + style::S3 + 1.))
         .flex()
         .items_center()
         .text_size(px(style::FONT_SMALL))
         .font_weight(gpui::FontWeight::SEMIBOLD)
-        .text_color(style::faint())
+        .text_color(style::dim())
         .child(label.into())
 }
 
@@ -233,13 +277,13 @@ pub fn select_trigger(
         .aria_value(value.clone())
         .aria_expanded(open)
         .flex_none()
-        .h(px(style::TOOL))
-        .pl(px(6.))
-        .pr(px(4.))
+        .h(px(style::CONTROL))
+        .pl(px(style::S4))
+        .pr(px(style::S3))
         .flex()
         .items_center()
-        .gap(px(4.))
-        .rounded(px(4.))
+        .gap(px(style::S3))
+        .rounded(px(style::R_SM))
         .border_1()
         .border_color(if open { style::accent() } else { style::line() })
         .bg(style::bg())
@@ -255,14 +299,21 @@ pub fn select_trigger(
                 .cursor_pointer()
                 .hover(|s| s.border_color(style::faint()))
         })
-        .focus(|s| s.border_color(style::accent()))
-        .child(div().flex_1().min_w_0().overflow_hidden().child(value))
+        .focus(|s| s.shadow(vec![crate::ui::ring()]))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .text_ellipsis()
+                .child(value),
+        )
         .child(
             svg()
                 .path("icons/chevron_down.svg")
-                .size(px(9.))
+                .size(px(10.))
                 .flex_none()
-                .text_color(style::faint()),
+                .text_color(style::dim()),
         )
         .when(!enabled, |trigger| {
             trigger.a11y_synthetic_children(|builder| builder.parent_node().set_disabled())
@@ -351,6 +402,15 @@ mod tests {
         assert_eq!(nav.key("escape"), MenuKey::Dismiss);
         assert_eq!(nav.key("a"), MenuKey::Ignored);
         assert_eq!(nav.key("tab"), MenuKey::Ignored);
+    }
+
+    #[test]
+    fn menus_give_every_row_an_icon_or_none() {
+        assert!(icons_consistent([]));
+        assert!(icons_consistent([true, true, true]));
+        assert!(icons_consistent([false, false]));
+        assert!(!icons_consistent([true, false, true]));
+        assert!(!icons_consistent([false, true]));
     }
 
     #[test]

@@ -86,11 +86,11 @@ impl BrowseControls {
             .child(
                 div()
                     .flex_none()
-                    .px(px(8.))
-                    .py(px(4.))
+                    .px(px(crate::style::S4))
+                    .py(px(crate::style::S2))
                     .flex()
                     .items_center()
-                    .gap(px(4.))
+                    .gap(px(crate::style::S2))
                     .child(
                         ui::field()
                             .flex_1()
@@ -107,9 +107,9 @@ impl BrowseControls {
         let mut body = div()
             .flex()
             .flex_col()
-            .gap(px(4.))
-            .px(px(8.))
-            .pb(px(4.))
+            .gap(px(crate::style::S2))
+            .px(px(crate::style::S4))
+            .pb(px(crate::style::S2))
             .child(heading_row("Executed query").px(px(0.)));
         let Some(page) = self.page.clone() else {
             return body
@@ -139,7 +139,13 @@ impl BrowseControls {
             cx,
         );
         body = body
-            .child(div().flex().gap(px(4.)).child(copy_sql).child(copy_params))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(crate::style::S2))
+                    .child(copy_sql)
+                    .child(copy_params),
+            )
             .child(
                 div()
                     .id("browse-inspection")
@@ -150,8 +156,8 @@ impl BrowseControls {
                     ))
                     .max_h(px(240.))
                     .overflow_y_scroll()
-                    .p(px(6.))
-                    .rounded(px(5.))
+                    .p(px(crate::style::S3))
+                    .rounded(px(crate::style::R_MD))
                     .border_1()
                     .border_color(style::line_soft())
                     .bg(style::bg())
@@ -160,7 +166,7 @@ impl BrowseControls {
                     .child(format!("{}\n{}", page.inspection.sql, params)),
             )
             .when(page.omitted_rows > 0 || page.truncated_cells > 0, |node| {
-                node.child(div().text_color(style::faint()).child(format!(
+                node.child(div().text_color(style::warn()).child(format!(
                     "Partial result: {} omitted rows, {} truncated cells",
                     page.omitted_rows, page.truncated_cells
                 )))
@@ -253,7 +259,7 @@ fn heading_row(label: &'static str) -> gpui::Div {
     div()
         .flex_none()
         .h(px(26.))
-        .px(px(8.))
+        .px(px(crate::style::S4))
         .flex()
         .items_center()
         .child(popover::heading(label))
@@ -261,9 +267,9 @@ fn heading_row(label: &'static str) -> gpui::Div {
 
 fn empty(text: &'static str) -> gpui::Div {
     div()
-        .px(px(8.))
-        .py(px(4.))
-        .text_color(style::faint())
+        .px(px(crate::style::S4))
+        .py(px(crate::style::S2))
+        .text_color(style::dim())
         .child(text)
 }
 

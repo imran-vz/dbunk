@@ -30,6 +30,7 @@ impl AdminView {
     ) {
         let id = self.connection.as_deref();
         let record = id.and_then(|id| records.iter().find(|record| record.id == id));
+        self.tool_connection = crate::overview_view::chrome::ToolConnection::find(records, id);
         self.identity = record.map(|record| {
             use crate::overview_model::recent::single_line;
             let database = record

@@ -16,6 +16,7 @@ use gpui::{
 };
 use std::{cell::Cell, rc::Rc};
 mod actions;
+pub(crate) mod chrome;
 mod render;
 #[cfg(test)]
 mod tests;

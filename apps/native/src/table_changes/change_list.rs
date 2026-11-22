@@ -84,8 +84,8 @@ impl TableChanges {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(4.))
-                    .px(px(6.))
+                    .gap(px(crate::style::S2))
+                    .px(px(crate::style::S3))
                     .h(px(style::ROW + 2.))
                     .child(include)
                     .child(
@@ -127,8 +127,8 @@ impl TableChanges {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(4.))
-                    .px(px(6.))
+                    .gap(px(crate::style::S2))
+                    .px(px(crate::style::S3))
                     .child(ui::grow())
                     .child(discard)
                     .child(review),

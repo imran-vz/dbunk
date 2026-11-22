@@ -94,9 +94,10 @@ impl GridColumns {
             .iter()
             .enumerate()
             .map(|(index, column)| {
-                // The header shows the type beside the name, so fit both.
+                // Fit the name and sampled values only: the header's type
+                // hint truncates first and never widens a column.
                 crate::column_widths::fit(
-                    &format!("{} {}", column.name, column.cast_type),
+                    &column.name,
                     page.rows
                         .iter()
                         .take(crate::column_widths::SAMPLE_ROWS)
@@ -573,6 +574,33 @@ mod tests {
         assert!(columns.clear_overrides());
         assert_eq!(columns.width(1), 90.);
         assert!(!columns.clear_overrides());
+    }
+
+    #[test]
+    fn default_widths_ignore_the_type_hint_and_stop_at_the_cap() {
+        let mut sample = page(&["id", "status", "notes"]);
+        sample.columns[1].cast_type = "billing.invoice_status".into();
+        sample.rows = vec![vec![
+            Some("7".into()),
+            Some("paid".into()),
+            Some("x".repeat(200)),
+        ]];
+        let mut columns = GridColumns::default();
+        columns.table_columns(&sample);
+        assert_eq!(columns.width(0), crate::column_widths::MIN_WIDTH);
+        // "status" fits its name, not "status billing.invoice_status".
+        assert_eq!(
+            columns.width(1),
+            crate::column_widths::header_width("status", crate::column_widths::INITIAL_MAX)
+        );
+        assert_eq!(columns.width(2), crate::column_widths::INITIAL_MAX);
+        // A stored width still wins over the fitted default.
+        columns
+            .load(Some(TableGridPrefs(
+                json!({"version":1,"columnWidths":{"id":140}}),
+            )))
+            .unwrap();
+        assert_eq!(columns.width(0), 140.);
     }
 
     #[test]

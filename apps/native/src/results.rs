@@ -401,9 +401,10 @@ mod tests {
             result_set_index: 1,
             rows: vec![vec![Some("x".repeat(100))]],
         });
-        assert_eq!(model.sets[1].widths.width(0), 400.);
-        assert!(model.sets[0].widths.width(0) < 400.);
-        assert_eq!(model.sets[1].widths.total_width(), 400.);
+        // Long values cap at the default maximum width.
+        assert_eq!(model.sets[1].widths.width(0), 320.);
+        assert!(model.sets[0].widths.width(0) < 320.);
+        assert_eq!(model.sets[1].widths.total_width(), 320.);
         let retained = model.retained_bytes;
         assert!(model.sets[1].widths.toggle_pin(0));
         assert_eq!(model.sets[1].widths.pinned_count(), 1);

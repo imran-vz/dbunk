@@ -5,7 +5,7 @@ use dbunk_lib::backend::objects::{PgObjectDescription, PgObjectFacts, PgObjectKi
 use editor::Editor;
 use gpui::{
     ClipboardItem, Context, Entity, EventEmitter, FocusHandle, Focusable, KeyDownEvent, Role,
-    Window, div, prelude::*,
+    Window, div, prelude::*, px,
 };
 use std::{cell::Cell, rc::Rc};
 const LIMIT: usize = 128 * 1024 * 1024;
@@ -185,10 +185,15 @@ impl DetailsView {
     ) -> gpui::AnyElement {
         let weak = cx.entity().downgrade();
         let enabled = !(matches!(action, Action::Definition) && self.data.definition.is_none());
-        div()
-            .id(("object-details-action", index))
-            .role(Role::Button)
-            .aria_label(label)
+        let id = ("object-details-action", index);
+        // Metadata JSON | Definition SQL pick what the editor shows, so they
+        // are segments of one group; the rest are tool buttons.
+        let element = match action {
+            Action::Json => crate::ui::segment(id, label, !self.definition, enabled),
+            Action::Definition => crate::ui::segment(id, label, self.definition, enabled),
+            _ => crate::ui::tool_button(id, label, None, enabled, false),
+        };
+        element
             .a11y_synthetic_children(move |builder| {
                 if !enabled {
                     builder.parent_node().set_disabled();
@@ -197,17 +202,6 @@ impl DetailsView {
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
-            .focus(|style| style.bg(crate::style::hover()))
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(action, window, cx))
@@ -252,6 +246,7 @@ impl Render for DetailsView {
             .size_full()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
+            .text_size(px(crate::style::FONT))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 let m = &event.keystroke.modifiers;
                 if m.control || m.alt || m.platform {
@@ -283,13 +278,15 @@ impl Render for DetailsView {
                 cx.stop_propagation();
             }))
             .child(
-                div()
-                    .flex()
-                    .gap_1()
-                    .flex_shrink_0()
+                crate::ui::toolbar()
                     .child(self.button(0, "Catalog", Action::Back, cx))
-                    .child(self.button(1, "Metadata JSON", Action::Json, cx))
-                    .child(self.button(2, "Definition SQL", Action::Definition, cx))
+                    .child(crate::ui::separator())
+                    .child(
+                        crate::ui::segment_group()
+                            .child(self.button(1, "Metadata JSON", Action::Json, cx))
+                            .child(self.button(2, "Definition SQL", Action::Definition, cx)),
+                    )
+                    .child(crate::ui::grow())
                     .child(self.button(3, "Copy displayed text", Action::Copy, cx)),
             )
             .when(!self.data.notice.is_empty(), |root| {
@@ -298,6 +295,9 @@ impl Render for DetailsView {
                         .id("object-definition-scope")
                         .role(Role::Label)
                         .aria_label(self.data.notice.clone())
+                        .px(px(crate::style::INSET_CONTENT))
+                        .pt(px(crate::style::S4))
+                        .text_color(crate::style::dim())
                         .child(self.data.notice.clone()),
                 )
             })
@@ -306,6 +306,9 @@ impl Render for DetailsView {
                     .id("object-details-status")
                     .role(Role::Label)
                     .aria_label(self.status.clone())
+                    .px(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S2))
+                    .text_color(crate::style::dim())
                     .child(self.status.clone()),
             )
             .child(div().flex_1().min_h_0().child(self.accessible.clone()))

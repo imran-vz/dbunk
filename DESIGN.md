@@ -15,48 +15,66 @@ motion from there, never from literals.
 
 ## 1. Direction
 
-A compact instrument panel. Graphite surfaces, 11 px type, data in monospace,
-and **one loud signal**: the environment colour that frames the window.
-Everything else stays quiet so that signal is never missed.
+A compact instrument panel. Graphite surfaces, 12 pt sans for chrome, data in
+monospace, and **one loud signal**: the environment colour that frames the
+window. Everything else stays quiet so that signal is never missed.
 
-- Density first: chrome exists to be ignored; vertical pixels belong to data.
-- Hierarchy comes from colour and weight, not size. Three text steps (`text`,
-  `dim`, `faint`) and one weight bump (semibold) carry it.
-- One theme everywhere. A page that is not part of the workspace (setup, unlock,
-  connection editor, managed servers) uses the same surfaces, type, controls
-  and motion as the workspace.
-- Predictable: nothing changes shape on its own; motion only confirms what the
-  user just did.
+- Density first: chrome exists to be ignored; vertical space belongs to data.
+- One object per job. One list row, one exclusive-choice control, one primary
+  button, one environment tag, one table, one property list, one empty state.
+  A view never builds a parallel primitive; if one is missing it is added to
+  `ui.rs`.
+- Hierarchy comes from size, weight and three text steps (`text`, `dim`,
+  `faint`), with `faint` reserved for disabled text, placeholders and
+  decorative glyphs.
+- One theme everywhere. A page that is not part of the workspace (setup,
+  unlock, connection editor, managed servers) uses the same surfaces, type,
+  controls and motion as the workspace.
+- Predictable: nothing changes shape on its own; widths do not jump when a
+  row is hovered or a tab gains focus; motion only confirms what the user
+  just did.
 
 ## 2. Tokens
+
+All tokens live in [`style.rs`](apps/native/src/style.rs). Views never use
+raw `px(n)` for spacing, height or radius; a layout-specific width (a 420 pt
+column) may stay as a named constant in its file.
 
 ### Colour
 
 | Token | Hex | Use |
 | --- | --- | --- |
-| `bg` | `#0c0d0f` | Window, documents, input wells |
-| `panel` | `#111316` | Sidebar, tab bar, status bar, cards, popovers |
-| `raised` | `#171a1e` | Secondary buttons, pressed toggles, tooltips |
-| `hover` | `#1d2126` | Hover and keyboard focus fill |
+| `bg` | `#0c0d0f` | Window, documents, input wells, text on solid fills (`on_accent`) |
+| `panel` | `#111316` | Sidebar, tab bar, status bar, cards, popovers, dialogs |
+| `raised` | `#171a1e` | Secondary buttons, selected segment, unfocused selection, tooltips |
+| `hover` | `#1d2126` | Hover fill |
 | `pressed` | `#0f1114` | Control held down |
-| `select` | `#22324a` | Selected row, tab, list item |
+| `select` | `#22324a` | Selected row in the focused pane, selected tab |
 | `line` | `#24282e` | Borders and dividers |
-| `line_soft` | `#1b1e22` | Inner dividers, grid lines |
+| `line_soft` | `#1b1e22` | Inner dividers, table and grid rules |
 | `text` | `#cdd2d9` | Primary text |
-| `dim` | `#8a929c` | Secondary text, labels, idle icons |
-| `faint` | `#5b626c` | Hints, metadata, disabled |
-| `accent` | `#6aa6ff` | Focus ring, selected cell, primary action |
+| `dim` | `#949ca6` | Every informative secondary text: labels, metadata, counts, column types, footers, hints |
+| `faint` | `#6e7682` | Disabled text, placeholders, decorative glyphs only |
+| `accent` | `#6aa6ff` | Solid primary button, focus ring, selected cell, checked boxes |
 | `ok` / `warn` / `bad` | `#3fb950` / `#d29922` / `#f85149` | Status |
 
-Derived fills (alpha over the surface): `primary_fill`/`primary_line`
-(accent at 15 % / 45 %), `bad_fill`/`bad_line`/`bad_text` for errors and
-destructive actions, `ok_fill` for success notes, `warn_fill` (warn at 11 %)
-for confirmations and policy notes that need a second look.
+Contrast (enforced by `style.rs` tests): `text` ≥ 7:1 and `dim` ≥ 4.5:1 on
+`bg`, `panel`, `raised` and `select`; `faint` about 4:1 on `panel`, so
+nothing a reader needs is `faint`.
 
-Data colours in grids: numbers `#79c0ff`, booleans `#d2a8ff`, `NULL` faint
+Derived: `focus_ring` (accent at 60 %), `accent_hover` (`#82b4ff`, solid
+primary on hover), `on_accent` (`bg`, text on solid accent or `bad`),
+`primary_fill`/`primary_line`/`primary_text` (accent at 15 % / 45 %, the
+toolbar primary tint and key chips), `bad_fill`/`bad_line`/`bad_text` for
+errors and destructive menu rows, `ok_fill` for success notes, `warn_fill`
+(warn at 11 %) for confirmations and policy notes, `row_hover` for grid and
+table rows.
+
+Data colours in grids: numbers `#b7c6da` and booleans `#c9bddd` (low
+saturation, close to `text`, so identifiers lead the eye), `NULL` faint
 italic, empty strings a faint `''`.
 
-Staged grid edits (Plan 032):
+Staged grid edits:
 
 | Token | Value | Use |
 | --- | --- | --- |
@@ -64,7 +82,7 @@ Staged grid edits (Plan 032):
 | `deleted_fill` | `bad` at 10 % (`#f851491a`) | Rows staged for deletion, with faint strikethrough text |
 
 A change excluded from review shows the same tint at half alpha. The change
-named by the last apply failure gets a 1 px `bad_line` row outline.
+named by the last apply failure gets a 1 pt `bad_line` row outline.
 
 Object kinds in sidebar trees (`style::kind_icon`); containers (databases,
 schemas, groups) stay `dim`:
@@ -77,142 +95,305 @@ schemas, groups) stay `dim`:
 | `kind_type` | `#79c0ff` | Types, domains, dictionaries, foreign tables, triggers |
 | `kind_routine` | `#56d4dd` | Functions, procedures, aggregates |
 
-Engine badges (14 px, 8 px mono label): PG `#6c9bd2`, MY `#e6a23c`,
-CH `#f4d03f`, RD `#e5534b`, SQ `#8bb8a8`.
+Engines show their logo (`style::engine_logo`, 14 pt) or a colour badge
+(`style::engine_badge`): PG `#6c9bd2`, MY `#e6a23c`, CH `#f4d03f`, RD
+`#e5534b`, SQ `#8bb8a8`. `ui::engine_mark` picks the right one.
 
 ### Environment signal
 
-| Environment | Colour |
-| --- | --- |
-| Development | `#3fb950` |
-| Test / local | `#8a929c` |
-| Staging | `#d29922` |
-| Production | `#f85149` |
+| Environment | Colour | Tag (`env_short`) | Name (`env_name`) |
+| --- | --- | --- | --- |
+| Development | `#3fb950` | DEV | Development |
+| Test / local | `#8a929c` | TEST | Test |
+| Staging | `#d29922` | STAGE | Staging |
+| Production | `#f85149` | PROD | Production |
 
-Shown as **frame + tint**: a 2 px window border and a ~4 % wash in the current
-connection's colour, plus the 2 px bar on the active tab and the logo mark.
-Production adds a 22 px strip under the tab bar: "Production · writes require
-review and confirmation". With no connection the signal is neutral `faint`.
+The product's signature, kept on purpose:
+
+- A 2 pt window frame and the 2 pt bar on the active tab in the current
+  connection's colour.
+- A ~4 % wash (`style::env_wash`) on **chrome only**: sidebar, tab bar and
+  status bar. Documents, grids, editors and dialogs stay neutral `bg` and
+  `panel`, so data colours never shift with the environment.
+- `ui::env_tag(env)`: filled in the environment colour, `R_SM`, 10 pt
+  semibold uppercase short name in dark text. Used in the status bar, dialog
+  headers, sidebar group headers (as `env_dot` + full name) and palette rows.
+  Everywhere else the full name is written out ("Production", "Staging").
+- Production adds a strip under the tab bar: the sentence in `text`, its
+  icon in `bad`.
+
+With no connection the signal is neutral `faint`. `style::env_label` keeps
+the old short names (Dev, Stage) only for existing element ids and AX names.
 
 ### Type
 
-- UI: system font, 11 px (`FONT`); small text 10 px (`FONT_SMALL`). Page titles
-  15 px semibold (`FONT_TITLE`); section headings 10 px uppercase semibold
-  `faint`.
-- Data: `.ZedMono` (`MONO`) for grid cells, SQL, hosts, latencies, counts.
-
-### Sizes
-
-| Token | px | Use |
+| Token | pt | Role |
 | --- | --- | --- |
-| `ROW` | 20 | List, tree and grid rows |
-| `TOOL` | 20 | Toolbar buttons, icon buttons |
-| `TOOLBAR` | 28 | Document toolbars |
-| `FOOTER` | 24 | Document footers, segmented rows |
-| `STATUS` | 22 | Status bar |
-| `BAR` | 34 | Title row and tab bar |
+| `FONT` | 12 | Body, labels, buttons, tree rows, menus (`text_sm`) |
+| `FONT_SMALL` | 11 | Metadata, captions, footers, table headers |
+| `FONT_DATA` | 12 mono | Grid cells, SQL, results |
+| `FONT_HEADING` | 13 semibold | Section headings in pages and tool documents, dialog titles, empty-state titles |
+| `FONT_TITLE` | 17 semibold | Page titles |
+
+`REM` is set so `text_sm()` is 12 pt; `text_xs()` is about 10.3 pt, so set
+small text with `text_size(px(FONT_SMALL))`. Icons are 12 pt (`ICON`), empty
+state icons 24 pt (`ICON_LARGE`).
+
+Section headings are **sentence case**, never uppercase, no letter spacing.
+Full-window pages may put a soft rule under a section heading (`ui::section`);
+tool documents use `ui::heading` without a rule. A heading's count is `dim`.
+
+**Monospace rule.** `MONO` (`.ZedMono`) only for cell values, SQL,
+identifiers shown as data (table and column names inside data rows), hosts
+and ports, and durations or counts inside data rows. Never for button
+labels, chips and badges, status sentences, toolbars, footers, the status
+bar, the engine name or menu text. Wrap data inside sans chrome with
+`ui::mono(text)`.
+
+### Spacing
+
+| Token | pt |
+| --- | --- |
+| `S1` | 2 |
+| `S2` | 4 |
+| `S3` | 6 |
+| `S4` | 8 |
+| `S5` | 12 |
+| `S6` | 16 |
+| `S7` | 24 |
+
+Toolbars and footers are inset `S4` (`INSET_BAR`); tool and page content is
+inset `S6` (`INSET_CONTENT`). A tool form is one column of at most 720 pt
+(`TOOL_COLUMN`); paired source/target fields are two equal columns.
+
+### Heights
+
+| Token | pt | Use |
+| --- | --- | --- |
+| `ROW` | 24 | Sidebar connections, tree, menus, palette, lists, console |
+| `GRID_ROW` | 22 | Data grids, result grids, structure and data tables, property rows |
+| `CONTROL` | 24 | Every toolbar button, chip, select, segment group and toolbar field (`TOOL` is its old name) |
+| `FIELD` | 28 | Form fields and page and dialog buttons |
+| `TOOLBAR` | 34 | Document toolbars and tool headers |
+| `FOOTER` | 26 | Document footers |
+| `STATUS` | 26 | Status bar |
+| `BAR` | 38 | Title row and tab bar |
 | `SIDEBAR` | 248 | Default sidebar width |
-| `ICON` | 11 | Icons |
 
-Form controls are 24 px (buttons, chips) and 26 px (text fields).
+### Radii
 
-Radii: 3 px badges, 4 px tool/icon buttons, 5 px buttons, fields and banners,
-6 px cards, 8 px popovers (palette, menus).
+| Token | pt | Use |
+| --- | --- | --- |
+| `R_SM` | 4 | Rows, tool buttons, chips, badges, checkboxes, tags |
+| `R_MD` | 6 | Fields, page buttons, cards, banners, segment groups on pages |
+| `R_LG` | 10 | Popovers, menus, palette, dialogs |
 
 ## 3. Layout
 
 ```
-┌ sidebar (248) ─────┬ tab bar (34): tabs · + · Tools ─────────────┐
-│ ●●● ▢        dbunk │ [production strip]                          │
-│ project ▾  A L D S P│                                             │
-│ 🔍 Search   ⌘K   + │ document: toolbar (28)                       │
-│ DEV                │           content                           │
-│  PG billing-dev  ● │           footer (24)                       │
-│ ───────────────── │                                             │
-│ objects tree       │ [error strip]                               │
-├────────────────────┴ status bar (22) ───────────────────────────┤
+┌ sidebar (248) ──────┬ tab bar (38): tabs · ⌄ · + · Tools ─────────┐
+│ ●●● ▢ Billing ▾     │ [production strip]                           │
+│ 🔍 Search   + ⏷     │                                              │
+│ ● Development       │ document: toolbar (34)                        │
+│  PG billing-dev  db │           content                            │
+│ Objects             │           footer (26)                         │
+│  tree               │ [error strip]                                 │
+├─────────────────────┴ status bar (26) ───────────────────────────────┤
 ```
 
-- **Sidebar**: traffic lights, hide-sidebar button and logo on one row;
-  project switcher and environment chips; connection search; connections
-  grouped by environment; below, the object tree for the selected connection.
-- **Tab bar**: one row of tabs for open documents. Each tab has a kind icon,
-  name and its own close button (shown on hover, always on the active tab).
-  New query (`+`) and the Tools menu sit at the right. When the sidebar is
-  hidden, the tab bar's left inset holds the show-sidebar button clear of the
-  traffic lights.
-- **Status bar**: environment tag, connection state, database, last query
-  latency, host. Collapses to a 4 px environment-coloured line (`⌘J`).
-- **Pages** (forms, setup, managed servers) cover the window. A 34 px titlebar
-  strip keeps the window draggable; dismissable pages put a close button at
-  its right. Content is one centred column (380 px unlock, 420 px small
-  dialogs, 520 px credential setup, 640–680 px editors) with a header, sections
-  and a footer of actions. Overlays block pointer input to the workspace below.
+- **Sidebar**: traffic lights, sidebar toggle and the project switcher as a
+  borderless title ("Billing ▾", `FONT` semibold, ellipsized) on row 1;
+  search, new connection (`+`) and the environment filter (a popover of
+  check items) on row 2; connections grouped by environment (`env_dot` + full
+  name), sized to their content up to ~40 % of the sidebar; the object tree
+  follows directly.
+- **Tab bar**: one row of tabs, 88–180 pt wide, label ellipsized, each with
+  its tool's own icon and a reserved close slot (glyph on hover and on the
+  active tab) so widths never jump. The active tab scrolls into view on
+  activation and resize; when tabs overflow, a `⌄` button lists them all.
+  New query (`+`) and the Tools menu sit at the right.
+- **Status bar**: `env_tag`, connection name, host in `dim`, console toggle.
+  Collapses to a 4 pt environment-coloured line (`⌘J`).
+- **Pages** (forms, setup, managed servers) cover the window under a 38 pt
+  draggable titlebar strip. Content is one centred column (380 pt unlock,
+  420 pt small dialogs, 560 pt credential setup, 640–680 pt editors) with a
+  header (title, subtitle, and the close button right-aligned to the column
+  on dismissable pages), sections and a footer of actions. Short pages
+  centre vertically a little above the optical middle. Long editors
+  (connection, bastions) start at the top and keep their message and
+  actions in a sticky 52 pt band aligned to the column. Overlays block
+  pointer input to the workspace below.
 
-## 4. Components (`ui.rs`)
+## 4. Components
 
-- **`tool_button`**: 20 px toolbar button, transparent until hovered;
-  `primary` gets the raised fill. `segmented`/`segment` for in-document tab
-  rows.
-- **`button(variant)`**: 24 px page button.
-  - Primary: accent fill and border; the one action a page exists for (Save,
-    Unlock, Continue). At most one per page.
-  - Secondary: raised fill, line border, 1 px drop shadow.
-  - Ghost: no fill until hovered; Cancel, Back, quiet links.
-  - Danger: red wash; destructive confirmation only.
-  - Disabled: 55 % opacity, not focusable, AX disabled.
-- **Chips** (`forms/render.rs::chip`): radio choices (engine, environment,
-  TLS mode). Selected chips take the accent fill; environment chips carry their
-  colour dot.
-- **Checkbox rows**: 12 px box plus subject; AX toggled. Use for on/off
-  settings instead of "X: on/off" buttons.
-- **`choice_card`**: icon tile, title, optional badge ("Recommended"), body.
-  For decisions that need explanation (credential storage).
-- **Fields**: `labelled(label, input_frame(error), note)`. Label above in
-  10 px `dim`; 26 px bordered well on `bg`; hint in `faint` or error in
-  `bad_text` underneath. Errors also turn the border `bad_line`.
-- **`section(title)`**: uppercase 10 px heading over a soft divider.
-- **`error_banner`**: warning icon, red wash, AX alert.
+Shared components live in [`ui.rs`](apps/native/src/ui.rs),
+[`ui/tool.rs`](apps/native/src/ui/tool.rs) (re-exported as `ui::*`),
+[`ui/popover.rs`](apps/native/src/ui/popover.rs) and
+[`ui/dialog.rs`](apps/native/src/ui/dialog.rs). They only style; callers own
+focus handles, tab order, listeners and AX actions. A component that sets
+`.hover(...)` (list rows, table rows, buttons) cannot take a second hover
+style.
+
+### States, the same everywhere
+
+- **Hover**: `hover` fill (rows, flat buttons) or a brighter face (solid
+  buttons).
+- **Pressed**: `ui::press`, the face darkens with a 1 pt inset shadow; solid
+  buttons only sink.
+- **Focus**: `ui::ring()`, a 2 pt `accent` ring at 60 % drawn *outside* the
+  control. Never a border-colour change, so a focused secondary never looks
+  primary. `ui::focus_ring(control)` adds it.
+- **Selected row**: `select` in the focused pane, `raised` in an unfocused
+  pane (`ui::list_row_fill`).
+- **Disabled**: `faint` text, 50 % opacity on filled controls, not
+  focusable, AX disabled. A bar does not lead with disabled actions; an
+  action that belongs to a later step appears at that step or in the `⋯`
+  overflow.
+
+### Rows and lists
+
+- **`list_row(id, selected, focused)`**: the one list row for connections,
+  the navigator tree, palette results, catalog sub-nav, menus-like lists and
+  history. `ROW` high, inset `S2` from both sides of its list, `S3` padding,
+  `R_SM`. The highlight always spans the full row: the row stretches in a
+  full-width flex-column parent. `row_label` (flex, ellipsized), `row_meta`
+  (right-aligned `dim` metadata at a fixed inset) and `row_actions(width,
+  shown)` (a fixed-width trailing slot that appears on hover or selection
+  without shifting other content).
+- **`data_table(id, label, columns, rows)`**: sessions, locks, history and
+  compare/transfer jobs. `data_table_header` (`GRID_ROW`, `FONT_SMALL`
+  semibold `dim`, sentence case), `data_table_row` / `data_table_text_row`
+  (`GRID_ROW`, `line_soft` separators, list-row hover and selection) and
+  `data_cell`. Columns are `TableColumn::fixed(label, width)` or
+  `TableColumn::flex(label)` (the ellipsized last column), optionally
+  `.end()` (right-aligned) and `.mono()`; `fit_track` sizes a fixed column
+  from its header and a bounded sample of values.
+- **`property_list(pairs)`** / **`property_row(label, value)`**: a 120 pt
+  `dim` label column and a `text` value, `GRID_ROW` rows. Admin details, the
+  structure Details panel, job details. Raw OIDs and timestamps go behind a
+  "Diagnostics" disclosure.
+
+### Documents and tools
+
+- **`toolbar` / `toolbar_strip`**: the `TOOLBAR` document bar, inset `S4`.
+  `toolbar_strip` never wraps; secondary actions live in its `⋯` menu.
+- **`tool_header(title, context, actions)`**: a tool document's header.
+  Title `FONT` semibold; context from `tool_context(engine, name, env)`
+  (engine logo, connection display name, `env_tag`; never an id); at most
+  four actions right-aligned, the rest in a `⋯` menu.
+- **`heading(title)`**: `FONT_HEADING` semibold sentence-case group heading
+  in a tool document. **`section_label`** is the inline `FONT` semibold
+  heading in a toolbar or card (`Columns 8`).
+- **`empty_state(icon, title, body, action)`**: centred 24 pt `faint` icon,
+  `FONT_HEADING` title, one `dim` line and one button. First run: "No
+  connections yet" + primary "New connection". Tools with nothing loaded
+  name their next step ("Load map").
+- **`info_hint(id, text)`**: an info icon whose tooltip and AX label carry a
+  caveat, instead of a paragraph above the work.
+- **`status_line`**: the `FOOTER` document footer, sans `FONT_SMALL` `dim`.
+  Counts left ("100 of ~2,400 rows"), timing right ("18 ms"); nothing is
+  said twice between toolbar, footer and status bar.
+- **`error_strip` / `error_banner`**: warning icon, red wash, `R_MD`, AX
+  alert, shakes once per error.
 - **Messages** have a tone: error (banner, shakes), success (`ok`, check
   icon), info (`dim`, info icon). Live region polite.
-- **Tooltip**: raised panel, line border, 11 px text; shows after 450 ms.
-  Every icon-only button has one, including its shortcut where there is one.
-- **`toolbar_strip`**: the table toolbar. Fixed 28 px, never wraps, clips;
-  secondary actions live in its `⋯` overflow menu. `toolbar` (wrapping) stays
-  for other documents.
-- **`icon_button`**: 20 × 20 icon-only button. Its label is the AX name and
-  the hover tooltip.
-- **`tool_button_accent`**: the single primary toolbar action (`Review 3 ⌘S`):
-  primary fill, line and text, optional trailing shortcut.
-- **`count_badge`**: 14 px mono pill in `primary_fill` beside Filter, Sort or
-  Columns.
-- **`segment_group`**: 20 px bordered row of `segment`s (Data | Structure).
-- **`tri_check_box(CheckState)`**: 12 px box, empty, dash (mixed) or check.
-  Row checkboxes and the select-all header; the owning control reports AX
-  toggled (`CheckState::toggled`).
-- **Popovers** (`ui::popover`; palette, menus, selects): `panel`, 8 px
-  radius, line border, large shadow, 4 px vertical padding. They paint in a
+
+### Buttons and controls
+
+- **`tool_button`**: `CONTROL` flat toolbar button, label `dim`, `text` on
+  hover. Repeated actions prefer **`icon_button`** (`CONTROL` square; its
+  label is the AX name and tooltip). `tool_button(primary = true)` is legacy;
+  a toolbar's primary action is **`tool_button_accent`** (accent tint,
+  optional shortcut), at most one per bar.
+- **`button(variant)`**: `FIELD` page and dialog button, `R_MD`, `S5`
+  padding.
+  - Primary: solid `accent`, dark `on_accent` text, no border. At most one
+    per view (Save, Unlock, Continue, Apply 2 changes).
+  - Secondary: `raised`, `line` border, 1 pt drop shadow.
+  - Ghost: no fill until hovered; Cancel, Back, quiet links.
+  - Danger: solid `bad`, dark text; the confirming action of a destructive
+    flow only.
+- **Exclusive choice** is always a **`segment_group`** of **`segment`**s
+  (`CONTROL`, bordered container, selected segment `raised` + `text`). On
+  full-window pages the same group is `FIELD` high (`forms::render::chip`
+  inside `chip_row`); environment segments carry their colour dot. No
+  free-floating rows of pressed buttons. Many options, or a value that
+  needs its current state shown in a toolbar, use a select.
+- **On/off options** are `check_box` rows (12 pt box, checked = solid
+  `accent` with a dark check), never "Name: true/false" buttons and never
+  pressed chips. `tri_check_box(CheckState)` adds the mixed state for
+  select-all headers.
+- **`choice_card`**: icon tile, title, optional quiet `badge`
+  ("Recommended"), body. For decisions that need explanation (credential
+  storage).
+- **Fields**: `labelled(label, input_well(error, focused), note)`. Label
+  above in `FONT` `dim`; a visible `FIELD` well on `bg` with an `S4` inset
+  and a 1 pt `accent` edge while focused; hint in `dim` or error in
+  `bad_text` underneath, and the border turns `bad_line`. A file chooser is
+  an `icon_button` inside the well. `input_frame(error)` is the
+  focus-unaware form; `field()` is the `CONTROL` well for toolbars.
+- **Select** (`popover::select_trigger`): `CONTROL` field-styled button
+  showing the current value and a chevron; `accent` border while open; AX
+  button with expanded state and value. Its list is a popover menu.
+- **`badge`**: sans `FONT_SMALL` `dim` tag with a line border (`Table`,
+  `read-only`). **`key_chip`**: the one key style (PK, FK, unique,
+  identity), `primary_fill` with `accent` semibold. **`count_badge`**: a
+  pill beside Filter, Sort or Columns.
+- **Tooltip**: raised panel, `R_MD`, line border, `FONT`; shows after
+  450 ms. Every icon-only button has one, including its shortcut.
+
+### Popovers, menus and dialogs
+
+- **Popovers** (`ui::popover`; palette, menus, selects): `panel`, `R_LG`,
+  line border, large shadow, `S2` vertical padding. They paint in a
   deferred layer anchored under their trigger (`probe` records its bounds),
-  stay 8 px inside the window and close on a click outside, which still goes
-  through. Menu rows are 22 px, at least 170 px wide, with an optional icon
-  and a trailing faint mono hint (shortcut or SQL badge); `check_item` rows
-  report AX toggled. Keyboard: up/down wrap, home/end, enter or space
-  activate, escape closes (`MenuNav`).
-- **Select** (`popover::select_trigger`): 20 px field-styled button showing
-  the value and a chevron; accent border while open; AX button with expanded
-  state. Its list is a popover menu.
-- **Dialogs** (`ui::dialog`): in-document modals over an occluding 45 % black
-  backdrop. Panel as popovers, AX modal dialog, at most 80 % of the document
-  height; 34 px header (title, optional environment chip), scrolling body,
-  40 px footer with actions right-aligned. Write reviews open with
-  `env_notice`: a 2 px bar in the environment colour beside the policy text,
-  with the `warn_fill` wash when typed confirmation is required.
+  stay 8 pt inside the window and close on a click outside, which still
+  goes through.
+- **Menu rows** (`item`, `check_item`, `danger_item`): `ROW` 24 pt, inset
+  `S2` so the highlight is an `R_SM` pill, at least 180 pt wide. A menu has
+  an icon on every row or on none (`icons_consistent`). Trailing hints
+  (shortcuts) are sans `dim`. Groups are separated by `divider`, optionally
+  titled by a sentence-case `heading`. Destructive rows ("Delete…") use
+  `danger_item` (`bad_text`) in their own group at the bottom. Keyboard:
+  up/down wrap, home/end, enter or space activate, escape closes
+  (`MenuNav`).
+- **Dialogs** (`ui::dialog`): in-document modals over an occluding 45 %
+  black backdrop that dims the whole window except the environment frame.
+  Panel as popovers, AX modal dialog, at most 80 % of the window height;
+  40 pt header (`FONT_HEADING` title, `env_tag` trailing), scrolling body
+  inset `S6`, 48 pt footer with `FIELD` buttons right-aligned. Cancel keeps
+  the default focus and looks secondary. Write reviews open with
+  `env_notice`: a 2 pt bar in the environment colour beside the policy
+  text, with the `warn_fill` wash when typed confirmation is required.
 - **Typed confirm** (`ui::confirm::TypedConfirm`): a labelled field, "Type
   confirm to apply". Apply unlocks only on the exact lower-case word
   (surrounding whitespace ignored); Enter submits once it matches. Created
   empty for every review and never reused.
-- **`badge`, `crumbs`, `status_line`, `shortcut`, `separator`** as in the
-  mock.
+
+## 4a. Copy
+
+- **Sentence case** everywhere: headings, buttons, menu items, labels
+  ("Safe mode", not "Safe Mode").
+- **Buttons are verb + object**, short: "Cancel query", "End session",
+  "Export results", "Apply 2 changes".
+- **No internals in resting UI.** No UUIDs, OIDs, byte limits, retention
+  rules or internal invariants. Put them in a Details panel, a
+  "Diagnostics" disclosure or an `info_hint`.
+- **Timestamps** read as local `19:01:58` (today) or `Nov 21, 19:01`, with
+  the full value in a tooltip. Capture times read "Updated 19:01".
+- **Loaded, not retained.** "Export results"; "Export loaded rows" only
+  when the result is partial. Show returned versus loaded counts only when
+  they differ.
+- **Booleans are checkboxes**, not "Name: true".
+- **Pluralise**: "1 record", "2 records".
+- **Names over ids**: a connection is its display name with its engine and
+  environment, never its id.
+- **One idea per sentence**, in `dim` under the control it qualifies, not in
+  a paragraph above the work.
+- **Accessible labels do not change** when visible copy does: scripts
+  (`tools/ui-council/scenarios.json`, `tools/measure`) address controls by
+  their AX names. Where the visible text must differ, set the AX label
+  separately.
 
 ## 5. Motion
 
@@ -222,7 +403,7 @@ of it when macOS "Reduce motion" is on.
 
 | What | How | Token |
 | --- | --- | --- |
-| Press | Face darkens to `pressed` with a 1 px inset shadow while held; layout never moves | `ui::press` |
+| Press | Face darkens to `pressed` with a 1 pt inset shadow while held (solid buttons only sink); layout never moves | `ui::press` |
 | Page / document / popover entrance | Opacity 0→1 and a 4 px rise, ease-out, once per page id | `APPEAR_MS` 160, `APPEAR_RISE` 4 |
 | Error | Three damped horizontal swings of at most 3 px, replayed for each new or repeated error | `SHAKE_MS` 320, `SHAKE_PX` 3 |
 | Tooltip | Opacity only | `TOOLTIP_MS` 120 |
@@ -260,8 +441,8 @@ which leads to a red confirmation before credential storage is reset.
 
 ## 8. Keyboard and accessibility
 
-- Every control is reachable by Tab, shows a focus state (accent border or
-  hover fill) and has an AX role and label; toggles report their state.
+- Every control is reachable by Tab, shows the focus ring (`ui::ring`) and
+  has an AX role and label; toggles report their state.
 - Escape dismisses a dismissable page; gates ignore it.
 - Shortcuts: `⌘K` palette, `⌘O` open table, `⌘P` switch project (Projects
   menu), `⌘⇧C` focus connection search, `⌘T` new query, `⌘W` close tab, `⌘\`

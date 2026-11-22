@@ -1,13 +1,20 @@
 //! Baseline grid sizing uses UTF-16 character counts and the first displayed
 //! line. Stop counting once the width clamp makes further text irrelevant.
+//! Default widths fit the column name and a bounded sample of values; the
+//! header's type hint never widens a column (it truncates, and the header
+//! tooltip carries the full type).
 use std::{borrow::Cow, ops::Range};
 
 pub const SAMPLE_ROWS: usize = 100;
-pub const MIN_WIDTH: f32 = 60.;
-pub const INITIAL_MAX: f32 = 400.;
+/// Narrowest fitted column: a short id or country code with its name.
+pub const MIN_WIDTH: f32 = 56.;
+/// Widest default column. Longer values ellipsize until the user widens or
+/// auto-fits the column.
+pub const INITIAL_MAX: f32 = 320.;
 pub const AUTO_FIT_MAX: f32 = 500.;
 const CHARACTER_WIDTH: f32 = 7.3;
-const CELL_CHROME: f32 = 18.;
+/// 8 pt cell padding on each side plus the cell rule.
+const CELL_CHROME: f32 = 2. * crate::style::S4 + 2.;
 const MAX_UNITS: usize = 70;
 
 pub fn heading(name: Option<&str>, index: usize) -> Cow<'_, str> {
@@ -194,7 +201,7 @@ mod tests {
     use super::*;
     #[test]
     fn baseline_clamps_utf16_and_first_line_do_not_scan_large_values() {
-        assert_eq!(fit("c", [Some("ab")].into_iter(), AUTO_FIT_MAX), 60.);
+        assert_eq!(fit("c", [Some("ab")].into_iter(), AUTO_FIT_MAX), MIN_WIDTH);
         assert_eq!(
             fit(
                 "c",
@@ -221,9 +228,12 @@ mod tests {
                 [Some("w".repeat(1000).as_str())].into_iter(),
                 INITIAL_MAX
             ),
-            400.
+            320.
         );
-        assert_eq!(fit("c", [None, Some("")].into_iter(), AUTO_FIT_MAX), 60.);
+        assert_eq!(
+            fit("c", [None, Some("")].into_iter(), AUTO_FIT_MAX),
+            MIN_WIDTH
+        );
     }
     #[test]
     fn samples_stop_at_100_and_explicit_width_survives_later_stream_rows() {
@@ -236,13 +246,32 @@ mod tests {
         widths.set_explicit(0, 60.);
         widths.sample(&[Some("x".repeat(100)), None], 1);
         widths.rebuild_offsets();
-        assert_eq!(widths.total_width(), 120.);
+        assert_eq!(widths.total_width(), 60. + MIN_WIDTH);
         assert_eq!(widths.visible_range(70., 20.), 0..2);
         let actual = widths.widths.capacity() * size_of::<f32>()
             + widths.offsets.capacity() * size_of::<f32>()
             + widths.explicit.capacity() * size_of::<bool>()
             + widths.order.capacity() * size_of::<usize>();
         assert!(actual <= ColumnWidths::storage_bytes(2));
+    }
+    #[test]
+    fn short_ids_stay_narrow_and_long_values_stop_at_the_default_cap() {
+        // A two-letter code under a short name fits the minimum, not a
+        // header-sized share.
+        assert_eq!(
+            fit("id", ["1", "42", "999"].map(Some).into_iter(), INITIAL_MAX),
+            MIN_WIDTH
+        );
+        assert_eq!(
+            fit("country", ["SE", "FR"].map(Some).into_iter(), INITIAL_MAX),
+            91.
+        );
+        // Long values never push a default column past the cap.
+        let long = "x".repeat(200);
+        assert_eq!(
+            fit("notes", [Some(long.as_str())].into_iter(), INITIAL_MAX),
+            INITIAL_MAX
+        );
     }
     #[test]
     fn dragged_query_width_is_clamped_explicit_and_rebuilds_offsets() {
@@ -272,8 +301,8 @@ mod tests {
         assert_eq!(layout.source(2), Some(0));
         layout.sample(&[Some("long".repeat(60)), None, Some("long".repeat(60))], 0);
         layout.rebuild_offsets();
-        assert_eq!(layout.width(0), 400.);
-        assert_eq!(layout.offset(2), 520.);
+        assert_eq!(layout.width(0), INITIAL_MAX);
+        assert_eq!(layout.offset(2), INITIAL_MAX + 120.);
         assert!(layout.toggle_pin(0));
         assert_eq!(layout.order, [1, 0, 2]);
         assert_eq!(layout.display(0), Some(1));

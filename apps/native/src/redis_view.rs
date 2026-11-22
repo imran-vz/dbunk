@@ -26,6 +26,9 @@ use gpui::{
 };
 use std::{future::Future, rc::Rc, sync::Arc};
 
+/// Width of the field/index column in a key inspector row.
+const KEY_LABEL_WIDTH: f32 = 160.;
+
 pub enum RedisEvent {
     /// A console command finished; feeds the status bar's last latency.
     Latency(u64),
@@ -782,24 +785,19 @@ impl RedisWorkspace {
     fn tree(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let header = div()
             .flex_none()
-            .h(px(style::ROW + 4.))
-            .px(px(10.))
+            .h(px(style::TOOLBAR))
+            .px(px(style::INSET_BAR))
             .flex()
             .items_center()
-            .gap(px(6.))
-            .text_size(px(style::FONT_SMALL))
-            .text_color(style::faint())
-            .child(div().flex_1().child("KEYSPACE"))
+            .gap(px(style::S3))
+            .text_sm()
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(style::text())
+            .child(div().flex_1().child("Keyspace"))
             .when(self.session.is_some(), |header| {
                 header.child(
-                    ui::tool_button(
-                        "redis-refresh-tree",
-                        "Refresh",
-                        Some("icons/rotate_cw.svg"),
-                        true,
-                        false,
-                    )
-                    .on_click(cx.listener(|this, _, _, cx| this.refresh_tree(cx))),
+                    ui::icon_button("redis-refresh-tree", "Refresh", "icons/rotate_cw.svg", true)
+                        .on_click(cx.listener(|this, _, _, cx| this.refresh_tree(cx))),
                 )
             });
         let body = match &self.phase {
@@ -820,12 +818,12 @@ impl RedisWorkspace {
                 .into_any_element()
             }
             phase => div()
-                .px(px(10.))
-                .py(px(6.))
+                .px(px(style::INSET_BAR))
+                .py(px(style::S3))
                 .text_size(px(style::FONT_SMALL))
                 .text_color(match phase {
-                    ConnectionPhase::Failed(_) => style::bad(),
-                    _ => style::faint(),
+                    ConnectionPhase::Failed(_) => style::bad_text(),
+                    _ => style::dim(),
                 })
                 .child(match phase {
                     ConnectionPhase::Connecting => "Connecting…".to_owned(),
@@ -852,11 +850,13 @@ impl RedisWorkspace {
                 .id(("redis-tree-row", index))
                 .role(Role::TreeItem)
                 .h(px(style::ROW))
-                .pl(px(10. + depth * 12.))
-                .pr(px(8.))
+                .mx(px(style::S2))
+                .rounded(px(style::R_SM))
+                .pl(px(style::S3 + depth * style::S5))
+                .pr(px(style::S3))
                 .flex()
                 .items_center()
-                .gap(px(5.))
+                .gap(px(style::S2))
                 .text_size(px(style::FONT))
                 .whitespace_nowrap()
                 .overflow_hidden()
@@ -876,7 +876,7 @@ impl RedisWorkspace {
             div()
                 .flex_none()
                 .text_size(px(style::FONT_SMALL))
-                .text_color(style::faint())
+                .text_color(style::dim())
                 .child(text)
         };
         match row.clone() {
@@ -889,7 +889,7 @@ impl RedisWorkspace {
                 .aria_label(format!("db{db}, {total} keys"))
                 .aria_expanded(expanded)
                 .cursor_pointer()
-                .hover(|s| s.bg(style::row_hover()))
+                .hover(|s| s.bg(style::hover()))
                 .text_color(if total == 0 {
                     style::dim()
                 } else {
@@ -925,7 +925,7 @@ impl RedisWorkspace {
                     .aria_label(words)
                     .aria_expanded(open)
                     .cursor_pointer()
-                    .hover(|s| s.bg(style::row_hover()))
+                    .hover(|s| s.bg(style::hover()))
                     .text_color(style::dim())
                     .on_click(
                         cx.listener(move |this, _, _, cx| this.toggle_group(db, &toggled, cx)),
@@ -940,20 +940,20 @@ impl RedisWorkspace {
                 base(2.)
                     .aria_label(label.clone())
                     .cursor_pointer()
-                    .hover(|s| s.bg(style::row_hover()))
+                    .hover(|s| s.bg(style::hover()))
                     .font_family(style::MONO)
-                    .text_size(px(style::FONT_SMALL))
+                    .text_size(px(style::FONT_DATA))
                     .text_color(style::text())
                     .on_click(
                         cx.listener(move |this, _, window, cx| this.inspect(db, &name, window, cx)),
                     )
-                    .child(div().pl(px(style::ICON + 5.)).child(label))
+                    .child(div().pl(px(style::ICON + style::S2)).child(label))
                     .into_any_element()
             }
             TreeRow::Hidden { count: hidden, .. } => base(2.)
                 .text_size(px(style::FONT_SMALL))
-                .text_color(style::faint())
-                .child(div().pl(px(style::ICON + 5.)).child(format!(
+                .text_color(style::dim())
+                .child(div().pl(px(style::ICON + style::S2)).child(format!(
                     "{hidden} more loaded; use SCAN in the console to list them"
                 )))
                 .into_any_element(),
@@ -961,7 +961,7 @@ impl RedisWorkspace {
                 .role(Role::Button)
                 .aria_label(format!("Load more keys from db{db}"))
                 .cursor_pointer()
-                .hover(|s| s.bg(style::row_hover()))
+                .hover(|s| s.bg(style::hover()))
                 .text_size(px(style::FONT_SMALL))
                 .text_color(style::accent())
                 .on_click(cx.listener(move |this, _, _, cx| this.load_page(db, cx)))
@@ -971,7 +971,7 @@ impl RedisWorkspace {
                 .role(Role::Alert)
                 .aria_label(message.clone())
                 .text_size(px(style::FONT_SMALL))
-                .text_color(style::bad())
+                .text_color(style::bad_text())
                 .child(message)
                 .into_any_element(),
         }
@@ -996,10 +996,13 @@ impl RedisWorkspace {
             })
             .child(ui::grow())
             .when(self.console.running, |bar| bar.child("Running…"))
-            .child(
-                ui::tool_button("redis-console-clear", "Clear", None, count > 0, false)
-                    .on_click(cx.listener(|this, _, window, cx| this.clear_console(window, cx))),
-            );
+            .when(count > 0, |bar| {
+                bar.child(
+                    ui::tool_button("redis-console-clear", "Clear", None, true, false).on_click(
+                        cx.listener(|this, _, window, cx| this.clear_console(window, cx)),
+                    ),
+                )
+            });
         let transcript = div()
             .id("redis-console-transcript")
             .role(Role::Log)
@@ -1016,10 +1019,12 @@ impl RedisWorkspace {
                                 let (text, tone) = rows[index].clone();
                                 div()
                                     .id(("redis-console-row", index))
-                                    .h(px(style::ROW - 4.))
-                                    .px(px(10.))
+                                    .h(px(style::GRID_ROW))
+                                    .px(px(style::INSET_BAR))
+                                    .flex()
+                                    .items_center()
                                     .font_family(style::MONO)
-                                    .text_size(px(style::FONT_SMALL))
+                                    .text_size(px(style::FONT_DATA))
                                     .whitespace_nowrap()
                                     .overflow_hidden()
                                     .text_color(match tone {
@@ -1043,9 +1048,9 @@ impl RedisWorkspace {
                 .flex_none()
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .px(px(10.))
-                .py(px(5.))
+                .gap(px(style::S4))
+                .px(px(style::INSET_BAR))
+                .py(px(style::S3))
                 .bg(style::bad_fill())
                 .border_t_1()
                 .border_color(style::bad_line())
@@ -1068,14 +1073,14 @@ impl RedisWorkspace {
         let prompt = div()
             .flex_none()
             .h(px(style::TOOLBAR))
-            .px(px(10.))
+            .px(px(style::INSET_BAR))
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(px(style::S3))
             .border_t_1()
             .border_color(style::line_soft())
             .font_family(style::MONO)
-            .text_size(px(style::FONT))
+            .text_size(px(style::FONT_DATA))
             .capture_key_down(cx.listener(Self::input_key))
             .child(
                 div()
@@ -1115,12 +1120,12 @@ impl RedisWorkspace {
             .child(ui::grow());
         let body: AnyElement = match &tab.state {
             KeyState::Loading => div()
-                .p(px(10.))
-                .text_color(style::faint())
+                .p(px(style::INSET_CONTENT))
+                .text_color(style::dim())
                 .child("Loading…")
                 .into_any_element(),
             KeyState::Failed(error) => div()
-                .p(px(10.))
+                .p(px(style::INSET_BAR))
                 .child(ui::error_banner(("redis-key-error", id), error.clone()))
                 .into_any_element(),
             KeyState::Loaded(inspection) => {
@@ -1165,10 +1170,10 @@ impl RedisWorkspace {
                         body.child(
                             div()
                                 .flex_none()
-                                .px(px(10.))
-                                .py(px(4.))
+                                .px(px(style::INSET_BAR))
+                                .py(px(style::S2))
                                 .text_size(px(style::FONT_SMALL))
-                                .text_color(style::faint())
+                                .text_color(style::dim())
                                 .child(note),
                         )
                     })
@@ -1184,20 +1189,20 @@ impl RedisWorkspace {
                                             .id(("redis-key-row", index))
                                             .role(Role::Row)
                                             .aria_label(format!("{label} {value}"))
-                                            .h(px(style::ROW))
-                                            .px(px(10.))
+                                            .h(px(style::GRID_ROW))
+                                            .px(px(style::INSET_BAR))
                                             .flex()
                                             .items_center()
-                                            .gap(px(12.))
+                                            .gap(px(style::S5))
                                             .border_b_1()
                                             .border_color(style::line_soft())
                                             .font_family(style::MONO)
-                                            .text_size(px(style::FONT_SMALL))
+                                            .text_size(px(style::FONT_DATA))
                                             .whitespace_nowrap()
                                             .overflow_hidden()
                                             .child(
                                                 div()
-                                                    .w(px(160.))
+                                                    .w(px(KEY_LABEL_WIDTH))
                                                     .flex_none()
                                                     .overflow_hidden()
                                                     .text_color(style::dim())
@@ -1221,12 +1226,11 @@ impl RedisWorkspace {
             }
         };
         let toolbar = toolbar.child(
-            ui::tool_button(
+            ui::icon_button(
                 ("redis-key-refresh", id),
                 "Refresh",
-                Some("icons/rotate_cw.svg"),
+                "icons/rotate_cw.svg",
                 connected && !matches!(tab.state, KeyState::Loading),
-                false,
             )
             .when(connected, |button| {
                 button.on_click(cx.listener(move |this, _, _, cx| this.load_key(id, cx)))

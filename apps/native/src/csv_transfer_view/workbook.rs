@@ -91,12 +91,23 @@ impl CsvTransferView {
             book.file_name, book.workbook_bytes, count
         );
         div()
+            .flex()
+            .flex_col()
+            .gap(px(crate::style::S3))
             .child(
                 div()
                     .id("xlsx-workbook-summary")
                     .role(Role::Label)
-                    .aria_label(summary.clone())
-                    .child(summary),
+                    .aria_label(summary)
+                    .flex()
+                    .items_center()
+                    .gap(px(crate::style::S3))
+                    .child(crate::ui::section_label(book.file_name.clone()))
+                    .child(crate::overview_view::chrome::note(if count == 1 {
+                        "1 worksheet".to_owned()
+                    } else {
+                        format!("{count} worksheets")
+                    })),
             )
             .child(
                 div()
@@ -175,34 +186,34 @@ impl CsvTransferView {
                                         );
                                         let selected = this.sheet == Some(index);
                                         let weak = cx.weak_entity();
-                                        div()
-                                            .id(("xlsx-sheet", position))
-                                            .role(Role::ListBoxOption)
-                                            .aria_label(label.clone())
-                                            .aria_selected(selected)
-                                            .h(px(28.))
-                                            .px_2()
-                                            .when(selected, |row| row.bg(crate::style::select()))
-                                            .child(label)
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.pick_sheet(id, index, window, cx)
-                                            }))
-                                            .on_a11y_action(
-                                                gpui::accesskit::Action::Click,
-                                                move |_, window, cx| {
-                                                    weak.update(cx, |this, cx| {
-                                                        this.pick_sheet(id, index, window, cx)
-                                                    })
-                                                    .ok();
-                                                },
-                                            )
-                                            .into_any_element()
+                                        crate::ui::list_row(
+                                            ("xlsx-sheet", position),
+                                            selected,
+                                            true,
+                                        )
+                                        .role(Role::ListBoxOption)
+                                        .aria_label(label.clone())
+                                        .aria_selected(selected)
+                                        .child(label)
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.pick_sheet(id, index, window, cx)
+                                        }))
+                                        .on_a11y_action(
+                                            gpui::accesskit::Action::Click,
+                                            move |_, window, cx| {
+                                                weak.update(cx, |this, cx| {
+                                                    this.pick_sheet(id, index, window, cx)
+                                                })
+                                                .ok();
+                                            },
+                                        )
+                                        .into_any_element()
                                     })
                                     .collect()
                             }),
                         )
                         .track_scroll(&self.sheet_scroll)
-                        .h(px(140.)),
+                        .h(px(6. * crate::style::ROW)),
                     ),
             )
             .child(self.button(29, cx))

@@ -367,8 +367,8 @@ impl ArrayView {
             .track_focus(&focus)
             .tab_index(0)
             .tab_stop(enabled)
-            .px_2()
-            .py_1()
+            .px(gpui::px(crate::style::S4))
+            .py(gpui::px(crate::style::S2))
             .text_color(if enabled {
                 crate::style::text()
             } else {

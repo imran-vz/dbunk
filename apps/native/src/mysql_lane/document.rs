@@ -665,7 +665,7 @@ impl MySqlDocument {
             div()
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(px(style::S3))
                 .child(ui::crumbs(
                     format!("{}.", object.database),
                     object.name.clone(),
@@ -681,18 +681,17 @@ impl MySqlDocument {
         match self.kind.clone() {
             DocKind::Query => {
                 bar = bar
-                    .child(
-                        self.button(
+                    .child(Self::bind(
+                        ui::tool_button_accent(
                             "mysql-run",
                             "Run",
-                            Some("icons/play_filled.svg"),
+                            Some("⌘↵"),
                             connected && !running,
-                            cx,
-                            |this, _, cx| this.run(false, false, cx),
-                        )
-                        .map(|run| ui::pressed(run, true)),
-                    )
-                    .child(ui::shortcut("⌘↵"))
+                        ),
+                        connected && !running,
+                        cx,
+                        |this, _, cx| this.run(false, false, cx),
+                    ))
                     .child(self.button(
                         "mysql-stop",
                         "Stop",
@@ -836,42 +835,38 @@ impl MySqlDocument {
                 .role(Role::List)
                 .aria_label("Databases")
                 .flex_none()
-                .max_h(px(180.))
+                .max_h(px(PICKER_HEIGHT))
                 .overflow_y_scroll()
-                .mx(px(8.))
-                .my(px(4.))
-                .p(px(2.))
-                .rounded(px(6.))
+                .mx(px(style::INSET_BAR))
+                .my(px(style::S2))
+                .py(px(style::S2))
+                .rounded(px(style::R_MD))
                 .border_1()
                 .border_color(style::line())
                 .bg(style::panel())
+                .flex()
+                .flex_col()
                 .when(query.databases.is_empty(), |list| {
                     list.child(
                         div()
-                            .px(px(8.))
+                            .px(px(style::S4))
                             .h(px(style::ROW))
-                            .text_color(style::faint())
+                            .flex()
+                            .items_center()
+                            .text_color(style::dim())
                             .child("Databases appear after the tree loads"),
                     )
                 })
                 .children(query.databases.iter().enumerate().map(|(index, name)| {
                     let selected = current.as_ref() == Some(name);
                     let pick = name.clone();
-                    div()
-                        .id(("mysql-database-option", index))
+                    ui::list_row(("mysql-database-option", index), selected, true)
                         .role(Role::ListItem)
                         .aria_label(name.clone())
                         .aria_selected(selected)
-                        .h(px(style::ROW))
-                        .px(px(8.))
-                        .flex()
-                        .items_center()
-                        .rounded(px(4.))
                         .font_family(style::MONO)
-                        .cursor_pointer()
-                        .hover(|s| s.bg(style::hover()))
-                        .when(selected, |row| row.bg(style::select()))
-                        .child(name.clone())
+                        .text_size(px(style::FONT_DATA))
+                        .child(ui::row_label(name.clone()))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             if let Some(query) = &mut this.query {
                                 query.database = Some(pick.clone());
@@ -891,14 +886,14 @@ impl MySqlDocument {
                 .role(Role::Alert)
                 .aria_label(confirmation_text(statements))
                 .flex_none()
-                .mx(px(8.))
-                .my(px(4.))
-                .px(px(8.))
-                .py(px(5.))
+                .mx(px(style::INSET_BAR))
+                .my(px(style::S2))
+                .px(px(style::S4))
+                .py(px(style::S3))
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .rounded(px(5.))
+                .gap(px(style::S4))
+                .rounded(px(style::R_MD))
                 .border_1()
                 .border_color(style::warn())
                 .bg(style::warn_fill())
@@ -953,20 +948,21 @@ impl MySqlDocument {
         }
         let definition = match &self.definition {
             Load::Ready(text) => div()
-                .p(px(8.))
-                .rounded(px(5.))
+                .p(px(style::S4))
+                .rounded(px(style::R_MD))
                 .border_1()
                 .border_color(style::line_soft())
                 .font_family(style::MONO)
+                .text_size(px(style::FONT_DATA))
                 .text_color(style::text())
                 .whitespace_normal()
                 .child(text.clone())
                 .into_any_element(),
             _ => self.definition_state(),
         };
-        body.p(px(10.))
-            .gap(px(10.))
-            .child(ui::section_label("Definition"))
+        body.p(px(style::INSET_CONTENT))
+            .gap(px(style::S5))
+            .child(ui::heading("Definition"))
             .child(definition)
     }
 
@@ -988,14 +984,19 @@ impl MySqlDocument {
 fn inset(child: impl IntoElement) -> gpui::AnyElement {
     div()
         .px(px(structure_table::INSET))
-        .py(px(8.))
+        .py(px(style::S4))
         .child(child)
         .into_any_element()
 }
 
 fn note(text: &'static str) -> impl IntoElement {
-    div().text_color(style::faint()).child(text)
+    div().text_color(style::dim()).child(text)
 }
+
+/// Least height of the query editor pane.
+const EDITOR_MIN_HEIGHT: f32 = 80.;
+/// Most height the inline database picker takes before it scrolls.
+const PICKER_HEIGHT: f32 = 180.;
 
 const INDEXES: &[ColumnSpec] = &[
     fill("Name", 160.),
@@ -1271,12 +1272,13 @@ impl Render for MySqlDocument {
                     .child(
                         div()
                             .h(gpui::relative(0.4))
-                            .min_h(px(80.))
+                            .min_h(px(EDITOR_MIN_HEIGHT))
                             .flex_none()
-                            .p(px(6.))
+                            .p(px(style::S3))
                             .border_b_1()
-                            .border_color(style::line())
+                            .border_color(style::line_soft())
                             .font_family(style::MONO)
+                            .text_size(px(style::FONT_DATA))
                             .child(editor),
                     )
                     .child(self.result_area())
@@ -1307,8 +1309,8 @@ impl Render for MySqlDocument {
                 root.child(
                     ui::error_banner("mysql-document-error", error)
                         .flex_none()
-                        .mx(px(8.))
-                        .my(px(4.)),
+                        .mx(px(style::S4))
+                        .my(px(style::S3)),
                 )
             })
             .child(body)

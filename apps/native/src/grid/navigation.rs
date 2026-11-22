@@ -44,7 +44,7 @@ impl GoToRowView {
         cx: &mut Context<T>,
     ) -> Result<Entity<Self>, &'static str> {
         if rows == 0 {
-            return Err("No retained rows");
+            return Err("No rows loaded");
         }
         let lease = Lease::admit(budget)?;
         Ok(cx.new(|cx| Self {
@@ -146,15 +146,15 @@ impl Focusable for GoToRowView {
 }
 impl Render for GoToRowView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let range = format!("1–{} in this retained result or table page", self.rows);
+        let range = format!("1–{} on this page", self.rows);
         div()
             .id("go-to-row")
             .role(Role::Dialog)
             .aria_label("Go to retained row")
             .flex()
             .flex_col()
-            .gap_2()
-            .p_2()
+            .gap(gpui::px(crate::style::S4))
+            .p(gpui::px(crate::style::S4))
             .size_full()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
@@ -187,7 +187,7 @@ impl Render for GoToRowView {
             .child(
                 div()
                     .flex()
-                    .gap(px(4.))
+                    .gap(px(crate::style::S2))
                     .child(self.button(0, cx))
                     .child(self.button(1, cx)),
             )

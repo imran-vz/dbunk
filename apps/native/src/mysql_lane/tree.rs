@@ -109,11 +109,12 @@ impl MySqlTreeView {
             .role(Role::Button)
             .aria_label(label)
             .tooltip(crate::ui::tooltip(label))
-            .size(px(style::TOOL))
+            .tooltip_show_delay(crate::ui::tooltip_delay())
+            .size(px(style::CONTROL - style::S2))
             .flex()
             .items_center()
             .justify_center()
-            .rounded(px(4.))
+            .rounded(px(style::R_SM))
             .cursor_pointer()
             .hover(|s| s.bg(style::hover()))
             .child(
@@ -125,6 +126,11 @@ impl MySqlTreeView {
             .on_click(cx.listener(move |_, _, _, cx| cx.emit(event.clone())))
     }
 }
+
+/// Left edge of sidebar text: the `list_row` margin plus its padding.
+const TEXT_INSET: f32 = style::S2 + style::S3;
+/// Indent per tree level.
+const TREE_INDENT: f32 = style::S5;
 
 fn icon(row: &Row) -> (&'static str, gpui::Rgba) {
     use crate::style::TreeKind as T;
@@ -182,13 +188,13 @@ impl Render for MySqlTreeView {
             .min_h_0()
             .child(
                 div()
-                    .h(px(26.))
+                    .h(px(style::ROW + style::S2))
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap(px(2.))
-                    .pl(px(10.))
-                    .pr(px(6.))
+                    .gap(px(style::S1))
+                    .pl(px(TEXT_INSET))
+                    .pr(px(style::S2))
                     .child(
                         div()
                             .flex_1()
@@ -217,9 +223,9 @@ impl Render for MySqlTreeView {
             .when(!self.connected, |root| {
                 root.child(
                     div()
-                        .px(px(10.))
+                        .px(px(TEXT_INSET))
                         .text_size(px(style::FONT_SMALL))
-                        .text_color(style::faint())
+                        .text_color(style::dim())
                         .child("Connect to browse databases"),
                 )
             })
@@ -259,138 +265,123 @@ impl Render for MySqlTreeView {
                                         };
                                         let (path, color) = icon(row);
                                         let selected = position == this.selected;
-                                        let group =
-                                            SharedString::from(format!("mysql-row-{position}"));
-                                        div()
-                                            .id(("mysql-tree-row", position))
-                                            .group(group.clone())
-                                            .role(Role::TreeItem)
-                                            .aria_label(row_label(row))
-                                            .aria_selected(selected)
-                                            .h(px(style::ROW))
-                                            .flex()
-                                            .items_center()
-                                            .gap(px(5.))
-                                            .pl(px(8. + 12. * row.depth as f32))
-                                            .pr(px(6.))
-                                            .overflow_hidden()
-                                            .whitespace_nowrap()
-                                            .text_color(match row.kind {
-                                                RowKind::Note { error: true, .. } => style::warn(),
-                                                RowKind::Note { .. } => style::faint(),
-                                                _ => style::text(),
-                                            })
-                                            .hover(|s| s.bg(style::hover()))
-                                            .when(selected, |row| {
-                                                row.bg(if focused {
-                                                    style::select()
+                                        let item = crate::ui::list_row(
+                                            ("mysql-tree-row", position),
+                                            selected,
+                                            focused,
+                                        )
+                                        .role(Role::TreeItem)
+                                        .aria_label(row_label(row))
+                                        .aria_selected(selected)
+                                        .gap(px(style::S2 + 1.))
+                                        .pl(px(style::S2 + TREE_INDENT * row.depth as f32))
+                                        .pr(px(style::S2))
+                                        .text_color(match row.kind {
+                                            RowKind::Note { error: true, .. } => style::warn(),
+                                            RowKind::Note { .. } => style::dim(),
+                                            _ => style::text(),
+                                        })
+                                        .child(match expanded {
+                                            Some(open) => svg()
+                                                .path(if open {
+                                                    "icons/chevron_down.svg"
                                                 } else {
-                                                    style::raised()
+                                                    "icons/chevron_right.svg"
                                                 })
-                                            })
-                                            .child(match expanded {
-                                                Some(open) => svg()
-                                                    .path(if open {
-                                                        "icons/chevron_down.svg"
-                                                    } else {
-                                                        "icons/chevron_right.svg"
-                                                    })
-                                                    .size(px(style::ICON))
-                                                    .flex_none()
-                                                    .text_color(style::faint())
-                                                    .into_any_element(),
-                                                None => div()
-                                                    .w(px(style::ICON))
-                                                    .flex_none()
-                                                    .into_any_element(),
-                                            })
-                                            .child(
-                                                svg()
-                                                    .path(path)
-                                                    .size(px(style::ICON))
-                                                    .flex_none()
-                                                    .text_color(color),
-                                            )
-                                            .child(
+                                                .size(px(style::ICON))
+                                                .flex_none()
+                                                .text_color(style::faint())
+                                                .into_any_element(),
+                                            None => div()
+                                                .w(px(style::ICON))
+                                                .flex_none()
+                                                .into_any_element(),
+                                        })
+                                        .child(
+                                            svg()
+                                                .path(path)
+                                                .size(px(style::ICON))
+                                                .flex_none()
+                                                .text_color(color),
+                                        )
+                                        .child(crate::ui::row_label(SharedString::from(
+                                            row.label.clone(),
+                                        )))
+                                        .when_some(row.detail.clone(), |row, detail| {
+                                            row.child(
                                                 div()
-                                                    .flex_1()
-                                                    .min_w_0()
-                                                    .overflow_hidden()
-                                                    .text_ellipsis()
-                                                    .child(SharedString::from(row.label.clone())),
+                                                    .flex_none()
+                                                    .text_size(px(style::FONT_SMALL))
+                                                    .text_color(style::dim())
+                                                    .child(detail),
                                             )
-                                            .when_some(row.detail.clone(), |row, detail| {
-                                                row.child(
-                                                    div()
-                                                        .flex_none()
-                                                        .text_size(px(style::FONT_SMALL))
-                                                        .text_color(style::faint())
-                                                        .child(detail),
-                                                )
-                                            })
-                                            .when_some(row.count, |row, count| {
-                                                row.child(
-                                                    div()
-                                                        .flex_none()
-                                                        .text_size(px(style::FONT_SMALL))
-                                                        .text_color(style::faint())
-                                                        .child(count.to_string()),
-                                                )
-                                            })
-                                            .when_some(structure, |row, object| {
-                                                row.child(
-                                                    div()
-                                                        .id(("mysql-tree-structure", position))
-                                                        .role(Role::Button)
-                                                        .aria_label(format!(
-                                                            "Structure of {}",
-                                                            object.name
-                                                        ))
-                                                        .tooltip(crate::ui::tooltip("Structure"))
-                                                        .flex_none()
-                                                        .size(px(16.))
-                                                        .flex()
-                                                        .items_center()
-                                                        .justify_center()
-                                                        .rounded(px(3.))
-                                                        .opacity(0.)
-                                                        .group_hover(group, |s| s.opacity(1.))
-                                                        .hover(|s| s.bg(style::raised()))
-                                                        .child(
-                                                            svg()
-                                                                .path("icons/list_tree.svg")
-                                                                .size(px(style::ICON))
-                                                                .text_color(style::dim()),
-                                                        )
-                                                        .on_click(cx.listener(
-                                                            move |_, _, _, cx| {
-                                                                cx.stop_propagation();
-                                                                cx.emit(TreeEvent::Structure(
-                                                                    object.clone(),
-                                                                ));
-                                                            },
-                                                        )),
-                                                )
-                                            })
-                                            .on_click(cx.listener(
-                                                move |this, event: &gpui::ClickEvent, window, cx| {
-                                                    // Rows may have shrunk since this frame.
-                                                    let Some(row) = this.rows.get(position) else {
-                                                        return;
-                                                    };
-                                                    let expandable = matches!(
-                                                        row.kind,
-                                                        RowKind::Database { .. }
-                                                            | RowKind::Group { .. }
-                                                    );
-                                                    this.selected = position;
-                                                    window.focus(&this.focus, cx);
-                                                    if expandable || event.click_count() > 1 {
-                                                        this.activate(position, cx);
-                                                    }
-                                                    cx.notify();
-                                                },
-                                            ))
+                                        })
+                                        .when_some(row.count, |row, count| {
+                                            row.child(
+                                                div()
+                                                    .flex_none()
+                                                    .text_size(px(style::FONT_SMALL))
+                                                    .text_color(style::dim())
+                                                    .child(count.to_string()),
+                                            )
+                                        })
+                                        .when_some(structure, |row, object| {
+                                            row.child(
+                                                div()
+                                                    .id(("mysql-tree-structure", position))
+                                                    .role(Role::Button)
+                                                    .aria_label(format!(
+                                                        "Structure of {}",
+                                                        object.name
+                                                    ))
+                                                    .tooltip(crate::ui::tooltip("Structure"))
+                                                    .flex_none()
+                                                    .size(px(16.))
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .rounded(px(style::R_SM))
+                                                    .invisible()
+                                                    .group_hover(crate::ui::LIST_ROW_GROUP, |s| {
+                                                        s.visible()
+                                                    })
+                                                    .hover(|s| s.bg(style::raised()))
+                                                    .child(
+                                                        svg()
+                                                            .path("icons/list_tree.svg")
+                                                            .size(px(style::ICON))
+                                                            .text_color(style::dim()),
+                                                    )
+                                                    .on_click(cx.listener(move |_, _, _, cx| {
+                                                        cx.stop_propagation();
+                                                        cx.emit(TreeEvent::Structure(
+                                                            object.clone(),
+                                                        ));
+                                                    })),
+                                            )
+                                        })
+                                        .on_click(cx.listener(
+                                            move |this, event: &gpui::ClickEvent, window, cx| {
+                                                // Rows may have shrunk since this frame.
+                                                let Some(row) = this.rows.get(position) else {
+                                                    return;
+                                                };
+                                                let expandable = matches!(
+                                                    row.kind,
+                                                    RowKind::Database { .. }
+                                                        | RowKind::Group { .. }
+                                                );
+                                                this.selected = position;
+                                                window.focus(&this.focus, cx);
+                                                if expandable || event.click_count() > 1 {
+                                                    this.activate(position, cx);
+                                                }
+                                                cx.notify();
+                                            },
+                                        ));
+                                        // A full-width flex column, so the
+                                        // highlight spans the sidebar.
+                                        div().w_full().flex().flex_col().child(item)
                                     })
                                     .collect()
                             }),

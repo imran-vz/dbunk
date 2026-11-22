@@ -102,6 +102,8 @@ pub struct CsvTransferView {
     setup: Option<Setup>,
     owner: Option<InspectionOwner>,
     connection: Option<String>,
+    /// Saved connections by id, for the header's display name.
+    connections: Vec<(String, crate::overview_view::chrome::ToolConnection)>,
     generation: u64,
     fields: Vec<Entity<Field>>,
     field_events: Vec<Subscription>,
@@ -163,6 +165,7 @@ impl CsvTransferView {
             setup: None,
             owner: None,
             connection: document.connection_id.clone(),
+            connections: Vec::new(),
             generation: 0,
             fields: vec![],
             field_events: vec![],
@@ -255,6 +258,28 @@ impl CsvTransferView {
         }
         self.freeze_fields(cx);
         cx.notify();
+    }
+    /// Saved connection records, so the header names the connection.
+    pub fn set_connection_metadata(
+        &mut self,
+        records: &[dbunk_lib::backend::DevelopmentConnection],
+        cx: &mut Context<Self>,
+    ) {
+        self.connections = crate::overview_view::chrome::ToolConnection::index(records);
+        cx.notify();
+    }
+    /// The action that moves setup forward: Inspect, then Review, Start and
+    /// Confirm. It is the one accent button of the document.
+    fn next_step(&self, cx: &gpui::App) -> usize {
+        if self.enabled(Action::Confirm, cx) {
+            8
+        } else if self.current_review(cx).is_some() {
+            7
+        } else if self.inspection_data(cx).is_some() {
+            6
+        } else {
+            4
+        }
     }
     pub fn bind_connection(&mut self, connection: String, cx: &mut Context<Self>) {
         if connection.is_empty()

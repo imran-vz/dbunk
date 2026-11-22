@@ -1,14 +1,27 @@
-//! Form pages in the Plan 031 style: a centred column with a header, titled
+//! Full-window form pages: a centred column with a header (title, subtitle
+//! and, on dismissable pages, a close button aligned to the column), titled
 //! sections of labelled inputs with inline errors, a tone-aware message and a
-//! footer of actions. Dismissable pages show a close button top right.
+//! footer of actions. Short pages centre vertically; the long editors
+//! (connection, bastions) keep their footer in a sticky band at the bottom.
 use super::engine::Engine;
 use super::validation::{self, Errors};
 use super::*;
 use crate::{style, ui};
 use gpui::{AnyElement, Div, ElementId, MouseButton, Stateful, svg};
 
-/// A radio choice (engine, environment, TLS mode…). `dot` adds a colour
-/// marker, used for environments.
+/// Height of one segment inside a page `chip_row` (the group is `FIELD`).
+const SEGMENT: f32 = style::FIELD - 4.;
+/// Gap between a checkbox and its label.
+const CHECK_GAP: f32 = style::S4;
+/// Checkbox glyph width (`ui::check_box`).
+const CHECK: f32 = 12.;
+/// Height of the sticky action band of the long editor pages.
+const ACTION_BAND: f32 = 52.;
+
+/// One segment of a page's exclusive choice (engine, environment, TLS
+/// mode…) inside a `chip_row`: the selected segment is `raised` with `text`
+/// and a line border, the rest `dim`. `dot` adds a colour marker, used for
+/// environments.
 pub(super) fn chip(
     id: impl Into<ElementId>,
     label: SharedString,
@@ -20,33 +33,29 @@ pub(super) fn chip(
         .id(id)
         .aria_label(label.clone())
         .flex_none()
-        .h(px(24.))
-        .px(px(9.))
+        .h(px(SEGMENT))
+        .px(px(style::S5 - 2.))
         .flex()
         .items_center()
-        .gap(px(5.))
-        .rounded(px(5.))
+        .gap(px(style::S3))
+        .rounded(px(style::R_SM))
         .border_1()
         .border_color(if selected {
-            style::primary_line()
-        } else {
             style::line()
-        })
-        .bg(if selected {
-            style::primary_fill()
         } else {
-            style::panel()
+            gpui::transparent_black().into()
         })
+        .when(selected, |chip| chip.bg(style::raised()))
         .text_sm()
         .whitespace_nowrap()
         .text_color(if selected {
-            style::primary_text()
+            style::text()
         } else if enabled {
             style::dim()
         } else {
             style::faint()
         })
-        .focus(|s| s.border_color(style::accent()))
+        .focus(|s| s.shadow(vec![ui::ring()]))
         .when_some(dot, |chip, color| {
             chip.child(
                 div()
@@ -60,10 +69,10 @@ pub(super) fn chip(
         ui::press(
             element
                 .cursor_pointer()
-                .hover(|s| s.text_color(style::text()).border_color(style::faint())),
+                .hover(|s| s.text_color(style::text())),
         )
     } else {
-        element.opacity(0.55)
+        element.opacity(0.5)
     }
 }
 
@@ -82,57 +91,85 @@ pub(super) fn toggle_row(
         .id(id)
         .aria_label(subject.clone())
         .flex_none()
-        .min_h(px(22.))
-        .px(px(4.))
+        .min_h(px(style::ROW - 4.))
         .flex()
         .items_start()
-        .gap(px(7.))
-        .rounded(px(4.))
+        .gap(px(CHECK_GAP))
+        .rounded(px(style::R_SM))
         .text_sm()
         .text_color(if enabled {
             style::text()
         } else {
             style::faint()
         })
-        .when(enabled, |row| {
-            row.cursor_pointer().hover(|s| s.bg(style::hover()))
-        })
-        .focus(|s| s.bg(style::hover()))
+        .when(enabled, |row| row.cursor_pointer())
+        .focus(|s| s.shadow(vec![ui::ring()]))
         .child(ui::check_box(checked))
         .child(div().flex_1().min_w_0().child(subject))
 }
 
-fn choices(label: &'static str) -> Div {
-    div().flex().flex_col().gap(px(5.)).child(
-        div()
-            .text_size(px(style::FONT_SMALL))
-            .text_color(style::dim())
-            .child(label),
-    )
-}
-
-fn chip_row() -> Div {
-    div().flex().flex_wrap().gap(px(4.))
-}
-
-fn hint(text: impl Into<SharedString>) -> Div {
+/// A labelled exclusive choice: the label above its `chip_row`.
+pub(super) fn choices(label: &'static str) -> Div {
     div()
-        .text_sm()
-        .text_color(style::faint())
-        .child(text.into())
+        .flex()
+        .flex_col()
+        .gap(px(style::S3))
+        .child(div().text_sm().text_color(style::dim()).child(label))
 }
 
-fn grid(columns: u16) -> Div {
+/// The bordered group that holds a page's `chip` segments (a segment group
+/// at `FIELD` height). Sizes to its segments instead of the column.
+pub(super) fn chip_row() -> Div {
+    div()
+        .flex_none()
+        .self_start()
+        .p(px(1.))
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .gap(px(1.))
+        .rounded(px(style::R_MD))
+        .border_1()
+        .border_color(style::line())
+        .bg(style::bg())
+}
+
+/// A quiet note under a control: `dim`, one idea.
+pub(super) fn hint(text: impl Into<SharedString>) -> Div {
+    div().text_sm().text_color(style::dim()).child(text.into())
+}
+
+pub(super) fn grid(columns: u16) -> Div {
     div()
         .grid()
         .grid_cols(columns)
-        .gap_x(px(12.))
-        .gap_y(px(10.))
+        .gap_x(px(style::S5))
+        .gap_y(px(style::S5))
 }
+
+/// TLS client files, hidden while TLS is disabled (values are kept).
+pub(super) const TLS_FILES: [&str; 3] = ["root-cert", "client-cert", "client-key"];
 
 impl Form {
     /// The labelled input for `key`, or `None` when the field is hidden.
     pub(super) fn text_field(&self, key: &str, errors: &Errors, tall: bool) -> Option<Div> {
+        self.text_field_with(key, errors, tall, None)
+    }
+
+    /// Whether `key` is a field of this form and currently shown.
+    fn shows_field(&self, key: &str) -> bool {
+        self.fields.iter().any(|field| field.key == key) && self.field_visible(key)
+    }
+
+    /// `text_field` with an optional trailing control inside the well (a
+    /// file chooser icon button).
+    fn text_field_with(
+        &self,
+        key: &str,
+        errors: &Errors,
+        tall: bool,
+        action: Option<AnyElement>,
+    ) -> Option<Div> {
         let field = self.fields.iter().find(|field| field.key == key)?;
         if !self.field_visible(key) {
             return None;
@@ -144,11 +181,17 @@ impl Form {
                 (key == "password" && matches!(self.kind, Kind::Connection { id: Some(_) }))
                     .then(|| ("Leave blank to keep the saved password".into(), false))
             });
+        let focused = self.focused_field == Some(field.key);
+        let has_action = action.is_some();
         Some(ui::labelled(
             field.label,
-            ui::input_frame(error.is_some())
-                .when(tall, |frame| frame.h(px(96.)).items_start().py(px(4.)))
-                .child(div().flex_1().min_w_0().child(field.accessible.clone())),
+            ui::input_well(error.is_some(), focused)
+                .when(tall, |frame| {
+                    frame.h(px(96.)).items_start().py(px(style::S3))
+                })
+                .when(has_action, |frame| frame.pr(px(style::S1)))
+                .child(div().flex_1().min_w_0().child(field.accessible.clone()))
+                .children(action),
             note,
         ))
     }
@@ -158,17 +201,11 @@ impl Form {
             Kind::Credentials(settings) => match settings.state {
                 DevelopmentCredentialState::NeedsUnlock => (
                     "Unlock credentials".into(),
-                    Some(
-                        "Enter your dbunk credential password to load saved connections."
-                            .into(),
-                    ),
+                    Some("Enter your credential password to load saved connections.".into()),
                 ),
                 DevelopmentCredentialState::NeedsOnboarding => (
                     "Set up dbunk".into(),
-                    Some(
-                        "Choose how dbunk stores saved database passwords before the workspace loads connections."
-                            .into(),
-                    ),
+                    Some("Choose how dbunk stores saved database passwords.".into()),
                 ),
                 DevelopmentCredentialState::NeedsRecovery => (
                     "Recover credentials".into(),
@@ -208,7 +245,7 @@ impl Form {
             {
                 380.
             }
-            Kind::Credentials(_) => 520.,
+            Kind::Credentials(_) => 560.,
             Kind::Connection { .. } | Kind::Bastions(_) => 640.,
             _ => 420.,
         }
@@ -221,7 +258,7 @@ impl Form {
         let state = settings.state;
         let current = settings.mode;
         let keychain = settings.keychain_unavailable.clone();
-        let mut content = div().flex().flex_col().gap(px(14.));
+        let mut content = div().flex().flex_col().gap(px(style::S6));
         if state == DevelopmentCredentialState::NeedsRecovery {
             return content.child(self.button(
                 "Recover credentials",
@@ -239,7 +276,7 @@ impl Form {
                 .child(
                     div()
                         .flex()
-                        .gap(px(6.))
+                        .gap(px(style::S4))
                         .child(self.button(
                             "Reset storage",
                             FormAction::ConfirmReset,
@@ -268,7 +305,7 @@ impl Form {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(6.))
+                    .gap(px(style::S4))
                     .child(ui::error_banner(
                         "keychain-unavailable",
                         super::keychain_notice(&reason),
@@ -310,7 +347,7 @@ impl Form {
             .aria_label("Credential storage")
             .flex()
             .flex_col()
-            .gap(px(6.));
+            .gap(px(style::S4));
         for (mode, title, body, icon, badge) in cards {
             let selected = self.mode == mode;
             let title = if Some(mode) == current && state == DevelopmentCredentialState::Ready {
@@ -320,7 +357,9 @@ impl Form {
             };
             list = list.child(self.mode_card(mode, title, body, icon, badge, selected, cx));
         }
-        content = content.child(list);
+        content = content
+            .child(list)
+            .child(hint("Credential encryption does not encrypt SQL drafts."));
         if self.mode == DevelopmentStorageMode::EncryptedSqlite {
             content = content.child(
                 grid(2)
@@ -341,9 +380,9 @@ impl Form {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(3.))
-                    .p(px(8.))
-                    .rounded(px(5.))
+                    .gap(px(style::S2))
+                    .p(px(style::S5))
+                    .rounded(px(style::R_MD))
                     .border_1()
                     .border_color(if error.is_some() {
                         style::bad_line()
@@ -355,7 +394,7 @@ impl Form {
                     .when_some(error, |c, error| {
                         c.child(
                             div()
-                                .pl(px(23.))
+                                .pl(px(CHECK + CHECK_GAP))
                                 .text_size(px(style::FONT_SMALL))
                                 .text_color(style::bad_text())
                                 .child(error),
@@ -363,7 +402,6 @@ impl Form {
                     }),
             );
         }
-        content = content.child(hint("Credential encryption does not encrypt SQL drafts."));
         if state == DevelopmentCredentialState::Ready {
             content = content.child(div().flex().child(self.button(
                 "Reset saved passwords…",
@@ -421,7 +459,7 @@ impl Form {
     fn connection_view(&mut self, errors: &Errors, cx: &mut Context<Self>) -> Div {
         let engine = self.engine;
         let field = |this: &Self, key| this.text_field(key, errors, false);
-        let mut content = div().flex().flex_col().gap(px(20.));
+        let mut content = div().flex().flex_col().gap(px(style::S7));
         if self.engine_selectable() {
             let mut picker = chip_row()
                 .id("engine-picker")
@@ -443,14 +481,11 @@ impl Form {
         if let Some(name) = field(self, "name") {
             endpoint = endpoint.child(name.col_span_full());
         }
-        if let Some(path) = field(self, "path") {
-            endpoint = endpoint.child(path.col_span(3));
-            endpoint = endpoint.child(div().flex().items_end().child(self.button(
-                "Choose file…",
-                FormAction::Pick("path"),
-                false,
-                cx,
-            )));
+        if self.shows_field("path") {
+            let pick = self.button("Choose file…", FormAction::Pick("path"), false, cx);
+            if let Some(path) = self.text_field_with("path", errors, false, Some(pick)) {
+                endpoint = endpoint.child(path.col_span_full());
+            }
         }
         if let Some(host) = field(self, "host") {
             endpoint = endpoint.child(host.col_span(3));
@@ -503,11 +538,11 @@ impl Form {
         content = content.child(
             ui::section("Safety")
                 .child(choices("Environment").child(environments))
-                .child(choices("Safe Mode").child(safe))
+                .child(choices("Safe mode").child(safe))
                 .child(
                     div()
                         .flex()
-                        .gap(px(16.))
+                        .gap(px(style::S7))
                         .child(self.button("Read-only", FormAction::ReadOnly, read_only, cx))
                         .child(self.button("Favorite", FormAction::Favorite, favorite, cx)),
                 ),
@@ -538,21 +573,17 @@ impl Form {
             ] {
                 tls = tls.child(self.button(label, FormAction::Tls(value), self.tls == value, cx));
             }
-            let mut files = grid(2);
-            for (key, pick) in [
-                ("root-cert", "Choose root certificate"),
-                ("client-cert", "Choose client certificate"),
-                ("client-key", "Choose client key"),
-            ] {
-                if let Some(input) = field(self, key) {
-                    files = files
-                        .child(input)
-                        .child(div().flex().items_end().child(self.button(
-                            pick,
-                            FormAction::Pick(key),
-                            false,
-                            cx,
-                        )));
+            let mut files = div().flex().flex_col().gap(px(style::S5));
+            for (key, pick) in TLS_FILES.into_iter().zip([
+                "Choose root certificate",
+                "Choose client certificate",
+                "Choose client key",
+            ]) {
+                if self.shows_field(key) {
+                    let action = self.button(pick, FormAction::Pick(key), false, cx);
+                    if let Some(input) = self.text_field_with(key, errors, false, Some(action)) {
+                        files = files.child(input);
+                    }
                 }
             }
             content = content.child(
@@ -590,7 +621,7 @@ impl Form {
     }
 
     fn simple_view(&mut self, errors: &Errors) -> Div {
-        let mut content = div().flex().flex_col().gap(px(10.));
+        let mut content = div().flex().flex_col().gap(px(style::S5));
         if let Some(prompt) = &self.prompt {
             content = content.child(div().text_color(style::text()).child(prompt.clone()));
         }
@@ -629,10 +660,10 @@ impl Form {
                 })
                 .flex()
                 .items_start()
-                .gap(px(6.))
-                .px(px(8.))
-                .py(px(5.))
-                .rounded(px(5.))
+                .gap(px(style::S3))
+                .px(px(style::S4))
+                .py(px(style::S3))
+                .rounded(px(style::R_MD))
                 .border_1()
                 .border_color(style::line())
                 .bg(fill)
@@ -641,7 +672,7 @@ impl Form {
                 .child(
                     svg()
                         .path(icon)
-                        .mt(px(1.))
+                        .mt(px(2.))
                         .size(px(style::ICON))
                         .flex_none()
                         .text_color(color),
@@ -672,7 +703,7 @@ impl Form {
             Kind::Connection { id: None } => Some(("Save connection", FormAction::Submit)),
             Kind::Connection { .. } => Some(("Save", FormAction::Submit)),
         };
-        let mut leading = div().flex().items_center().gap(px(6.));
+        let mut leading = div().flex().items_center().gap(px(style::S4));
         if matches!(self.kind, Kind::Connection { id: None }) && self.engine == Engine::Postgres {
             leading = leading.child(self.button(
                 "Import URI from clipboard",
@@ -692,7 +723,7 @@ impl Form {
                 cx,
             ));
         }
-        let mut trailing = div().flex().items_center().gap(px(6.));
+        let mut trailing = div().flex().items_center().gap(px(style::S4));
         if self.busy {
             trailing = trailing.child(hint("Working…"));
         }
@@ -712,13 +743,14 @@ impl Form {
                 .flex()
                 .items_center()
                 .justify_between()
-                .gap(px(8.))
+                .gap(px(style::S4))
                 .child(leading)
                 .child(trailing),
         )
     }
 
-    /// The close button top right, when the page can be dismissed.
+    /// The close button at the right of the page header, aligned to the
+    /// column, when the page can be dismissed.
     fn close_button(&mut self, cx: &Context<Self>) -> Option<AnyElement> {
         if !self.dismissible() {
             return None;
@@ -737,17 +769,17 @@ impl Form {
                     .aria_label("Close")
                     .track_focus(&focus)
                     .tab_index(0)
-                    .size(px(22.))
+                    .flex_none()
+                    .size(px(style::CONTROL))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(px(4.))
+                    .rounded(px(style::R_SM))
                     .text_color(style::dim())
                     .cursor_pointer()
                     .hover(|s| s.bg(style::hover()).text_color(style::text()))
-                    .focus(|s| s.bg(style::hover()).text_color(style::text())),
+                    .focus(|s| s.text_color(style::text()).shadow(vec![ui::ring()])),
             )
-            // The titlebar strip behind it drags the window on mouse down.
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .tooltip(ui::tooltip("Close  esc"))
             .tooltip_show_delay(ui::tooltip_delay())
@@ -760,7 +792,7 @@ impl Form {
             .child(
                 svg()
                     .path("icons/close.svg")
-                    .size(px(12.))
+                    .size(px(style::ICON))
                     .text_color(style::dim()),
             )
             .into_any_element(),
@@ -786,9 +818,21 @@ impl Form {
     }
 }
 
+impl Form {
+    /// The long editors keep their actions in a sticky band at the bottom.
+    fn sticky_footer(&self) -> bool {
+        matches!(self.kind, Kind::Connection { .. } | Kind::Bastions(_))
+    }
+}
+
 impl Render for Form {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.visible_controls.clear();
+        self.focused_field = self
+            .fields
+            .iter()
+            .find(|field| field.editor.focus_handle(cx).is_focused(window))
+            .map(|field| field.key);
         let errors = if self.attempted {
             self.field_errors(cx)
         } else {
@@ -797,6 +841,7 @@ impl Render for Form {
         let (title, subtitle) = self.heading();
         let width = self.page_width();
         let gate = matches!(self.kind, Kind::Credentials(_)) && !self.dismissible();
+        let sticky = self.sticky_footer();
         let body = match &self.kind {
             Kind::Credentials(_) => self.credentials_view(&errors, cx),
             Kind::Connection { .. } => self.connection_view(&errors, cx),
@@ -809,13 +854,13 @@ impl Render for Form {
         let header = div()
             .flex()
             .items_start()
-            .gap(px(10.))
+            .gap(px(style::S5))
             .when(gate, |header| {
                 header.child(
                     div()
                         .flex_none()
-                        .size(px(30.))
-                        .rounded(px(6.))
+                        .size(px(32.))
+                        .rounded(px(style::R_MD))
                         .border_1()
                         .border_color(style::primary_line())
                         .bg(style::primary_fill())
@@ -836,7 +881,7 @@ impl Render for Form {
                     .min_w_0()
                     .flex()
                     .flex_col()
-                    .gap(px(3.))
+                    .gap(px(style::S2))
                     .child(
                         div()
                             .text_size(px(style::FONT_TITLE))
@@ -847,25 +892,39 @@ impl Render for Form {
                     .when_some(subtitle, |h, subtitle| {
                         h.child(div().text_sm().text_color(style::dim()).child(subtitle))
                     }),
-            );
+            )
+            .children(close);
+        let action_row = |footer: Div| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(style::S4))
+                .children(message)
+                .child(footer)
+        };
+        let (inline_actions, band) = match footer {
+            Some(footer) if sticky => (None, Some(action_row(footer))),
+            Some(footer) => (
+                Some(
+                    div()
+                        .pt(px(style::S5))
+                        .border_t_1()
+                        .border_color(style::line_soft())
+                        .child(action_row(footer)),
+                ),
+                None,
+            ),
+            None => (Some(action_row(div())), None),
+        };
         let page = div()
             .w(px(width))
             .max_w_full()
             .flex()
             .flex_col()
-            .gap(px(18.))
+            .gap(px(style::S7))
             .child(header)
             .child(body)
-            .children(message)
-            .when_some(footer, |page, footer| {
-                page.child(
-                    div()
-                        .pt(px(12.))
-                        .border_t_1()
-                        .border_color(style::line_soft())
-                        .child(footer),
-                )
-            });
+            .children(inline_actions);
         div()
             .id("native-form")
             .role(Role::Dialog)
@@ -878,25 +937,19 @@ impl Render for Form {
             .text_size(px(style::FONT))
             .capture_key_down(cx.listener(Self::key))
             .child(
-                // Titlebar strip: keeps the window movable and holds the close
-                // button clear of the traffic lights.
+                // Titlebar strip: keeps the window movable clear of the
+                // traffic lights.
                 div()
                     .id("form-titlebar")
                     .flex_none()
                     .h(px(style::BAR))
-                    .pl(px(style::TRAFFIC_LIGHTS))
-                    .pr(px(10.))
-                    .flex()
-                    .items_center()
-                    .justify_end()
                     .on_mouse_down(MouseButton::Left, |event, window, _| {
                         if event.click_count == 2 {
                             window.titlebar_double_click();
                         } else {
                             window.start_window_move();
                         }
-                    })
-                    .children(close),
+                    }),
             )
             .child(
                 div()
@@ -907,17 +960,38 @@ impl Render for Form {
                     .child(
                         div()
                             .w_full()
+                            // Short pages sit a little above the optical
+                            // centre; long editors start at the top.
+                            .when(!sticky, |column| {
+                                column.min_h(gpui::relative(1.)).justify_center()
+                            })
                             .flex()
                             .flex_col()
                             .items_center()
-                            .px(px(24.))
-                            .pt(px(if gate { 56. } else { 8. }))
-                            .pb(px(32.))
+                            .px(px(style::S7))
+                            .pt(px(if sticky { style::S4 } else { style::S7 }))
+                            .pb(px(if sticky { style::S7 } else { 64. }))
                             .child(ui::appear(
                                 SharedString::from(format!("form-page-{}", self.page_key())),
                                 page,
                             )),
                     ),
             )
+            .when_some(band, |form, band| {
+                form.child(
+                    div()
+                        .flex_none()
+                        .min_h(px(ACTION_BAND))
+                        .px(px(style::S7))
+                        .py(px(style::S5))
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .border_t_1()
+                        .border_color(style::line_soft())
+                        .bg(style::bg())
+                        .child(div().w(px(width)).max_w_full().child(band)),
+                )
+            })
     }
 }

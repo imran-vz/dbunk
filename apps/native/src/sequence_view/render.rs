@@ -15,41 +15,46 @@ impl SequenceView {
         };
         let weak = cx.entity().downgrade();
         let primary = enabled && matches!(action, Action::Apply | Action::Confirm);
-        crate::ui::pressed(
-            crate::ui::tool_button(
-                ("sequence-action", index),
-                label,
-                (toggle == Some(true)).then_some("icons/check.svg"),
-                enabled,
-                primary,
-            ),
-            toggle == Some(true),
-        )
-        .role(if toggle.is_some() {
-            Role::CheckBox
-        } else {
-            Role::Button
-        })
-        .aria_label(label)
-        .a11y_synthetic_children(move |builder| {
-            if !enabled {
-                builder.parent_node().set_disabled();
+        let element = match toggle {
+            Some(on) => {
+                crate::object_ddl_view::check_row(("sequence-action", index), label, on, enabled)
             }
-            if let Some(checked) = toggle {
-                builder
-                    .parent_node()
-                    .set_toggled(gpui::accesskit::Toggled::from(checked));
+            None if primary => {
+                crate::ui::tool_button_accent(("sequence-action", index), label, None, enabled)
             }
-        })
-        .track_focus(&self.buttons[index])
-        .tab_stop(enabled)
-        .tab_index(0)
-        .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
-        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-            weak.update(cx, |this, cx| this.activate(action, window, cx))
-                .ok();
-        })
-        .into_any_element()
+            None => crate::ui::tool_button(("sequence-action", index), label, None, enabled, false),
+        };
+        element
+            .a11y_synthetic_children(move |builder| {
+                if !enabled {
+                    builder.parent_node().set_disabled();
+                }
+                if let Some(checked) = toggle {
+                    builder
+                        .parent_node()
+                        .set_toggled(gpui::accesskit::Toggled::from(checked));
+                }
+            })
+            .track_focus(&self.buttons[index])
+            .tab_stop(enabled)
+            .tab_index(0)
+            .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
+            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                weak.update(cx, |this, cx| this.activate(action, window, cx))
+                    .ok();
+            })
+            .into_any_element()
+    }
+    /// Actions of a later step appear at that step, so the bar never leads
+    /// with disabled controls; options render as checkbox rows below it.
+    fn shown_in_toolbar(&self, action: Action) -> bool {
+        match action {
+            Action::SetCalled | Action::RestartWith => false,
+            Action::Apply | Action::Confirm | Action::Cancel | Action::Discard | Action::Copy => {
+                self.enabled(action)
+            }
+            _ => true,
+        }
     }
     fn composing(&self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.set_value
@@ -118,13 +123,14 @@ impl Render for SequenceView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let text = self.text();
         let failure = self.failure.shown(&self.message);
-        let label = |text: &'static str| {
-            div()
-                .flex_none()
-                .text_size(px(crate::style::FONT_SMALL))
-                .text_color(crate::style::dim())
-                .child(text)
+        let option = |wanted: fn(&Action) -> bool| {
+            ACTIONS
+                .iter()
+                .position(|(action, _)| wanted(action))
+                .map(|index| self.button(index, cx))
         };
+        let set_called = option(|action| matches!(action, Action::SetCalled));
+        let restart_with = option(|action| matches!(action, Action::RestartWith));
         div()
             .id("sequence-tool")
             .role(Role::Group)
@@ -137,25 +143,53 @@ impl Render for SequenceView {
             .bg(crate::style::bg())
             .text_color(crate::style::text())
             .text_size(px(crate::style::FONT))
-            .border_t_1()
-            .border_color(crate::style::line())
             .capture_key_down(cx.listener(Self::key))
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap(px(8.))
-                    .px(px(8.))
-                    .py(px(6.))
-                    .child(label("Set value"))
-                    .child(div().w(px(220.)).child(self.set_value.clone()))
-                    .when(self.restart_with, |row| {
-                        row.child(label("Restart value"))
-                            .child(div().w(px(220.)).child(self.restart_value.clone()))
-                    }),
+                crate::ui::toolbar().children(
+                    (0..ACTIONS.len())
+                        .filter(|&i| self.shown_in_toolbar(ACTIONS[i].0))
+                        .map(|i| self.button(i, cx)),
+                ),
             )
-            .child(crate::ui::toolbar().children((0..ACTIONS.len()).map(|i| self.button(i, cx))))
+            .child(
+                div()
+                    .flex_none()
+                    .w_full()
+                    .max_w(px(
+                        crate::style::TOOL_COLUMN + 2. * crate::style::INSET_CONTENT
+                    ))
+                    .px(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S5))
+                    .flex()
+                    .flex_col()
+                    .gap(px(crate::style::S4))
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(crate::style::S5))
+                            .child(div().flex_1().min_w_0().child(crate::ui::labelled(
+                                "Set value",
+                                crate::object_ddl_view::well(self.set_value.clone()),
+                                None,
+                            )))
+                            .when(self.restart_with, |row| {
+                                row.child(div().flex_1().min_w_0().child(crate::ui::labelled(
+                                    "Restart value",
+                                    crate::object_ddl_view::well(self.restart_value.clone()),
+                                    None,
+                                )))
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap(px(crate::style::S4))
+                            .children(set_called)
+                            .children(restart_with),
+                    ),
+            )
             .child(
                 div()
                     .id("sequence-details")
@@ -169,8 +203,12 @@ impl Render for SequenceView {
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
-                    .p(px(8.))
+                    .border_t_1()
+                    .border_color(crate::style::line_soft())
+                    .px(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S4))
                     .font_family(crate::style::MONO)
+                    .text_size(px(crate::style::FONT_DATA))
                     .focus(|s| s.bg(crate::style::row_hover()))
                     .child(text),
             )

@@ -135,40 +135,7 @@ impl ObjectDdlView {
                 ui::Variant::Secondary,
                 enabled,
             ),
-            Some(on) => ui::press(
-                div()
-                    .id(("object-ddl-form", index))
-                    .role(Role::CheckBox)
-                    .aria_label(label.clone())
-                    .aria_toggled(on.into())
-                    .flex_none()
-                    .h(px(24.))
-                    .px(px(6.))
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .rounded(px(5.))
-                    .border_1()
-                    .border_color(gpui::transparent_black())
-                    .text_sm()
-                    .whitespace_nowrap()
-                    .text_color(if enabled {
-                        style::text()
-                    } else {
-                        style::faint()
-                    })
-                    .when(enabled, |b| {
-                        b.cursor_pointer().hover(|s| s.bg(style::hover()))
-                    })
-                    .focus(|s| s.border_color(style::accent()))
-                    .a11y_synthetic_children(move |b| {
-                        if !enabled {
-                            b.parent_node().set_disabled();
-                        }
-                    })
-                    .child(ui::check_box(on))
-                    .child(label),
-            ),
+            Some(on) => check_row(("object-ddl-form", index), label, on, enabled),
         };
         element
             .track_focus(&self.form_buttons[index])
@@ -207,22 +174,33 @@ impl ObjectDdlView {
                 .id("object-ddl-form")
                 .role(Role::Group)
                 .aria_label(title)
-                .px_2()
-                .pt_1()
+                .w_full()
+                .max_w(px(style::TOOL_COLUMN + 2. * style::INSET_CONTENT))
+                .px(px(style::INSET_CONTENT))
+                .pt(px(style::S5))
                 .child(
-                    ui::section(title)
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(style::S5))
+                        .child(ui::heading(title))
                         .child(
-                            div().flex().flex_wrap().gap(px(4.)).children(
-                                (0..CONTROLS.len())
-                                    .filter(|i| self.control_shown(CONTROLS[*i]))
-                                    .map(|i| self.control(i, cx)),
-                            ),
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .items_center()
+                                .gap(px(style::S4))
+                                .children(
+                                    (0..CONTROLS.len())
+                                        .filter(|i| self.control_shown(CONTROLS[*i]))
+                                        .map(|i| self.control(i, cx)),
+                                ),
                         )
                         .when_some(self.name.as_ref(), |v, field| {
-                            v.child(ui::labelled(name_label, field.clone(), name_note))
+                            v.child(ui::labelled(name_label, well(field.clone()), name_note))
                         })
                         .when_some(self.body.as_ref(), |v, field| {
-                            v.child(ui::labelled(body_label, field.clone(), note))
+                            v.child(ui::labelled(body_label, well(field.clone()), note))
                         }),
                 )
                 .into_any_element(),

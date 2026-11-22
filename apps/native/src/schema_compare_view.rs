@@ -725,12 +725,7 @@ impl SchemaCompareView {
             .as_ref()
             .and_then(|connections| connections.get(&endpoint.connection_id));
         connection.map_or_else(
-            || {
-                format!(
-                    "Removed connection ({}) · {}",
-                    endpoint.connection_id, endpoint.schema
-                )
-            },
+            || format!("Removed connection · {}", endpoint.schema),
             |connection| {
                 format!(
                     "{} · {} · {} · {}",

@@ -1,6 +1,9 @@
-//! Plan 031 document kit: toolbars, tool buttons, segmented switchers and
-//! footer status lines. Helpers only style; callers keep their own focus
-//! handles, tab order, `on_click` and `on_a11y_action` handlers.
+//! Document kit: toolbars, tool buttons, segmented switchers, list rows,
+//! fields, page buttons and footer status lines. Helpers only style; callers
+//! keep their own focus handles, tab order, `on_click` and `on_a11y_action`
+//! handlers. Tool-document scaffolding (`tool_header`, `data_table`,
+//! `property_list`, `empty_state`, `info_hint`, `env_tag`) lives in `tool`
+//! and is re-exported here.
 use crate::style;
 use gpui::{
     Animation, AnimationElement, AnimationExt, AnyView, App, BoxShadow, Context, Div, ElementId,
@@ -12,28 +15,46 @@ use std::time::Duration;
 pub mod confirm;
 pub mod dialog;
 pub mod popover;
+pub mod tool;
 
-/// A 28 px document toolbar. Wraps onto further rows instead of clipping
+// Re-exported so views write `ui::tool_header`, `ui::data_table`, ...
+pub use tool::*;
+
+/// The keyboard focus ring: 2 pt of `accent` at 60 % drawn outside the
+/// control, so focus never reads as a primary border.
+pub fn ring() -> BoxShadow {
+    BoxShadow {
+        color: style::focus_ring().into(),
+        offset: point(px(0.), px(0.)),
+        blur_radius: px(0.),
+        spread_radius: px(2.),
+        inset: false,
+    }
+}
+
+/// A `TOOLBAR` document toolbar. Wraps onto further rows instead of clipping
 /// controls when the window is narrow.
 pub fn toolbar() -> Div {
     div()
         .flex_none()
         .min_h(px(style::TOOLBAR))
-        .py(px(4.))
-        .px(px(8.))
+        .py(px((style::TOOLBAR - style::CONTROL) / 2.))
+        .px(px(style::INSET_BAR))
         .flex()
         .flex_wrap()
         .items_center()
-        .gap(px(4.))
+        .gap(px(style::S2))
         .border_b_1()
         .border_color(style::line_soft())
         .text_sm()
         .text_color(style::dim())
 }
 
-/// A 20 px toolbar button labelled with `label` (also its AX name). Disabled
-/// buttons render faint and expose AX disabled; a caller that installs its own
-/// `a11y_synthetic_children` replaces that hook and must set it again.
+/// A `CONTROL` toolbar button labelled with `label` (also its AX name).
+/// Disabled buttons render faint and expose AX disabled; a caller that
+/// installs its own `a11y_synthetic_children` replaces that hook and must set
+/// it again. `primary` is kept for existing callers and only raises the face;
+/// a toolbar's primary action is `tool_button_accent`.
 pub fn tool_button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -54,12 +75,12 @@ pub fn tool_button(
         .role(Role::Button)
         .aria_label(label.clone())
         .flex_none()
-        .h(px(style::TOOL))
-        .px(px(6.))
+        .h(px(style::CONTROL))
+        .px(px(style::S3 + 1.))
         .flex()
         .items_center()
-        .gap(px(4.))
-        .rounded(px(4.))
+        .gap(px(style::S2 + 1.))
+        .rounded(px(style::R_SM))
         .border_1()
         .border_color(if primary {
             style::line().into()
@@ -77,11 +98,7 @@ pub fn tool_button(
                     .hover(|s| s.bg(style::hover()).text_color(style::text())),
             )
         })
-        .focus(|s| {
-            s.bg(style::hover())
-                .text_color(style::text())
-                .border_color(style::accent())
-        })
+        .focus(|s| s.text_color(style::text()).shadow(vec![ring()]))
         .when_some(icon, |button, path| {
             button.child(
                 svg()
@@ -97,17 +114,17 @@ pub fn tool_button(
         })
 }
 
-/// A fixed 28 px toolbar row that never wraps; controls that do not fit are
+/// A fixed `TOOLBAR` row that never wraps; controls that do not fit are
 /// clipped, so callers move secondary actions into an overflow menu instead.
 pub fn toolbar_strip() -> Div {
     div()
         .flex_none()
         .h(px(style::TOOLBAR))
-        .px(px(8.))
+        .px(px(style::INSET_BAR))
         .flex()
         .flex_nowrap()
         .items_center()
-        .gap(px(4.))
+        .gap(px(style::S2))
         .overflow_hidden()
         .border_b_1()
         .border_color(style::line_soft())
@@ -116,7 +133,8 @@ pub fn toolbar_strip() -> Div {
         .text_color(style::dim())
 }
 
-/// A 20 x 20 icon-only button. `label` is its AX name and hover tooltip.
+/// A `CONTROL` square icon-only button. `label` is its AX name and hover
+/// tooltip.
 pub fn icon_button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -134,11 +152,11 @@ pub fn icon_button(
         .role(Role::Button)
         .aria_label(label.clone())
         .flex_none()
-        .size(px(style::TOOL))
+        .size(px(style::CONTROL))
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(4.))
+        .rounded(px(style::R_SM))
         .border_1()
         .border_color(gpui::transparent_black())
         .text_color(color)
@@ -149,11 +167,7 @@ pub fn icon_button(
                     .hover(|s| s.bg(style::hover()).text_color(style::text())),
             )
         })
-        .focus(|s| {
-            s.bg(style::hover())
-                .text_color(style::text())
-                .border_color(style::accent())
-        })
+        .focus(|s| s.text_color(style::text()).shadow(vec![ring()]))
         .child(
             svg()
                 .path(icon)
@@ -168,8 +182,9 @@ pub fn icon_button(
         })
 }
 
-/// The single primary action of a toolbar (`Review 3 ⌘S`): a 20 px tool
-/// button in the primary accent fill, with an optional trailing shortcut.
+/// The single primary action of a toolbar (`Run`, `Review 3 ⌘S`): a
+/// `CONTROL` tool button in the primary accent tint, with an optional
+/// trailing shortcut. The only way to mark a toolbar action as primary.
 pub fn tool_button_accent(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -182,12 +197,12 @@ pub fn tool_button_accent(
         .role(Role::Button)
         .aria_label(label.clone())
         .flex_none()
-        .h(px(style::TOOL))
-        .px(px(7.))
+        .h(px(style::CONTROL))
+        .px(px(style::S4))
         .flex()
         .items_center()
-        .gap(px(5.))
-        .rounded(px(4.))
+        .gap(px(style::S3))
+        .rounded(px(style::R_SM))
         .border_1()
         .border_color(if enabled {
             style::primary_line()
@@ -213,7 +228,8 @@ pub fn tool_button_accent(
                     .hover(|s| s.border_color(style::accent())),
             )
         })
-        .focus(|s| s.border_color(style::accent()))
+        .when(!enabled, |button| button.opacity(0.5))
+        .focus(|s| s.shadow(vec![ring()]))
         .child(label)
         .when_some(shortcut_keys, |button, keys| button.child(shortcut(keys)))
         .when(!enabled, |button| {
@@ -221,21 +237,21 @@ pub fn tool_button_accent(
         })
 }
 
-/// A 14 px monospace pill counting active filters, sort keys or hidden
-/// columns next to a toolbar button.
+/// A 16 pt pill counting active filters, sort keys or hidden columns next
+/// to a toolbar button.
 pub fn count_badge(text: impl Into<SharedString>) -> Div {
     div()
         .flex_none()
-        .h(px(14.))
-        .min_w(px(14.))
-        .px(px(4.))
+        .h(px(16.))
+        .min_w(px(16.))
+        .px(px(style::S2 + 1.))
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(7.))
+        .rounded_full()
         .bg(style::primary_fill())
-        .font_family(style::MONO)
         .text_size(px(style::FONT_SMALL))
+        .font_weight(gpui::FontWeight::SEMIBOLD)
         .text_color(style::accent())
         .child(text.into())
 }
@@ -298,22 +314,22 @@ pub fn range_status(id: impl Into<ElementId>, page: Option<(u64, usize)>) -> Sta
         .role(Role::Status)
         .aria_label(SharedString::from(format!("Rows {range}")))
         .flex_none()
-        .px(px(4.))
-        .font_family(style::MONO)
+        .px(px(style::S2))
         .text_color(style::dim())
         .child(range)
 }
 
-/// A 20 px bordered row of `segment`s (Data | Structure).
+/// A `CONTROL` bordered row of `segment`s (Data | Structure). Every exclusive
+/// choice uses one; the selected segment is `raised` with `text`.
 pub fn segment_group() -> Div {
     div()
         .flex_none()
-        .h(px(style::TOOL))
+        .h(px(style::CONTROL))
         .p(px(1.))
         .flex()
         .items_center()
         .gap(px(1.))
-        .rounded(px(4.))
+        .rounded(px(style::R_SM + 1.))
         .border_1()
         .border_color(style::line())
         .bg(style::bg())
@@ -329,24 +345,26 @@ pub fn pressed(button: Stateful<Div>, selected: bool) -> Stateful<Div> {
     })
 }
 
-/// A 24 px row of small tabs (results, inspector views). Children are
-/// `segment`s, optionally followed by `grow()` and trailing metadata.
+/// A `FOOTER` row of small tabs (results, inspector views). Children are
+/// `segment`s, optionally followed by `grow()` and trailing metadata. New
+/// exclusive choices put their segments in a `segment_group` instead.
 pub fn segmented() -> Div {
     div()
         .flex_none()
         .min_h(px(style::FOOTER))
-        .px(px(6.))
+        .px(px(style::INSET_BAR))
         .flex()
         .flex_wrap()
         .items_center()
-        .gap(px(2.))
+        .gap(px(style::S1))
         .border_b_1()
         .border_color(style::line_soft())
         .text_sm()
         .text_color(style::dim())
 }
 
-/// One 18 px tab of a `segmented` row.
+/// One segment of a `segment_group` (or a `segmented` row): fits inside
+/// the group's border at `CONTROL - 4`.
 pub fn segment(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -354,98 +372,233 @@ pub fn segment(
     enabled: bool,
 ) -> Stateful<Div> {
     pressed(tool_button(id, label, None, enabled, false), selected)
-        .h(px(18.))
-        .rounded(px(3.))
+        .h(px(style::CONTROL - 4.))
+        .rounded(px(style::R_SM - 1.))
 }
 
 pub fn separator() -> Div {
     div()
         .flex_none()
         .w(px(1.))
-        .h(px(14.))
-        .mx(px(4.))
+        .h(px(16.))
+        .mx(px(style::S2))
         .bg(style::line())
+}
+
+/// Element group name set on every `list_row`; trailing actions use
+/// `row_actions` (or `.group_hover(LIST_ROW_GROUP, ...)`) to appear on hover.
+pub const LIST_ROW_GROUP: &str = "list-row";
+
+/// Fill of a list row: `select` when selected in the focused pane, `raised`
+/// when selected in an unfocused pane, none otherwise.
+pub fn list_row_fill(selected: bool, focused: bool) -> Option<gpui::Rgba> {
+    match (selected, focused) {
+        (true, true) => Some(style::select()),
+        (true, false) => Some(style::raised()),
+        (false, _) => None,
+    }
+}
+
+/// The one list row: connections, navigator tree, palette results, catalog
+/// sub-nav, history and other lists. `ROW` high, `R_SM` corners, `S3`
+/// padding, `hover` fill under the pointer, `list_row_fill` when selected.
+///
+/// The row stretches to its parent with an `S2` margin on both sides, so
+/// the highlight always spans the full row: put it in a flex column (or
+/// block) parent that is as wide as the list, never in a content-sized one.
+/// It sets `.hover(...)` and `.group(LIST_ROW_GROUP)`; callers must not set
+/// `hover` again (GPUI allows one hover style).
+pub fn list_row(id: impl Into<ElementId>, selected: bool, focused: bool) -> Stateful<Div> {
+    let fill = list_row_fill(selected, focused);
+    div()
+        .id(id)
+        .group(LIST_ROW_GROUP)
+        .flex_none()
+        .h(px(style::ROW))
+        .mx(px(style::S2))
+        .px(px(style::S3))
+        .flex()
+        .items_center()
+        .gap(px(style::S3))
+        .overflow_hidden()
+        .rounded(px(style::R_SM))
+        .text_sm()
+        .whitespace_nowrap()
+        .text_color(style::text())
+        .cursor_pointer()
+        .when_some(fill, |row, fill| row.bg(fill))
+        .when(fill.is_none(), |row| row.hover(|s| s.bg(style::hover())))
+        .focus(|s| s.shadow(vec![ring()]))
+}
+
+/// A row's primary label: takes the remaining width and ellipsizes.
+pub fn row_label(text: impl Into<SharedString>) -> Div {
+    div()
+        .flex_1()
+        .min_w_0()
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .text_ellipsis()
+        .child(text.into())
+}
+
+/// Right-aligned `dim` metadata of a row (a database name, a count).
+pub fn row_meta(text: impl Into<SharedString>) -> Div {
+    div()
+        .flex_none()
+        .max_w(px(140.))
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .text_ellipsis()
+        .text_size(px(style::FONT_SMALL))
+        .text_color(style::dim())
+        .child(text.into())
+}
+
+/// The fixed-width trailing slot of a `list_row`. Its actions are hidden
+/// until the row is hovered, or always shown when `shown` (the row is
+/// selected); the slot keeps its width either way, so nothing shifts.
+pub fn row_actions(width: f32, shown: bool) -> Div {
+    div()
+        .flex_none()
+        .w(px(width))
+        .h_full()
+        .flex()
+        .items_center()
+        .justify_end()
+        .gap(px(style::S1))
+        .when(!shown, |slot| {
+            slot.invisible()
+                .group_hover(LIST_ROW_GROUP, |s| s.visible())
+        })
 }
 
 pub fn grow() -> Div {
     div().flex_1()
 }
 
-/// Section heading inside a document (`Columns 8`, `Indexes 3`).
+/// Inline section heading inside a document toolbar or card
+/// (`Columns 8`, `Indexes 3`): semibold `text`; put counts in a `dim` child.
 pub fn section_label(label: impl Into<SharedString>) -> Div {
     div()
         .flex_none()
         .flex()
         .items_center()
-        .gap(px(6.))
+        .gap(px(style::S3))
         .text_sm()
         .font_weight(gpui::FontWeight::SEMIBOLD)
-        .text_color(style::dim())
+        .text_color(style::text())
         .child(label.into())
 }
 
-/// Small monospace count or tag.
+/// A sentence-case `FONT_HEADING` semibold heading for a group inside a tool
+/// document or page, with no rule. `section` adds the soft rule for pages.
+pub fn heading(title: impl Into<SharedString>) -> Div {
+    div()
+        .flex_none()
+        .flex()
+        .items_center()
+        .gap(px(style::S3))
+        .text_size(px(style::FONT_HEADING))
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_color(style::text())
+        .child(title.into())
+}
+
+/// Small sans tag (`Table`, `read-only`, `unique`): `R_SM`, line border,
+/// `FONT_SMALL` `dim`. Wrap identifier values in `mono` yourself.
 pub fn badge(text: impl Into<SharedString>) -> Div {
     div()
         .flex_none()
-        .px(px(4.))
-        .rounded(px(3.))
+        .h(px(18.))
+        .px(px(style::S3 - 1.))
+        .flex()
+        .items_center()
+        .rounded(px(style::R_SM))
         .border_1()
         .border_color(style::line())
-        .font_family(style::MONO)
         .text_size(px(style::FONT_SMALL))
         .text_color(style::dim())
+        .whitespace_nowrap()
         .child(text.into())
 }
 
-/// `schema.` faint, `table` bright, both monospace.
+/// The one key chip (PK, FK, unique, identity, primary): `primary_fill`,
+/// sans `FONT_SMALL` semibold in `accent`.
+pub fn key_chip(text: impl Into<SharedString>) -> Div {
+    div()
+        .flex_none()
+        .h(px(16.))
+        .px(px(style::S2 + 1.))
+        .flex()
+        .items_center()
+        .rounded(px(style::R_SM))
+        .bg(style::primary_fill())
+        .text_size(px(style::FONT_SMALL - 1.))
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_color(style::accent())
+        .whitespace_nowrap()
+        .child(text.into())
+}
+
+/// A monospace span for data inside sans chrome: cell values, SQL,
+/// identifiers, hosts and in-row durations (DESIGN.md mono rule).
+pub fn mono(text: impl Into<SharedString>) -> Div {
+    div()
+        .font_family(style::MONO)
+        .text_size(px(style::FONT_DATA))
+        .child(text.into())
+}
+
+/// `schema.` dim, `table` bright, both monospace (identifiers as data).
 pub fn crumbs(prefix: impl Into<SharedString>, leaf: impl Into<SharedString>) -> Div {
     div()
         .flex_none()
         .flex()
         .items_center()
         .font_family(style::MONO)
-        .text_color(style::faint())
+        .text_color(style::dim())
         .whitespace_nowrap()
         .child(prefix.into())
         .child(div().text_color(style::text()).child(leaf.into()))
 }
 
-/// The 24 px document footer: monospace 10 px, faint, bordered on top.
+/// The `FOOTER` document footer: sans `FONT_SMALL`, `dim`, bordered on top.
+/// Left: counts; right (after `grow()`): timing.
 pub fn status_line() -> Div {
     div()
         .flex_none()
         .min_h(px(style::FOOTER))
-        .px(px(8.))
+        .px(px(style::INSET_BAR))
         .flex()
         .flex_wrap()
         .items_center()
-        .gap_x(px(12.))
+        .gap_x(px(style::S5))
         .border_t_1()
-        .border_color(style::line())
-        .font_family(style::MONO)
+        .border_color(style::line_soft())
         .text_size(px(style::FONT_SMALL))
-        .text_color(style::faint())
+        .text_color(style::dim())
 }
 
-/// Keyboard hint inside a tool button (`⌘↵`); pair with `aria_keyshortcuts`.
+/// Keyboard hint inside a tool button or menu row (`⌘↵`); pair with
+/// `aria_keyshortcuts`.
 pub fn shortcut(keys: &'static str) -> Div {
     div()
         .flex_none()
-        .font_family(style::MONO)
         .text_size(px(style::FONT_SMALL))
-        .text_color(style::faint())
+        .text_color(style::dim())
         .child(keys)
 }
 
-/// A bordered inline text field frame for an `AccessibleEditor`.
+/// A bordered inline text field frame for an `AccessibleEditor` in a
+/// toolbar: `CONTROL` high.
 pub fn field() -> Div {
     div()
-        .min_h(px(22.))
-        .px(px(6.))
+        .min_h(px(style::CONTROL))
+        .px(px(style::S3))
         .flex()
         .items_center()
-        .rounded(px(4.))
+        .rounded(px(style::R_SM))
         .border_1()
         .border_color(style::line())
         .bg(style::bg())
@@ -491,8 +644,23 @@ pub enum Variant {
     Danger,
 }
 
-/// A 24 px form/page button. Like `tool_button`, it only styles: callers own
-/// focus, `on_click` and `on_a11y_action`.
+/// Fill, border and text of a page button variant.
+fn button_colors(variant: Variant) -> (gpui::Rgba, gpui::Rgba, gpui::Rgba) {
+    let clear: gpui::Rgba = gpui::transparent_black().into();
+    match variant {
+        Variant::Primary => (style::accent(), clear, style::on_accent()),
+        Variant::Secondary => (style::raised(), style::line(), style::text()),
+        Variant::Ghost => (clear, clear, style::dim()),
+        Variant::Danger => (style::bad(), clear, style::on_accent()),
+    }
+}
+
+/// A `FIELD` (28 pt) page and dialog button. Primary is solid `accent` with
+/// dark text and at most one per view; Danger is solid `bad`. Focus is the
+/// outside `ring`, never a border change, so a focused secondary never
+/// looks primary. Disabled: 50 % opacity, `faint` text, AX disabled. Like
+/// `tool_button`, it only styles: callers own focus, `on_click` and
+/// `on_a11y_action`.
 pub fn button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
@@ -500,49 +668,53 @@ pub fn button(
     enabled: bool,
 ) -> Stateful<Div> {
     let label = label.into();
-    let (fill, line, text) = match variant {
-        Variant::Primary => (
-            style::primary_fill(),
-            style::primary_line(),
-            style::primary_text(),
-        ),
-        Variant::Secondary => (style::raised(), style::line(), style::text()),
-        Variant::Ghost => (
-            gpui::transparent_black().into(),
-            gpui::transparent_black().into(),
-            style::dim(),
-        ),
-        Variant::Danger => (style::bad_fill(), style::bad_line(), style::bad_text()),
-    };
+    let (fill, line, text) = button_colors(variant);
+    let solid = matches!(variant, Variant::Primary | Variant::Danger);
     div()
         .id(id)
         .role(Role::Button)
         .aria_label(label.clone())
         .flex_none()
-        .h(px(24.))
-        .px(px(10.))
+        .h(px(style::FIELD))
+        .px(px(style::S5))
         .flex()
         .items_center()
         .justify_center()
-        .gap(px(5.))
-        .rounded(px(5.))
+        .gap(px(style::S3))
+        .rounded(px(style::R_MD))
         .border_1()
         .border_color(line)
         .bg(fill)
         .text_sm()
+        .when(solid, |b| b.font_weight(gpui::FontWeight::SEMIBOLD))
         .whitespace_nowrap()
         .text_color(if enabled { text } else { style::faint() })
-        .when(variant != Variant::Ghost && enabled, |b| {
+        .when(variant == Variant::Secondary && enabled, |b| {
             b.shadow(vec![lifted()])
         })
-        .when(!enabled, |b| b.opacity(0.55))
+        .when(!enabled, |b| b.opacity(0.5))
         .when(enabled, |b| {
-            press(b.cursor_pointer().hover(move |s| match variant {
+            let b = b.cursor_pointer().hover(move |s| match variant {
                 Variant::Ghost => s.bg(style::hover()).text_color(style::text()),
-                _ => s.border_color(style::faint()),
-            }))
+                Variant::Primary => s.bg(style::accent_hover()),
+                Variant::Danger => s.opacity(0.9),
+                Variant::Secondary => s.bg(style::hover()).border_color(style::faint()),
+            });
+            if solid {
+                // A solid face keeps its colour while held, so its dark
+                // label stays readable; it only sinks.
+                b.active(|s| s.opacity(0.85).shadow(vec![sunken()]))
+            } else {
+                press(b)
+            }
         })
-        .focus(|s| s.border_color(style::accent()))
+        .focus(move |s| {
+            if variant == Variant::Secondary {
+                s.shadow(vec![lifted(), ring()])
+            } else {
+                s.shadow(vec![ring()])
+            }
+        })
         .child(label)
         .when(!enabled, |b| {
             b.a11y_synthetic_children(|builder| builder.parent_node().set_disabled())
@@ -597,10 +769,10 @@ pub fn error_banner(id: impl Into<ElementId>, message: impl Into<SharedString>) 
         .aria_label(message.clone())
         .flex()
         .items_start()
-        .gap(px(6.))
-        .px(px(8.))
-        .py(px(5.))
-        .rounded(px(5.))
+        .gap(px(style::S3))
+        .px(px(style::S4))
+        .py(px(style::S3))
+        .rounded(px(style::R_MD))
         .border_1()
         .border_color(style::bad_line())
         .bg(style::bad_fill())
@@ -609,7 +781,7 @@ pub fn error_banner(id: impl Into<ElementId>, message: impl Into<SharedString>) 
         .child(
             svg()
                 .path("icons/warning.svg")
-                .mt(px(1.))
+                .mt(px(2.))
                 .size(px(style::ICON))
                 .flex_none()
                 .text_color(style::bad_text()),
@@ -644,8 +816,8 @@ impl Failure {
 pub fn error_strip(id: &'static str, seq: u64, message: impl Into<SharedString>) -> Div {
     div()
         .flex_none()
-        .px(px(8.))
-        .py(px(6.))
+        .px(px(style::S4))
+        .py(px(style::S3))
         .child(shake((id, seq), error_banner(id, message)))
 }
 
@@ -657,9 +829,10 @@ pub struct Tooltip {
 impl Render for Tooltip {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
-            .px(px(6.))
-            .py(px(3.))
-            .rounded(px(4.))
+            .max_w(px(360.))
+            .px(px(style::S4))
+            .py(px(style::S2))
+            .rounded(px(style::R_MD))
             .border_1()
             .border_color(style::line())
             .bg(style::raised())
@@ -688,20 +861,37 @@ pub fn tooltip_delay() -> Duration {
     Duration::from_millis(style::TOOLTIP_DELAY_MS)
 }
 
-/// Bordered text-field frame; `error` swaps the border to the danger colour.
+/// Border of a text-field well: `bad_line` on error, `accent` while the
+/// field has focus, `line` at rest.
+pub fn input_border(error: bool, focused: bool) -> gpui::Rgba {
+    if error {
+        style::bad_line()
+    } else if focused {
+        style::accent()
+    } else {
+        style::line()
+    }
+}
+
+/// Bordered `FIELD` text-field well with an `S4` inset; `error` swaps the
+/// border to the danger colour. Use `input_well` when the caller knows
+/// whether the field has focus.
 pub fn input_frame(error: bool) -> Div {
+    input_well(error, false)
+}
+
+/// `input_frame` with the 1 pt `accent` focus edge while `focused`, so a
+/// focused empty field is visible without its caret.
+pub fn input_well(error: bool, focused: bool) -> Div {
     div()
-        .min_h(px(26.))
-        .px(px(7.))
+        .min_h(px(style::FIELD))
+        .px(px(style::S4))
         .flex()
         .items_center()
-        .rounded(px(5.))
+        .gap(px(style::S2))
+        .rounded(px(style::R_MD))
         .border_1()
-        .border_color(if error {
-            style::bad_line()
-        } else {
-            style::line()
-        })
+        .border_color(input_border(error, focused))
         .bg(style::bg())
 }
 
@@ -714,14 +904,9 @@ pub fn labelled(
     div()
         .flex()
         .flex_col()
-        .gap(px(4.))
+        .gap(px(style::S3))
         .min_w_0()
-        .child(
-            div()
-                .text_size(px(style::FONT_SMALL))
-                .text_color(style::dim())
-                .child(label.into()),
-        )
+        .child(div().text_sm().text_color(style::dim()).child(label.into()))
         .child(input)
         .when_some(note, |field, (text, error)| {
             field.child(
@@ -730,42 +915,44 @@ pub fn labelled(
                     .text_color(if error {
                         style::bad_text()
                     } else {
-                        style::faint()
+                        style::dim()
                     })
                     .child(text),
             )
         })
 }
 
-/// A titled group of fields on a page.
+/// A titled group of fields on a full-window page: sentence-case
+/// `FONT_HEADING` semibold heading over a soft rule. Tool documents use
+/// `heading` (no rule).
 pub fn section(title: impl Into<SharedString>) -> Div {
-    div().flex().flex_col().gap(px(8.)).child(
+    div().flex().flex_col().gap(px(style::S5)).child(
         div()
-            .pb(px(4.))
+            .pb(px(style::S3))
             .border_b_1()
             .border_color(style::line_soft())
-            .text_size(px(style::FONT_SMALL))
+            .text_size(px(style::FONT_HEADING))
             .font_weight(gpui::FontWeight::SEMIBOLD)
-            .text_color(style::faint())
-            .child(title.into().to_uppercase()),
+            .text_color(style::text())
+            .child(title.into()),
     )
 }
 
-/// 12 px checkbox glyph for toggle rows.
+/// 12 pt checkbox glyph for toggle rows.
 pub fn check_box(checked: bool) -> Div {
     div()
         .flex_none()
         .size(px(12.))
-        .mt(px(1.))
-        .rounded(px(3.))
+        .mt(px(2.))
+        .rounded(px(style::R_SM - 1.))
         .border_1()
         .border_color(if checked {
             style::accent()
         } else {
-            style::faint()
+            style::dim()
         })
         .bg(if checked {
-            style::primary_fill()
+            style::accent()
         } else {
             style::bg()
         })
@@ -777,7 +964,7 @@ pub fn check_box(checked: bool) -> Div {
                 svg()
                     .path("icons/check.svg")
                     .size(px(9.))
-                    .text_color(style::accent()),
+                    .text_color(style::on_accent()),
             )
         })
 }
@@ -813,7 +1000,7 @@ pub fn tri_check_box(state: CheckState) -> Div {
     div()
         .flex_none()
         .size(px(12.))
-        .rounded(px(3.))
+        .rounded(px(style::R_SM - 1.))
         .border_1()
         .border_color(if icon.is_some() {
             style::accent()
@@ -850,9 +1037,9 @@ pub fn choice_card(
         .aria_label(title.clone())
         .flex()
         .items_start()
-        .gap(px(10.))
-        .p(px(10.))
-        .rounded(px(6.))
+        .gap(px(style::S5))
+        .p(px(style::S5))
+        .rounded(px(style::R_MD))
         .border_1()
         .border_color(if selected {
             style::primary_line()
@@ -866,12 +1053,12 @@ pub fn choice_card(
         })
         .cursor_pointer()
         .hover(|s| s.border_color(style::faint()))
-        .focus(|s| s.border_color(style::accent()))
+        .focus(|s| s.shadow(vec![ring()]))
         .child(
             div()
                 .flex_none()
-                .size(px(26.))
-                .rounded(px(5.))
+                .size(px(28.))
+                .rounded(px(style::R_MD))
                 .border_1()
                 .border_color(style::line())
                 .bg(style::bg())
@@ -890,24 +1077,20 @@ pub fn choice_card(
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .gap(px(3.))
+                .gap(px(style::S1 + 1.))
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap(px(6.))
+                        .gap(px(style::S3))
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(style::text())
                         .child(title)
                         .when_some(badge_text, |row, text| {
                             row.child(
                                 div()
-                                    .px(px(5.))
-                                    .rounded(px(3.))
-                                    .bg(style::primary_fill())
-                                    .text_size(px(style::FONT_SMALL))
-                                    .text_color(style::accent())
-                                    .child(text),
+                                    .font_weight(gpui::FontWeight::NORMAL)
+                                    .child(badge(text)),
                             )
                         }),
                 )
@@ -946,6 +1129,34 @@ mod tests {
             .map(|i| shake_offset(i as f32 / 100.).abs())
             .fold(0., f32::max);
         assert!(peak > 1. && peak <= style::SHAKE_PX);
+    }
+
+    #[test]
+    fn list_rows_fill_by_selection_and_pane_focus() {
+        assert_eq!(list_row_fill(false, true), None);
+        assert_eq!(list_row_fill(false, false), None);
+        assert_eq!(list_row_fill(true, true), Some(style::select()));
+        assert_eq!(list_row_fill(true, false), Some(style::raised()));
+    }
+
+    #[test]
+    fn primary_and_danger_buttons_are_solid_and_readable() {
+        for variant in [Variant::Primary, Variant::Danger] {
+            let (fill, _, text) = button_colors(variant);
+            assert_eq!(fill.a, 1.);
+            assert!(style::contrast(text, fill) >= 4.5, "{variant:?}");
+        }
+        // A secondary never takes the accent; focus is the outside ring.
+        let (fill, line, _) = button_colors(Variant::Secondary);
+        assert!(fill != style::accent() && line != style::accent());
+        assert!(ring().spread_radius > px(0.) && !ring().inset);
+    }
+
+    #[test]
+    fn input_border_prefers_error_over_focus() {
+        assert_eq!(input_border(true, true), style::bad_line());
+        assert_eq!(input_border(false, true), style::accent());
+        assert_eq!(input_border(false, false), style::line());
     }
 
     #[test]

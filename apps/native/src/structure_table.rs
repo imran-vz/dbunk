@@ -7,10 +7,12 @@ use gpui::{AnyElement, Div, Role, SharedString, div, prelude::*, px};
 
 /// Display cells keep at most this many characters before an ellipsis.
 pub const CELL_CHARS: usize = 160;
-/// Every table line: section titles, column titles and rows.
-pub const LINE: f32 = 28.;
+/// Every table line: section titles, column titles and rows. The PostgreSQL
+/// page is one uniform list, so titles share the row pitch; a step above
+/// `GRID_ROW` leaves them room to breathe.
+pub const LINE: f32 = style::GRID_ROW + style::S2;
 /// Horizontal inset of the section tables inside the page.
-pub const INSET: f32 = 16.;
+pub const INSET: f32 = style::INSET_CONTENT;
 /// Narrowest a section column shrinks to before its text truncates away.
 const MIN_CELL: f32 = 32.;
 
@@ -210,10 +212,10 @@ impl SectionTable {
 pub fn cell(spec: &ColumnSpec, cell: Option<Shown>) -> AnyElement {
     let base = div()
         .h_full()
-        .px(px(8.))
+        .px(px(style::S4))
         .flex()
         .items_center()
-        .gap(px(4.))
+        .gap(px(style::S2))
         .overflow_hidden()
         .whitespace_nowrap()
         .flex_basis(px(spec.width))
@@ -224,27 +226,24 @@ pub fn cell(spec: &ColumnSpec, cell: Option<Shown>) -> AnyElement {
         .when(spec.mono, |cell| cell.font_family(style::MONO));
     match cell {
         Some(Shown::Text(text)) => base.child(div().min_w_0().truncate().child(text)),
+        // Low-signal values stay readable (`dim`); only the absent-value
+        // dash is decorative.
         Some(Shown::Faint(text)) => base
-            .text_color(style::faint())
+            .text_color(if text.as_str() == "—" {
+                style::faint()
+            } else {
+                style::dim()
+            })
             .child(div().min_w_0().truncate().child(text)),
+        // One chip style for keys and identity; attention states keep the
+        // warn tint.
         Some(Shown::Tags(tags)) => base.children(tags.into_iter().map(|tag| {
-            let (fill, color) = match tag.tone {
-                Tone::Key => (style::primary_fill(), style::accent()),
-                Tone::Warn => (style::warn_fill(), style::warn()),
-                Tone::Plain => (style::raised(), style::dim()),
-            };
-            div()
-                .flex_none()
-                .h(px(16.))
-                .px(px(5.))
-                .flex()
-                .items_center()
-                .rounded(px(3.))
-                .bg(fill)
-                .font_family(style::MONO)
-                .text_size(px(style::FONT_SMALL))
-                .text_color(color)
-                .child(tag.text)
+            match tag.tone {
+                Tone::Key | Tone::Plain => crate::ui::key_chip(tag.text),
+                Tone::Warn => crate::ui::key_chip(tag.text)
+                    .bg(style::warn_fill())
+                    .text_color(style::warn()),
+            }
         })),
         None => base,
     }
@@ -261,8 +260,8 @@ pub fn card(top: bool, bottom: bool) -> Div {
         .border_r_1()
         .border_t_1()
         .border_color(style::line_soft())
-        .when(top, |card| card.rounded_t(px(6.)))
-        .when(bottom, |card| card.border_b_1().rounded_b(px(6.)))
+        .when(top, |card| card.rounded_t(px(style::R_MD)))
+        .when(bottom, |card| card.border_b_1().rounded_b(px(style::R_MD)))
 }
 
 /// An empty page line, inset like the section tables.
@@ -275,14 +274,15 @@ pub fn title_line(label: impl Into<SharedString>, count: usize, empty: Option<&s
     line()
         .flex()
         .items_end()
-        .gap(px(8.))
-        .pb(px(5.))
+        .gap(px(style::S4))
+        .pb(px(style::S2))
         .child(
             div()
                 .flex_none()
+                .text_size(px(style::FONT_HEADING))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(if count == 0 {
-                    style::faint()
+                    style::dim()
                 } else {
                     style::text()
                 })
@@ -291,9 +291,8 @@ pub fn title_line(label: impl Into<SharedString>, count: usize, empty: Option<&s
         .child(
             div()
                 .flex_none()
-                .font_family(style::MONO)
                 .text_size(px(style::FONT_SMALL))
-                .text_color(style::faint())
+                .text_color(style::dim())
                 .child(count.to_string()),
         )
         .when_some(empty.filter(|_| count == 0), |line, empty| {
@@ -301,7 +300,8 @@ pub fn title_line(label: impl Into<SharedString>, count: usize, empty: Option<&s
                 div()
                     .min_w_0()
                     .truncate()
-                    .text_color(style::faint())
+                    .text_size(px(style::FONT_SMALL))
+                    .text_color(style::dim())
                     .child(empty.to_owned()),
             )
         })
@@ -313,8 +313,8 @@ pub fn head_line(columns: &[ColumnSpec]) -> Div {
         card(true, columns.is_empty())
             .bg(style::panel())
             .text_size(px(style::FONT_SMALL))
-            .font_weight(gpui::FontWeight::MEDIUM)
-            .text_color(style::faint())
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(style::dim())
             .children(columns.iter().map(|spec| {
                 cell(
                     &ColumnSpec {
@@ -359,8 +359,8 @@ pub fn sections(
         .aria_label(label.into())
         .flex()
         .flex_col()
-        .pt(px(4.))
-        .pb(px(12.));
+        .pt(px(style::S2))
+        .pb(px(style::S5));
     for (section, table) in tables.iter().enumerate() {
         let count = table.rows.len();
         page = page.child(title_line(table.title, count, Some(table.empty)));
@@ -414,12 +414,13 @@ pub fn definition(id: &'static str, title: &'static str, sql: SharedString) -> D
                     .id(id)
                     .role(Role::Document)
                     .aria_label(SharedString::from(title))
-                    .p(px(8.))
-                    .rounded(px(6.))
+                    .p(px(style::S4))
+                    .rounded(px(style::R_MD))
                     .border_1()
                     .border_color(style::line_soft())
                     .bg(style::panel())
                     .font_family(style::MONO)
+                    .text_size(px(style::FONT_DATA))
                     .text_color(style::text())
                     .whitespace_normal()
                     .child(sql),

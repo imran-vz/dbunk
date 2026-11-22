@@ -122,7 +122,7 @@ impl Render for CellEditor {
             .size_full()
             .flex()
             .items_center()
-            .px(px(4.))
+            .px(px(crate::style::S2))
             .overflow_hidden()
             .bg(style::bg())
             .border_1()

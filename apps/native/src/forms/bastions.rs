@@ -516,13 +516,7 @@ impl Form {
         let Kind::Bastions(state) = &self.kind else {
             return div();
         };
-        let mut content = div().flex().flex_col().gap(px(12.));
-        let note = |text: String| {
-            div()
-                .text_sm()
-                .text_color(crate::style::faint())
-                .child(text)
-        };
+        let mut content = div().flex().flex_col().gap(px(crate::style::S5));
         if let Some(id) = &state.editing {
             let auth = state.auth;
             let clear_passphrase = state.clear_passphrase;
@@ -530,7 +524,7 @@ impl Form {
                 .as_ref()
                 .and_then(|id| state.list.iter().find(|bastion| &bastion.id == id))
                 .cloned();
-            let mut methods = div().flex().flex_wrap().gap(px(4.));
+            let mut methods = super::render::chip_row();
             for value in [
                 DevelopmentBastionAuth::Password,
                 DevelopmentBastionAuth::PrivateKeyPath,
@@ -543,21 +537,9 @@ impl Form {
                     cx,
                 ));
             }
-            content = content.child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(5.))
-                    .child(
-                        div()
-                            .text_size(px(crate::style::FONT_SMALL))
-                            .text_color(crate::style::dim())
-                            .child("Authentication"),
-                    )
-                    .child(methods),
-            );
+            content = content.child(super::render::choices("Authentication").child(methods));
             let errors = super::validation::Errors::new();
-            let mut fields = div().grid().grid_cols(2).gap_x(px(12.)).gap_y(px(10.));
+            let mut fields = super::render::grid(2);
             for field in &self.fields {
                 if !field_visible(auth, field.key) {
                     continue;
@@ -578,7 +560,7 @@ impl Form {
                 )
             });
             content =
-                content.child(note(saved.unwrap_or_else(|| {
+                content.child(super::render::hint(saved.unwrap_or_else(|| {
                     "Secrets are stored with your credential storage.".into()
                 })));
             if auth != DevelopmentBastionAuth::Password {
@@ -596,13 +578,13 @@ impl Form {
             return content;
         }
         if !state.loaded {
-            return content.child(note("Loading Bastion Servers…".into()));
+            return content.child(super::render::hint("Loading Bastion Servers…"));
         }
         let list = state.list.clone();
         let review = state.review.clone();
         let tests = state.tests.clone();
         if list.is_empty() {
-            content = content.child(note("No Bastion Servers yet.".into()));
+            content = content.child(super::render::hint("No Bastion Servers yet."));
         }
         let mut rows = div()
             .id("bastion-list")
@@ -610,7 +592,7 @@ impl Form {
             .aria_label("Bastion Servers")
             .flex()
             .flex_col()
-            .gap(px(8.));
+            .gap(px(crate::style::S4));
         for (index, bastion) in list.iter().enumerate() {
             let name = &bastion.form.name;
             let summary = format!(
@@ -631,9 +613,9 @@ impl Form {
                 .aria_label(summary.clone())
                 .flex()
                 .flex_col()
-                .gap(px(8.))
-                .p(px(10.))
-                .rounded(px(6.))
+                .gap(px(crate::style::S4))
+                .p(px(crate::style::S5))
+                .rounded(px(crate::style::R_MD))
                 .border_1()
                 .border_color(crate::style::line())
                 .bg(crate::style::panel())
@@ -641,7 +623,7 @@ impl Form {
             let mut actions = div()
                 .flex()
                 .flex_wrap()
-                .gap(px(6.))
+                .gap(px(crate::style::S4))
                 .child(self.button(
                     format!("Edit {name}"),
                     FormAction::Bastion(Action::Row(RowOp::Edit, index)),

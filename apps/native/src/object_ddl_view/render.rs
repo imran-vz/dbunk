@@ -336,41 +336,38 @@ impl ObjectDdlView {
         let enabled = self.enabled(action);
         let toggled = self.toggled(action);
         let weak = cx.weak_entity();
-        // A toggle shows its state as a pressed face plus a check mark.
-        let icon = (toggled == Some(true)).then_some("icons/check.svg");
-        crate::ui::pressed(
-            crate::ui::tool_button(
+        // An on/off option is a checkbox row; Apply and Confirm are the
+        // toolbar's primary action; everything else is a quiet tool button.
+        let element = match toggled {
+            Some(on) => check_row(("object-ddl-action", index), label, on, enabled),
+            None if matches!(action, Action::Apply | Action::Confirm) && enabled => {
+                crate::ui::tool_button_accent(("object-ddl-action", index), label, None, enabled)
+            }
+            None => crate::ui::tool_button(
                 ("object-ddl-action", index),
                 label.to_owned(),
-                icon,
+                None,
                 enabled,
                 false,
             ),
-            toggled == Some(true),
-        )
-        .role(if toggled.is_some() {
-            Role::CheckBox
-        } else {
-            Role::Button
-        })
-        .aria_label(label)
-        .track_focus(&self.buttons[index])
-        .tab_stop(enabled)
-        .tab_index(0)
-        .a11y_synthetic_children(move |b| {
-            if !enabled {
-                b.parent_node().set_disabled();
-            }
-        })
-        .when_some(toggled, |b, on| b.aria_toggled(on.into()))
-        // GPUI activates a focused clickable on Enter/Space key-up through
-        // on_click; no key-down handler, so activation happens once.
-        .on_click(cx.listener(move |this, _, window, cx| this.click(index, window, cx)))
-        .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
-            weak.update(cx, |this, cx| this.click(index, window, cx))
-                .ok();
-        })
-        .into_any_element()
+        };
+        element
+            .track_focus(&self.buttons[index])
+            .tab_stop(enabled)
+            .tab_index(0)
+            .a11y_synthetic_children(move |b| {
+                if !enabled {
+                    b.parent_node().set_disabled();
+                }
+            })
+            // GPUI activates a focused clickable on Enter/Space key-up through
+            // on_click; no key-down handler, so activation happens once.
+            .on_click(cx.listener(move |this, _, window, cx| this.click(index, window, cx)))
+            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                weak.update(cx, |this, cx| this.click(index, window, cx))
+                    .ok();
+            })
+            .into_any_element()
     }
     fn click(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if !self.enabled(ACTIONS[index].0) {
@@ -454,6 +451,10 @@ impl Render for ObjectDdlView {
         // Index and enum drafts lay out their own fields and options.
         let form = self.render_form(cx);
         let plain_fields = form.is_none();
+        let toggles: Vec<gpui::AnyElement> = (0..ACTIONS.len())
+            .filter(|i| self.shows_action(ACTIONS[*i].0) && self.toggled(ACTIONS[*i].0).is_some())
+            .map(|i| self.button(i, cx))
+            .collect();
         div()
             .id("object-ddl-review")
             .key_context("ObjectDdl")
@@ -466,7 +467,7 @@ impl Render for ObjectDdlView {
             .min_h_0()
             .bg(crate::style::bg())
             .text_color(crate::style::text())
-            .text_xs()
+            .text_size(px(crate::style::FONT))
             .capture_key_down(cx.listener(Self::key))
             .on_action(cx.listener(|this, _: &NextControl, window, cx| {
                 if !this.composing(window, cx) {
@@ -481,17 +482,33 @@ impl Render for ObjectDdlView {
                 }
             }))
             .child(
-                div().flex().flex_wrap().gap_1().children(
+                crate::ui::toolbar().children(
                     (0..ACTIONS.len())
-                        .filter(|i| self.shows_action(ACTIONS[*i].0))
+                        .filter(|i| {
+                            self.shows_action(ACTIONS[*i].0)
+                                && self.toggled(ACTIONS[*i].0).is_none()
+                        })
                         .map(|i| self.button(i, cx)),
                 ),
             )
+            .when(!toggles.is_empty(), |v| {
+                v.child(
+                    div()
+                        .flex_none()
+                        .px(px(crate::style::INSET_CONTENT))
+                        .pt(px(crate::style::S4))
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(px(crate::style::S4))
+                        .children(toggles),
+                )
+            })
             .when_some(self.name.as_ref().filter(|_| plain_fields), |v, field| {
-                v.child(div().px_2().pt_1().child(field.clone()))
+                v.child(plain_field(field.clone()))
             })
             .when_some(self.body.as_ref().filter(|_| plain_fields), |v, field| {
-                v.child(div().px_2().pt_1().child(field.clone()))
+                v.child(plain_field(field.clone()))
             })
             .when_some(form, |v, form| v.child(form))
             .child(
@@ -499,7 +516,9 @@ impl Render for ObjectDdlView {
                     .id("object-ddl-status")
                     .role(Role::Status)
                     .aria_label(self.message.clone())
-                    .p_2()
+                    .px(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S4))
+                    .text_color(crate::style::dim())
                     .child(self.message.clone()),
             )
             .child(
@@ -515,7 +534,11 @@ impl Render for ObjectDdlView {
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
-                    .p_2()
+                    .px(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S4))
+                    .border_t_1()
+                    .border_color(crate::style::line_soft())
+                    .focus(|s| s.bg(crate::style::row_hover()))
                     .child(text)
                     .when(!self.receipt.is_empty(), |v| {
                         v.child(
@@ -528,4 +551,18 @@ impl Render for ObjectDdlView {
                     }),
             )
     }
+}
+
+/// A view or drop draft's bounded field in a visible well, inset like the
+/// rest of the document content.
+fn plain_field(field: Entity<Field>) -> gpui::Div {
+    div()
+        .flex_none()
+        .w_full()
+        .max_w(px(
+            crate::style::TOOL_COLUMN + 2. * crate::style::INSET_CONTENT
+        ))
+        .px(px(crate::style::INSET_CONTENT))
+        .pt(px(crate::style::S4))
+        .child(well(field))
 }

@@ -5,6 +5,11 @@ use crate::style;
 use dbunk_lib::backend::DevelopmentEnvironment;
 use gpui::{AnyElement, Div, ElementId, Role, SharedString, Stateful, div, prelude::*, px};
 
+/// Height of a dialog's title row.
+const HEADER: f32 = 40.;
+/// Height of a dialog's action row.
+const FOOTER: f32 = 48.;
+
 /// Covers the document, swallows pointer input behind it and centres its
 /// child. A dismiss-on-click listener, if any, belongs to the caller.
 pub fn backdrop(id: impl Into<ElementId>) -> Stateful<Div> {
@@ -17,7 +22,7 @@ pub fn backdrop(id: impl Into<ElementId>) -> Stateful<Div> {
         .flex()
         .items_center()
         .justify_center()
-        .p(px(16.))
+        .p(px(style::S6))
 }
 
 /// The dialog panel: AX modal dialog named `title`, fixed `width`, at most
@@ -40,7 +45,7 @@ pub fn modal(
         .flex()
         .flex_col()
         .overflow_hidden()
-        .rounded(px(8.))
+        .rounded(px(style::R_LG))
         .border_1()
         .border_color(style::line())
         .bg(style::panel())
@@ -49,15 +54,15 @@ pub fn modal(
         .text_color(style::text())
 }
 
-/// 34 px title row with optional trailing content (an environment chip).
+/// 40 pt title row with optional trailing content (`ui::env_tag`).
 pub fn header(title: impl Into<SharedString>, trailing: Option<AnyElement>) -> Div {
     div()
         .flex_none()
-        .h(px(34.))
-        .px(px(12.))
+        .h(px(HEADER))
+        .px(px(style::S6))
         .flex()
         .items_center()
-        .gap(px(8.))
+        .gap(px(style::S4))
         .border_b_1()
         .border_color(style::line())
         .child(
@@ -66,6 +71,8 @@ pub fn header(title: impl Into<SharedString>, trailing: Option<AnyElement>) -> D
                 .min_w_0()
                 .overflow_hidden()
                 .whitespace_nowrap()
+                .text_ellipsis()
+                .text_size(px(style::FONT_HEADING))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .child(title.into()),
         )
@@ -81,21 +88,21 @@ pub fn body(id: impl Into<ElementId>) -> Stateful<Div> {
         .overflow_y_scroll()
         .flex()
         .flex_col()
-        .gap(px(8.))
-        .px(px(12.))
-        .py(px(10.))
+        .gap(px(style::S5))
+        .px(px(style::S6))
+        .py(px(style::S5))
 }
 
-/// 40 px action row, right-aligned.
+/// 48 pt action row, right-aligned; holds `FIELD` buttons.
 pub fn footer() -> Div {
     div()
         .flex_none()
-        .h(px(40.))
-        .px(px(12.))
+        .h(px(FOOTER))
+        .px(px(style::S6))
         .flex()
         .items_center()
         .justify_end()
-        .gap(px(6.))
+        .gap(px(style::S4))
         .border_t_1()
         .border_color(style::line())
 }
@@ -112,8 +119,8 @@ pub fn env_notice(
         .flex_none()
         .flex()
         .items_stretch()
-        .gap(px(8.))
-        .rounded(px(5.))
+        .gap(px(style::S4))
+        .rounded(px(style::R_MD))
         .overflow_hidden()
         .border_1()
         .border_color(if loud {
@@ -132,10 +139,10 @@ pub fn env_notice(
             div()
                 .flex_1()
                 .min_w_0()
-                .py(px(5.))
-                .pr(px(8.))
+                .py(px(style::S3))
+                .pr(px(style::S4))
                 .text_sm()
-                .text_color(if loud { style::text() } else { style::dim() })
+                .text_color(style::text())
                 .child(text.into()),
         )
 }

@@ -23,8 +23,12 @@ impl TableCopyView {
         };
         let enabled = self.enabled(action, cx);
         let weak = cx.weak_entity();
-        let primary = matches!(action, Action::Apply);
-        crate::ui::tool_button(("table-copy-action", index), label, None, enabled, primary)
+        let button = if matches!(action, Action::Apply) {
+            crate::ui::tool_button_accent(("table-copy-action", index), label, None, enabled)
+        } else {
+            crate::ui::tool_button(("table-copy-action", index), label, None, enabled, false)
+        };
+        button
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
@@ -119,44 +123,43 @@ impl TableCopyView {
         uniform_list(
             "table-copy-connections",
             count,
-            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+            cx.processor(|this, range: std::ops::Range<usize>, window, cx| {
+                let focused = this.choice_focus.is_focused(window);
                 range
                     .filter_map(|index| {
                         let (id, name) = this.connections.as_ref()?.rows.get(index)?;
+                        // The AX label keeps the id to tell same-named
+                        // connections apart; the row shows the name only.
                         let label = format!("{name} ({id})");
+                        let name = name.clone();
                         let revision = this.connection_revision;
                         let weak = cx.weak_entity();
                         Some(
-                            div()
-                                .id(("table-copy-connection", index))
-                                .role(Role::ListBoxOption)
-                                .aria_label(label.clone())
-                                .aria_selected(this.choice == Some(index))
-                                .bg(if this.choice == Some(index) {
-                                    crate::style::hover()
-                                } else {
-                                    crate::style::bg()
-                                })
-                                .on_click(cx.listener(move |this, _, window, cx| {
+                            crate::ui::list_row(
+                                ("table-copy-connection", index),
+                                this.choice == Some(index),
+                                focused,
+                            )
+                            .role(Role::ListBoxOption)
+                            .aria_label(label)
+                            .aria_selected(this.choice == Some(index))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.choose(index, revision, window, cx)
+                            }))
+                            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                                weak.update(cx, |this, cx| {
                                     this.choose(index, revision, window, cx)
-                                }))
-                                .on_a11y_action(
-                                    gpui::accesskit::Action::Click,
-                                    move |_, window, cx| {
-                                        weak.update(cx, |this, cx| {
-                                            this.choose(index, revision, window, cx)
-                                        })
-                                        .ok();
-                                    },
-                                )
-                                .child(label),
+                                })
+                                .ok();
+                            })
+                            .child(crate::ui::row_label(name)),
                         )
                     })
                     .collect()
             }),
         )
         .track_scroll(&self.choices_scroll)
-        .h(px(120.))
+        .h(px(CHOICES_HEIGHT))
         .into_any_element()
     }
     fn jobs_list(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -164,46 +167,42 @@ impl TableCopyView {
         uniform_list(
             "table-copy-job-list",
             count,
-            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+            cx.processor(|this, range: std::ops::Range<usize>, window, cx| {
                 let ids = this.ids(cx);
+                let focused = this.job_focus.is_focused(window);
                 range
                     .filter_map(|index| {
                         let id = *ids.get(index)?;
                         let label = this.job_label(id, cx);
                         let weak = cx.weak_entity();
                         Some(
-                            div()
-                                .id(("table-copy-job", index))
-                                .role(Role::ListBoxOption)
-                                .aria_label(label.clone())
-                                .aria_selected(this.selected == Some(id))
-                                .bg(if this.selected == Some(id) {
-                                    crate::style::hover()
-                                } else {
-                                    crate::style::bg()
-                                })
-                                .on_click(cx.listener(move |this, _, window, cx| {
+                            crate::ui::list_row(
+                                ("table-copy-job", index),
+                                this.selected == Some(id),
+                                focused,
+                            )
+                            .role(Role::ListBoxOption)
+                            .aria_label(label.clone())
+                            .aria_selected(this.selected == Some(id))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.select(id, cx);
+                                window.focus(&this.job_focus, cx);
+                            }))
+                            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                                weak.update(cx, |this, cx| {
                                     this.select(id, cx);
                                     window.focus(&this.job_focus, cx);
-                                }))
-                                .on_a11y_action(
-                                    gpui::accesskit::Action::Click,
-                                    move |_, window, cx| {
-                                        weak.update(cx, |this, cx| {
-                                            this.select(id, cx);
-                                            window.focus(&this.job_focus, cx);
-                                        })
-                                        .ok();
-                                    },
-                                )
-                                .child(label),
+                                })
+                                .ok();
+                            })
+                            .child(crate::ui::row_label(label)),
                         )
                     })
                     .collect()
             }),
         )
         .track_scroll(&self.jobs_scroll)
-        .h(px(140.))
+        .h(px(JOBS_HEIGHT))
         .into_any_element()
     }
     fn columns(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -216,7 +215,8 @@ impl TableCopyView {
         uniform_list(
             "table-copy-columns",
             count,
-            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+            cx.processor(|this, range: std::ops::Range<usize>, window, cx| {
+                let focused = this.column_focus.is_focused(window);
                 range
                     .filter_map(|index| {
                         let review = this
@@ -229,36 +229,31 @@ impl TableCopyView {
                         let label = format!("{}: {}", column.name, column_action(column.action));
                         let weak = cx.weak_entity();
                         Some(
-                            div()
-                                .id(("table-copy-column", index))
-                                .role(Role::ListBoxOption)
-                                .aria_label(label.clone())
-                                .aria_selected(this.column == Some(index))
-                                .bg(if this.column == Some(index) {
-                                    crate::style::hover()
-                                } else {
-                                    crate::style::bg()
-                                })
-                                .on_click(cx.listener(move |this, _, window, cx| {
+                            crate::ui::list_row(
+                                ("table-copy-column", index),
+                                this.column == Some(index),
+                                focused,
+                            )
+                            .role(Role::ListBoxOption)
+                            .aria_label(label.clone())
+                            .aria_selected(this.column == Some(index))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.select_column(attempt, index, window, cx)
+                            }))
+                            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                                weak.update(cx, |this, cx| {
                                     this.select_column(attempt, index, window, cx)
-                                }))
-                                .on_a11y_action(
-                                    gpui::accesskit::Action::Click,
-                                    move |_, window, cx| {
-                                        weak.update(cx, |this, cx| {
-                                            this.select_column(attempt, index, window, cx)
-                                        })
-                                        .ok();
-                                    },
-                                )
-                                .child(label),
+                                })
+                                .ok();
+                            })
+                            .child(crate::ui::row_label(label)),
                         )
                     })
                     .collect()
             }),
         )
         .track_scroll(&self.columns_scroll)
-        .h(px(130.))
+        .h(px(COLUMNS_HEIGHT))
         .into_any_element()
     }
     fn select_column(
@@ -285,38 +280,61 @@ impl Render for TableCopyView {
         let mut content = div()
             .flex()
             .flex_col()
-            .gap_2()
+            .gap(px(crate::style::S4))
+            .pb(px(crate::style::INSET_CONTENT))
             .child(
                 crate::ui::toolbar()
-                    .children((0..ACTIONS.len()).map(|index| self.button(index, cx))),
+                    .children((0..ACTIONS.len()).map(|index| self.button(index, cx)))
+                    .child(crate::ui::grow())
+                    .child(crate::ui::info_hint(
+                        "table-copy-boundaries",
+                        "Append matching columns in one destination transaction. No table creation or replacement. Identity values are copied; destination defaults and generated expressions remain authoritative. Cancellation after COMMIT cannot undo copied rows. Jobs survive tab closure.",
+                    )),
             )
-            .child(label("table-copy-status", self.status.clone()))
-            .child(label(
-                "table-copy-boundaries",
-                "Append matching columns in one destination transaction. No table creation or replacement. Identity values are copied; destination defaults and generated expressions remain authoritative. Cancellation after COMMIT cannot undo copied rows. Jobs survive tab closure.".into(),
-            ));
+            .child(label("table-copy-status", self.status.clone()).text_color(crate::style::dim()));
         if let Some(message) = self.store.read(cx).message() {
             content = content.child(label("table-copy-store-message", message.to_owned()));
         }
-        for (index, field) in self.fields.iter().enumerate() {
+        // Source and destination side by side: schema over table in each.
+        if !self.fields.is_empty() {
+            let column = |range: std::ops::Range<usize>| {
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_col()
+                    .gap(px(crate::style::S5))
+                    .children(range.filter_map(|index| {
+                        let field = self.fields.get(index)?;
+                        Some(crate::ui::labelled(
+                            FIELD_LABELS[index],
+                            crate::object_ddl_view::well(field.clone()),
+                            None,
+                        ))
+                    }))
+            };
             content = content.child(
                 div()
+                    .w_full()
+                    .max_w(px(
+                        crate::style::TOOL_COLUMN + 2. * crate::style::INSET_CONTENT
+                    ))
+                    .px(px(crate::style::INSET_CONTENT))
                     .flex()
-                    .items_center()
-                    .gap_2()
-                    .px_2()
-                    .child(
-                        div()
-                            .text_color(crate::style::dim())
-                            .child(FIELD_LABELS[index]),
-                    )
-                    .child(div().flex_1().child(field.clone())),
+                    .gap(px(crate::style::S5))
+                    .child(column(0..2))
+                    .child(column(2..4)),
             );
         }
         if self.choosing.is_some() {
             content = content.child(
                 div()
                     .id("table-copy-connection-choices")
+                    .mx(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S2))
+                    .rounded(px(crate::style::R_MD))
+                    .border_1()
+                    .border_color(crate::style::line_soft())
                     .role(Role::ListBox)
                     .aria_label("Stored PostgreSQL connection choices")
                     .track_focus(&self.choice_focus)
@@ -328,6 +346,11 @@ impl Render for TableCopyView {
             content = content.child(
                 div()
                     .id("table-copy-jobs")
+                    .mx(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S2))
+                    .rounded(px(crate::style::R_MD))
+                    .border_1()
+                    .border_color(crate::style::line_soft())
                     .role(Role::ListBox)
                     .aria_label("Table copy attempts and durable recovery records")
                     .track_focus(&self.job_focus)
@@ -366,6 +389,11 @@ impl Render for TableCopyView {
             content = content.child(
                 div()
                     .id("table-copy-column-review")
+                    .mx(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S2))
+                    .rounded(px(crate::style::R_MD))
+                    .border_1()
+                    .border_color(crate::style::line_soft())
                     .role(Role::ListBox)
                     .aria_label("Exact name-mapped destination column review")
                     .track_focus(&self.column_focus)
@@ -391,15 +419,18 @@ impl Render for TableCopyView {
             .child(content)
     }
 }
-fn label(id: &'static str, text: String) -> AnyElement {
+/// Fixed heights of the connection, job and column lists.
+const CHOICES_HEIGHT: f32 = 120.;
+const JOBS_HEIGHT: f32 = 140.;
+const COLUMNS_HEIGHT: f32 = 130.;
+fn label(id: &'static str, text: String) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
         .role(Role::Label)
         .aria_label(text.clone())
-        .px_2()
+        .px(px(crate::style::INSET_CONTENT))
         .whitespace_normal()
         .child(text)
-        .into_any_element()
 }
 fn column_action(action: TableCopyColumnAction) -> &'static str {
     match action {

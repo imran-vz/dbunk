@@ -61,7 +61,16 @@ fn looks_numeric(text: &str) -> bool {
 /// Fits the largest 1-based row number in the 11 px monospace font.
 pub(super) fn gutter_width(rows: usize) -> f32 {
     let digits = rows.max(1).ilog10() as f32 + 1.;
-    (digits.max(2.) * 7. + 16.).round()
+    (digits.max(2.) * 7. + 2. * style::S4).round()
+}
+
+/// Vertical cell rules: `line_soft` at reduced alpha, so columns read as
+/// tracks without drawing a lattice over the values.
+pub(super) fn grid_rule() -> gpui::Rgba {
+    gpui::Rgba {
+        a: 0.6,
+        ..style::line_soft()
+    }
 }
 
 /// Header sort indicator for one column: its direction, plus the 1-based
@@ -82,13 +91,10 @@ impl ResultGrid {
             .get(source)
             .map(|column| column.cast_type.as_str())
     }
-    /// 24 px in table mode, the 20 px row height for query results.
+    /// One header height for table pages and query results: a control
+    /// height, a step taller than the `GRID_ROW` body rows.
     pub(super) fn header_height(&self) -> Pixels {
-        if self.table_mode() {
-            px(style::FOOTER)
-        } else {
-            ROW_HEIGHT
-        }
+        px(style::CONTROL)
     }
     fn sort_indicator(&self, name: &str) -> Option<gpui::AnyElement> {
         if !self.table_mode() {
@@ -99,7 +105,7 @@ impl ResultGrid {
                 .flex_none()
                 .flex()
                 .items_center()
-                .gap(px(1.))
+                .gap(px(style::S1 / 2.))
                 .text_color(style::accent())
                 .child(
                     gpui::svg()
@@ -138,6 +144,11 @@ impl ResultGrid {
             .into_owned()
             .into();
         let cast_type = self.cast_type(source).map(str::to_owned);
+        // The inline type hint truncates first; hovering the header shows the
+        // full name and type.
+        let header_tooltip: Option<SharedString> = cast_type
+            .as_ref()
+            .map(|cast_type| format!("{label} · {cast_type}").into());
         let table_mode = self.table_mode();
         let sort = sort_badge(&self.sort_keys, &label).filter(|_| table_mode);
         let interactive = self.sortable || table_mode;
@@ -157,15 +168,15 @@ impl ResultGrid {
             .flex_shrink_0()
             .w(self.column_width(column))
             .h_full()
-            .px_2()
+            .px(px(style::S4))
             .flex()
             .items_center()
-            .gap(px(4.))
+            .gap(px(style::S2))
             .overflow_hidden()
             .whitespace_nowrap()
             .border_r_1()
-            .border_color(style::line_soft())
-            .text_color(style::dim())
+            .border_color(grid_rule())
+            .text_color(style::text())
             .font_weight(gpui::FontWeight::MEDIUM)
             .child(
                 div()
@@ -181,12 +192,14 @@ impl ResultGrid {
                         .flex_shrink(1000.)
                         .min_w_0()
                         .truncate()
-                        .font_family(style::MONO)
                         .font_weight(gpui::FontWeight::NORMAL)
                         .text_size(px(style::FONT_SMALL))
-                        .text_color(style::faint())
+                        .text_color(style::dim())
                         .child(cast_type),
                 )
+            })
+            .when_some(header_tooltip, |header, tooltip| {
+                header.tooltip(crate::ui::tooltip(tooltip))
             })
             .children(self.sort_indicator(&label))
             .when(interactive, |header| {
@@ -258,7 +271,7 @@ impl ResultGrid {
             .flex()
             .items_center()
             .border_r_1()
-            .border_color(style::line_soft())
+            .border_color(grid_rule())
             .font_family(style::MONO)
             .text_color(style::faint())
             .when(self.checkboxes(), |gutter| {
@@ -268,7 +281,7 @@ impl ResultGrid {
                 div()
                     .flex_1()
                     .h_full()
-                    .px_2()
+                    .px(px(style::S4))
                     .flex()
                     .items_center()
                     .justify_end()
@@ -398,13 +411,13 @@ impl ResultGrid {
             .flex_shrink_0()
             .w(self.column_width(column))
             .h_full()
-            .px_2()
+            .px(px(style::S4))
             .flex()
             .items_center()
             .overflow_hidden()
             .whitespace_nowrap()
             .border_r_1()
-            .border_color(style::line_soft())
+            .border_color(grid_rule())
             .when(kind == CellKind::Number, |cell| {
                 cell.justify_end().text_color(style::number())
             })
@@ -485,8 +498,9 @@ impl ResultGrid {
             .items_center()
             .bg(style::panel())
             .border_r_1()
-            .border_color(style::line_soft())
+            .border_color(grid_rule())
             .text_color(style::faint())
+            .text_size(px(style::FONT_SMALL))
             .when(self.checkboxes(), |gutter| {
                 gutter.child(self.row_check(row, cx))
             })
@@ -494,11 +508,11 @@ impl ResultGrid {
                 div()
                     .flex_1()
                     .h_full()
-                    .px_2()
+                    .px(px(style::S4))
                     .flex()
                     .items_center()
                     .justify_end()
-                    .gap(px(2.))
+                    .gap(px(style::S1))
                     .when_some(marker, |number, (glyph, color)| {
                         number.child(div().text_color(color).child(glyph))
                     })
@@ -527,6 +541,7 @@ impl ResultGrid {
                     .aria_row_index(row + 1)
                     .group("grid-row")
                     .font_family(style::MONO)
+                    .text_size(px(style::FONT_DATA))
                     .relative()
                     .h(ROW_HEIGHT)
                     .w(px(gutter + panes.content_width))

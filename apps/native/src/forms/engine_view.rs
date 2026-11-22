@@ -20,7 +20,7 @@ impl Form {
             ],
             Engine::Redis => &[(Toggle::RedisTls, "TLS: on", "TLS: off")],
         };
-        let mut row = div().flex().flex_wrap().gap(px(16.));
+        let mut row = div().flex().flex_wrap().gap(px(crate::style::S7));
         for (toggle, on, off) in toggles {
             let value = self.toggles.get(*toggle);
             row = row.child(self.button(

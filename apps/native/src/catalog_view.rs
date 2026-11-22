@@ -14,6 +14,10 @@ use gpui::{
 };
 use std::{cell::Cell, rc::Rc, sync::Arc};
 
+/// Width of the catalog search field and of the kind column in object rows.
+const CATALOG_SEARCH: f32 = 260.;
+const CATALOG_KIND: f32 = 120.;
+
 mod ddl_export;
 mod maintenance;
 mod navigator;
@@ -933,29 +937,12 @@ impl CatalogView {
     ) -> gpui::AnyElement {
         let weak = cx.entity().downgrade();
         let enabled = self.enabled(action);
-        div()
-            .id(("catalog-action", index))
-            .role(Role::Button)
-            .aria_label(label)
-            .a11y_synthetic_children(move |builder| {
-                if !enabled {
-                    builder.parent_node().set_disabled();
-                }
-            })
+        // The shared toolbar button: label is the AX name, disabled state is
+        // exposed by the primitive.
+        crate::ui::tool_button(("catalog-action", index), label, None, enabled, false)
             .track_focus(&self.buttons[index])
             .tab_stop(enabled)
             .tab_index(0)
-            .focus(|style| style.bg(crate::style::hover()))
-            .text_color(if enabled {
-                crate::style::text()
-            } else {
-                crate::style::dim()
-            })
-            .px_2()
-            .py_1()
-            .border_1()
-            .border_color(crate::style::line())
-            .child(label)
             .on_click(cx.listener(move |this, _, window, cx| this.activate(action, window, cx)))
             .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
                 weak.update(cx, |this, cx| this.activate(action, window, cx))
@@ -1050,6 +1037,22 @@ impl Render for CatalogView {
                     row.qualified(),
                     row.entry.comment.as_deref().unwrap_or("")
                 )
+            })
+            .unwrap_or_default();
+        let properties: Vec<(SharedString, Option<SharedString>)> = selected
+            .map(|row| {
+                vec![
+                    ("Kind".into(), Some(row.kind.label().into())),
+                    ("Name".into(), Some(row.qualified().into())),
+                    (
+                        "Comment".into(),
+                        row.entry
+                            .comment
+                            .clone()
+                            .filter(|comment| !comment.is_empty())
+                            .map(Into::into),
+                    ),
+                ]
             })
             .unwrap_or_default();
         let truncated = self
@@ -1223,20 +1226,29 @@ impl Render for CatalogView {
                 cx.stop_propagation();
             }))
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_1()
-                    .flex_shrink_0()
+                // Find and inspect: search, then the actions on the selected
+                // object; session controls at the right.
+                crate::ui::toolbar()
+                    .child(
+                        crate::ui::field()
+                            .w(px(CATALOG_SEARCH))
+                            .child(div().flex_1().min_w_0().child(self.accessible.clone())),
+                    )
+                    .child(self.button(3, "Search", Action::Search, cx))
+                    .child(self.button(6, "Clear", Action::Clear, cx))
+                    .child(crate::ui::separator())
+                    .child(self.button(4, "Open", Action::Open, cx))
+                    .child(self.button(11, "Structure", Action::Structure, cx))
+                    .child(self.button(7, "Describe", Action::Describe, cx))
+                    .child(self.button(5, "Copy identity", Action::Copy, cx))
+                    .child(crate::ui::grow())
                     .child(self.button(0, "Connect", Action::Connect, cx))
                     .child(self.button(1, "Refresh", Action::Refresh, cx))
-                    .child(self.button(2, "Cancel", Action::Cancel, cx))
-                    .child(self.button(3, "Search", Action::Search, cx))
-                    .child(self.button(4, "Open", Action::Open, cx))
-                    .child(self.button(5, "Copy identity", Action::Copy, cx))
-                    .child(self.button(6, "Clear", Action::Clear, cx))
-                    .child(self.button(7, "Describe", Action::Describe, cx))
-                    .child(self.button(8, "Drop impact", Action::DropImpact, cx))
+                    .child(self.button(2, "Cancel", Action::Cancel, cx)),
+            )
+            .child(
+                // Change drafts; destructive actions last, after a rule.
+                crate::ui::toolbar()
                     .child(
                         self.button(
                             9,
@@ -1254,11 +1266,6 @@ impl Render for CatalogView {
                             cx,
                         ),
                     )
-                    .child(self.button(10, "Maintenance", Action::Maintenance, cx))
-                    .child(self.button(11, "Structure", Action::Structure, cx))
-                    .child(self.button(12, "Export DDL", Action::DdlExport, cx))
-                    .child(self.button(13, "Table change draft", Action::TableDdl, cx))
-                    .child(self.button(14, "Sequence", Action::Sequence, cx))
                     .child(self.button(
                         15,
                         if self.has_schema_alter_changes(cx) {
@@ -1269,18 +1276,16 @@ impl Render for CatalogView {
                         Action::SchemaAlter,
                         cx,
                     ))
-                    .child(self.button(16, "Drop object", Action::DropObject, cx))
                     .child(self.button(17, "Create view", Action::CreateView, cx))
                     .child(self.button(18, "Create index", Action::CreateIndex, cx))
-                    .child(self.button(19, "Add enum value", Action::AddEnumValue, cx)),
-            )
-            .child(div().h(px(28.)).child(self.accessible.clone()))
-            .child(
-                div()
-                    .id("catalog-status")
-                    .role(Role::Label)
-                    .aria_label(self.status.clone())
-                    .child(self.status.clone()),
+                    .child(self.button(19, "Add enum value", Action::AddEnumValue, cx))
+                    .child(self.button(14, "Sequence", Action::Sequence, cx))
+                    .child(self.button(13, "Table change draft", Action::TableDdl, cx))
+                    .child(self.button(12, "Export DDL", Action::DdlExport, cx))
+                    .child(self.button(10, "Maintenance", Action::Maintenance, cx))
+                    .child(crate::ui::separator())
+                    .child(self.button(8, "Drop impact", Action::DropImpact, cx))
+                    .child(self.button(16, "Drop object", Action::DropObject, cx)),
             )
             .children(self.schema_edit_banner(cx))
             .when(!truncated.is_empty(), |root| {
@@ -1291,6 +1296,10 @@ impl Render for CatalogView {
                         .aria_label(format!("Truncated groups: {truncated}"))
                         .max_h(px(80.))
                         .overflow_y_scroll()
+                        .px(px(crate::style::INSET_BAR))
+                        .py(px(crate::style::S2))
+                        .text_size(px(crate::style::FONT_SMALL))
+                        .text_color(crate::style::warn())
                         .child(format!("Truncated: {truncated}")),
                 )
             })
@@ -1312,29 +1321,48 @@ impl Render for CatalogView {
                         uniform_list(
                             "catalog-rows",
                             self.visible.len(),
-                            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                            cx.processor(|this, range: std::ops::Range<usize>, window, cx| {
+                                let focused = this.list.is_focused(window);
                                 range
                                     .map(|position| {
                                         let index = this.visible[position];
-                                        let label =
-                                            this.catalog.as_ref().unwrap().rows[index].label();
-                                        div()
-                                            .id(("catalog-object", index))
-                                            .role(Role::ListBoxOption)
-                                            .aria_label(label.clone())
-                                            .aria_selected(position == this.selected)
-                                            .h(px(26.))
-                                            .px_2()
-                                            .overflow_hidden()
-                                            .when(position == this.selected, |row| {
-                                                row.bg(crate::style::select())
-                                            })
-                                            .child(SharedString::from(label))
-                                            .on_click(cx.listener(move |this, _, window, cx| {
+                                        let row = &this.catalog.as_ref().unwrap().rows[index];
+                                        let label = row.label();
+                                        let kind = row.kind.label();
+                                        let name = row.qualified();
+                                        let selected = position == this.selected;
+                                        crate::ui::list_row(
+                                            ("catalog-object", index),
+                                            selected,
+                                            focused,
+                                        )
+                                        .role(Role::ListBoxOption)
+                                        .aria_label(label)
+                                        .aria_selected(selected)
+                                        .child(
+                                            div()
+                                                .flex_none()
+                                                .w(px(CATALOG_KIND))
+                                                .truncate()
+                                                .text_color(crate::style::dim())
+                                                .child(kind),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .truncate()
+                                                .font_family(crate::style::MONO)
+                                                .text_size(px(crate::style::FONT_DATA))
+                                                .child(SharedString::from(name)),
+                                        )
+                                        .on_click(
+                                            cx.listener(move |this, _, window, cx| {
                                                 this.selected = position;
                                                 window.focus(&this.list, cx);
                                                 cx.notify();
-                                            }))
+                                            }),
+                                        )
                                     })
                                     .collect()
                             }),
@@ -1348,9 +1376,26 @@ impl Render for CatalogView {
                     .id("catalog-selection")
                     .role(Role::Label)
                     .aria_label(details.clone())
+                    .flex_none()
                     .max_h(px(140.))
                     .overflow_y_scroll()
-                    .child(details),
+                    .px(px(crate::style::INSET_CONTENT))
+                    .py(px(crate::style::S4))
+                    .border_t_1()
+                    .border_color(crate::style::line_soft())
+                    .child(crate::ui::property_list(properties)),
+            )
+            .child(
+                crate::ui::status_line().child(
+                    div()
+                        .id("catalog-status")
+                        .role(Role::Label)
+                        .aria_label(self.status.clone())
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .child(self.status.clone()),
+                ),
             )
             .when_some(
                 self.object_ddl.clone().filter(|_| self.show_object_ddl),

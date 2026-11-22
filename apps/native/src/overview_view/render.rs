@@ -93,8 +93,12 @@ impl OverviewView {
                                 builder.parent_node().set_disabled();
                             }
                         })
-                        .h(px(24.))
-                        .px_2()
+                        .h(px(crate::style::ROW))
+                        .mx(px(crate::style::S2))
+                        .px(px(crate::style::S3))
+                        .rounded(px(crate::style::R_SM))
+                        .flex()
+                        .items_center()
                         .truncate()
                         .text_color(if enabled { crate::style::text() } else { crate::style::faint() })
                         .when(enabled, |row| row.cursor_pointer().hover(|style| style.bg(crate::style::hover())))
@@ -123,7 +127,7 @@ impl OverviewView {
             .flex_col()
             .border_t_1()
             .border_color(crate::style::line())
-            .child(div().px_2().pt_1().child(crate::ui::section_label("Recent queries")))
+            .child(div().h(px(crate::style::TOOLBAR)).px(px(crate::style::INSET_CONTENT)).flex().items_center().gap(px(crate::style::S2)).child(crate::ui::section_label("Recent queries")).child(crate::ui::grow()).child(self.button(Action::RefreshRecent,"Refresh recent queries".into(),cx)))
             .child(label("overview-recent-summary", summary))
             .child(
                 div()
@@ -143,7 +147,8 @@ impl OverviewView {
         uniform_list(
             "overview-rows",
             count,
-            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+            cx.processor(|this, range: std::ops::Range<usize>, window, cx| {
+                let focused = this.list.is_focused(window);
                 let section = this.section;
                 let revision = this.capture_revision;
                 range
@@ -152,32 +157,24 @@ impl OverviewView {
                             this.capture.as_ref()?.row_label(section, index)?.into();
                         let weak = cx.weak_entity();
                         Some(
-                            div()
-                                .id(("overview-row", index))
-                                .role(Role::ListBoxOption)
-                                .aria_label(label.clone())
-                                .aria_selected(this.selected == Some(index))
-                                .h(px(28.))
-                                .px_2()
-                                .truncate()
-                                .bg(if this.selected == Some(index) {
-                                    crate::style::hover()
-                                } else {
-                                    crate::style::bg()
-                                })
-                                .on_click(cx.listener(move |this, _, window, cx| {
+                            crate::ui::list_row(
+                                ("overview-row", index),
+                                this.selected == Some(index),
+                                focused,
+                            )
+                            .role(Role::ListBoxOption)
+                            .aria_label(label.clone())
+                            .aria_selected(this.selected == Some(index))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.select_row(revision, section, index, window, cx)
+                            }))
+                            .on_a11y_action(gpui::accesskit::Action::Click, move |_, window, cx| {
+                                weak.update(cx, |this, cx| {
                                     this.select_row(revision, section, index, window, cx)
-                                }))
-                                .on_a11y_action(
-                                    gpui::accesskit::Action::Click,
-                                    move |_, window, cx| {
-                                        weak.update(cx, |this, cx| {
-                                            this.select_row(revision, section, index, window, cx)
-                                        })
-                                        .ok();
-                                    },
-                                )
-                                .child(label),
+                                })
+                                .ok();
+                            })
+                            .child(crate::ui::row_label(label)),
                         )
                     })
                     .collect()
@@ -197,30 +194,41 @@ impl Render for OverviewView {
             .map_or(0, |capture| capture.count(self.section));
         let scope_matches = self.scope_matches(cx);
         let capture_status = self.capture.as_ref().map(Capture::status);
+        let focused = [0, 1].map(|index| {
+            self.fields
+                .get(index)
+                .is_some_and(|field| field.focus_handle(cx).contains_focused(window, cx))
+        });
         div().id("overview-view").key_context("Overview").role(Role::Group).aria_label("Read-only PostgreSQL overview and statistics").track_focus(&self.root).flex().flex_col().size_full().min_h_0().bg(crate::style::bg()).text_color(crate::style::text()).text_size(px(crate::style::FONT))
             .on_action(cx.listener(|this,_:&NextControl,window,cx|{if !this.composing(window,cx){this.focus_control(false,window,cx);cx.stop_propagation();}}))
             .on_action(cx.listener(|this,_:&PreviousControl,window,cx|{if !this.composing(window,cx){this.focus_control(true,window,cx);cx.stop_propagation();}}))
             .capture_action(|_:&editor::actions::ToggleSoftWrap,_,cx|cx.stop_propagation())
             .capture_action(cx.listener(|this,_:&editor::actions::Cancel,window,cx|{if !this.composing(window,cx){this.activate(Action::Back,window,cx);cx.stop_propagation();}}))
             .capture_key_down(cx.listener(|this,event:&KeyDownEvent,window,cx|this.key(event,window,cx)))
-            .child(crate::ui::toolbar().children(ACTIONS.iter().map(|(action,label)|self.button(*action,(*label).into(),cx))))
-            .child(div().id("overview-connection-header").role(Role::Label).aria_label(format!("Connection: {}",self.header)).px_2().py_1().text_sm().text_color(crate::style::dim()).child(format!("Connection: {}",self.header)))
-            .child(crate::ui::segmented().id("overview-scopes").role(Role::TabList).aria_label("Requested overview scope").children(Scope::ALL.iter().enumerate().map(|(index,scope)|self.button(Action::Scope(index),scope.label().into(),cx))))
-            .when(self.scope!=Scope::Database,|view|view.when_some(self.fields.first(),|view,field|view.child(div().flex().items_center().gap_2().px_2().py_1().child(div().text_color(crate::style::dim()).child("Schema")).child(div().flex_1().child(field.clone())))))
-            .when(self.scope==Scope::Relation,|view|view.when_some(self.fields.get(1),|view,field|view.child(div().flex().items_center().gap_2().px_2().py_1().child(div().text_color(crate::style::dim()).child("Relation")).child(div().flex_1().child(field.clone())))))
-            .child(label("overview-boundaries","Estimates are not exact counts. Pages are fresh captures; only one page is retained. Sizes are per relation, not recursive partition totals.".into()))
+            .child(crate::ui::toolbar_strip()
+                .child(self.button(Action::Back,"Administration".into(),cx))
+                .child(crate::ui::separator())
+                .child(div().flex_none().font_weight(gpui::FontWeight::SEMIBOLD).text_color(crate::style::text()).child("Overview statistics"))
+                .child(div().id("overview-connection-header").role(Role::Label).aria_label(format!("Connection: {}",self.header)).min_w_0().overflow_hidden().text_ellipsis().text_color(crate::style::dim()).child(self.header.clone()))
+                .child(crate::ui::grow())
+                .children(ACTIONS.iter().skip(1).take(4).filter(|(action,_)|matches!(action,Action::Refresh)||self.enabled(*action,cx)).map(|(action,label)|self.button(*action,(*label).into(),cx))))
+            .child(div().flex_none().px(px(crate::style::INSET_CONTENT)).py(px(crate::style::S3)).flex().flex_wrap().items_end().gap(px(crate::style::S4))
+                .child(crate::ui::labelled("Scope",crate::ui::segment_group().id("overview-scopes").role(Role::TabList).aria_label("Requested overview scope").children(Scope::ALL.iter().enumerate().map(|(index,scope)|self.button(Action::Scope(index),scope.label().into(),cx))),None))
+                .when(self.scope!=Scope::Database,|row|row.when_some(self.fields.first(),|row,field|row.child(div().w(px(200.)).child(crate::ui::labelled("Schema",crate::ui::input_well(false,focused[0]).child(div().flex_1().min_w_0().child(field.clone())),None)))))
+                .when(self.scope==Scope::Relation,|row|row.when_some(self.fields.get(1),|row,field|row.child(div().w(px(200.)).child(crate::ui::labelled("Relation",crate::ui::input_well(false,focused[1]).child(div().flex_1().min_w_0().child(field.clone())),None)))))
+                .child(crate::ui::info_hint("overview-boundaries","Estimates are not exact counts. Pages are fresh captures; only one page is retained. Sizes are per relation, not recursive partition totals.")))
             .when_some(capture_status,|view,status|view.child(label("overview-capture-identity",status)))
             .when(self.capture.is_some()&&(!self.capture_current||!self.ready),|view|view.child(label("overview-stale","Retained capture may be stale. Refresh preserves its identity. To inspect a replacement, return to Administration and Clear captures.".into())))
             .when(self.capture.is_some()&&!scope_matches,|view|view.child(label("overview-scope-changed","Controls differ from the captured scope. Refresh to inspect this scope; Next is disabled.".into())))
-            .child(crate::ui::segmented().id("overview-sections").role(Role::TabList).aria_label("Overview sections").children(Section::ALL.iter().enumerate().map(|(index,section)|self.button(Action::Section(index),format!("{} ({})",section.label(),self.capture.as_ref().map_or(0,|capture|capture.count(*section))),cx))))
+            .child(div().flex_none().px(px(crate::style::INSET_CONTENT)).pb(px(crate::style::S3)).flex().child(crate::ui::segment_group().id("overview-sections").role(Role::TabList).aria_label("Overview sections").children(Section::ALL.iter().enumerate().map(|(index,section)|self.button(Action::Section(index),format!("{} ({})",section.label(),self.capture.as_ref().map_or(0,|capture|capture.count(*section))),cx)))))
             .child(div().flex().flex_1().min_h_0()
-                .child(div().id("overview-list").role(Role::ListBox).aria_label(format!("{} captured {}; arrows select, Enter inspects",count,self.section.label())).track_focus(&self.list).tab_stop(true).tab_index(0).w(px(360.)).min_h_0().border_r_1().border_color(crate::style::line())
-                    .when(count==0,|view|view.child(div().p_2().text_color(crate::style::faint()).child(self.capture.as_ref().map_or("Connect and refresh to capture statistics",|capture|capture.empty_label(self.section)))))
+                .child(div().id("overview-list").role(Role::ListBox).aria_label(format!("{} captured {}; arrows select, Enter inspects",count,self.section.label())).track_focus(&self.list).tab_stop(true).tab_index(0).w(px(360.)).min_h_0().py(px(crate::style::S2)).flex().flex_col().border_r_1().border_color(crate::style::line())
+                    .when(count==0,|view|view.child(div().px(px(crate::style::INSET_CONTENT)).py(px(crate::style::S3)).text_color(crate::style::dim()).child(self.capture.as_ref().map_or("Connect and refresh to capture statistics",|capture|capture.empty_label(self.section)))))
                     .when(count>0,|view|view.child(self.rows(cx))))
                 .child(div().id("overview-selected-details").role(Role::Group).aria_label("Exact selected overview statistics, read only").flex_1().min_w_0().min_h_0().when_some(self.editor.as_ref(),|view,editor|view.child(editor.accessible.clone()))))
             .child(self.recent_section(cx))
             .child(label("overview-runtime-status",self.status.clone()))
-            .when_some(self.message.as_ref(),|view,message|view.child(div().px_2().py_1().child(crate::ui::shake(format!("overview-message-shake-{message}"),crate::ui::error_banner("overview-message",message.clone())))))
+            .when_some(self.message.as_ref(),|view,message|view.child(div().px(px(crate::style::INSET_CONTENT)).py(px(crate::style::S2)).child(crate::ui::shake(format!("overview-message-shake-{message}"),crate::ui::error_banner("overview-message",message.clone())))))
     }
 }
 fn label(id: &'static str, text: String) -> AnyElement {
@@ -228,8 +236,9 @@ fn label(id: &'static str, text: String) -> AnyElement {
         .id(id)
         .role(Role::Status)
         .aria_label(text.clone())
-        .px_2()
-        .py_1()
+        .px(px(crate::style::INSET_CONTENT))
+        .py(px(crate::style::S2))
+        .text_size(px(crate::style::FONT_SMALL))
         .text_color(crate::style::dim())
         .child(text)
         .into_any_element()

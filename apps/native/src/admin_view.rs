@@ -45,6 +45,8 @@ enum Action {
     Overview,
     ConnectionSettings,
 }
+/// Most height the selected row's details take under the table.
+const DETAILS_HEIGHT: f32 = 240.;
 const ACTIONS: [(Action, &str); 23] = [
     (Action::Connect, "Connect"),
     (Action::Refresh, "Refresh"),
@@ -129,6 +131,8 @@ pub struct AdminView {
     recent: crate::overview_model::recent::Requests,
     /// Local connection metadata: "name · engine · database".
     identity: Option<String>,
+    /// Display name, engine and environment for the tool header.
+    tool_connection: Option<crate::overview_view::chrome::ToolConnection>,
     /// Latest workspace health tick for the bound connection, if any.
     health: Option<String>,
     connection_settings: connection_settings::Settings,
@@ -180,6 +184,7 @@ impl AdminView {
             overview: overview::Overview::default(),
             recent: Default::default(),
             identity: None,
+            tool_connection: None,
             health: None,
             connection_settings: connection_settings::Settings::new(budget.clone(), cx),
             audit: Audit::default(),
@@ -269,6 +274,7 @@ impl AdminView {
                 .update(cx, |view, cx| view.receive(None, None, cx));
             self.connection = Some(id);
             self.identity = None;
+            self.tool_connection = None;
             self.health = None;
             self.recent.reset();
             self.audit.clear();
@@ -518,8 +524,11 @@ impl AdminView {
         }
     }
     fn focus_order(&self, cx: &gpui::App) -> Vec<FocusHandle> {
-        let mut order = (0..5)
-            .chain([21, 22])
+        // Visual order: header actions, capture row, section tabs, section
+        // tools, the table, the selected row's details and actions, then
+        // the signal review.
+        let mut order = [0, 1, 2, 21, 22, 4]
+            .into_iter()
             .chain(5..12)
             .filter(|index| self.enabled(ACTIONS[*index].0))
             .map(|index| self.buttons[index].clone())
@@ -531,17 +540,23 @@ impl AdminView {
         if self.enabled(Action::AuditNext) {
             order.push(self.buttons[14].clone());
         }
+        order.push(self.list.clone());
         order.extend(
-            (15..21)
+            [15, 16, 3]
+                .into_iter()
+                .filter(|index| self.enabled(ACTIONS[*index].0))
+                .map(|index| self.buttons[index].clone()),
+        );
+        if self.selected_index().is_some() {
+            order.push(self.details.clone());
+        }
+        order.extend(
+            (17..21)
                 .filter(|index| self.enabled(ACTIONS[*index].0))
                 .map(|index| self.buttons[index].clone()),
         );
         if self.control.can_display() {
             order.push(self.control_details.clone());
-        }
-        order.push(self.list.clone());
-        if self.selected_index().is_some() {
-            order.push(self.details.clone());
         }
         order
     }
@@ -599,6 +614,9 @@ impl AdminView {
         cx.notify();
     }
     fn button(&self, index: usize, cx: &Context<Self>) -> gpui::AnyElement {
+        self.button_as(index, Look::Tool, cx)
+    }
+    fn button_as(&self, index: usize, look: Look, cx: &Context<Self>) -> gpui::AnyElement {
         let (action, default_label) = ACTIONS[index];
         let label = if matches!(action, Action::Control(ControlAction::Clear)) {
             self.control.clear_label()
@@ -610,13 +628,17 @@ impl AdminView {
             || matches!(action, Action::NonDefault) && self.non_default;
         let tab = matches!(action, Action::Section(_));
         let weak = cx.weak_entity();
+        let id = ("admin-control", index);
         let button = if tab {
-            crate::ui::segment(("admin-control", index), label, selected, enabled)
+            crate::ui::segment(id, label, selected, enabled)
+        } else if matches!(action, Action::NonDefault) {
+            crate::overview_view::chrome::check_row(id, label, selected, enabled)
         } else {
-            crate::ui::pressed(
-                crate::ui::tool_button(("admin-control", index), label, None, enabled, false),
-                selected,
-            )
+            match look {
+                Look::Accent => crate::ui::tool_button_accent(id, label, None, enabled),
+                Look::Page => crate::ui::button(id, label, crate::ui::Variant::Primary, enabled),
+                Look::Tool => crate::ui::tool_button(id, label, None, enabled, false),
+            }
         };
         button
             .role(if tab {
@@ -659,6 +681,167 @@ impl AdminView {
             }))
             .into_any_element()
     }
+    /// The header's next step: Connect until the reader is open, then
+    /// Refresh (Safety overrides read locally and always offer Refresh).
+    fn primary_index(&self) -> usize {
+        if self.section != Section::Audit && (self.controls.is_none() || self.opening) {
+            0
+        } else {
+            1
+        }
+    }
+    /// Empty table: what is missing and the next step, hosting the primary
+    /// action while there is nothing captured.
+    fn empty_table(&self, cx: &Context<Self>) -> gpui::AnyElement {
+        let section = self.section.label().to_lowercase();
+        if self.has_capture() {
+            return crate::ui::empty_state(
+                "icons/database_zap.svg",
+                "Nothing to show",
+                Some(self.capture_empty_label().into()),
+                None,
+            )
+            .into_any_element();
+        }
+        let (title, body): (&'static str, String) = if self.section == Section::Audit {
+            (
+                "No overrides loaded",
+                "Refresh to read the safety overrides this app recorded.".into(),
+            )
+        } else if self.read.busy() || self.audit.pending.is_some() {
+            ("Reading…", format!("Collecting {section} from the server."))
+        } else if self.opening {
+            (
+                "Connecting…",
+                "Opening a read-only administration session.".into(),
+            )
+        } else if self.controls.is_none() {
+            (
+                "Not connected",
+                "Connect to read sessions, locks and server settings.".into(),
+            )
+        } else {
+            ("No readings yet", format!("Refresh to read {section}."))
+        };
+        crate::ui::empty_state(
+            "icons/database_zap.svg",
+            title,
+            Some(body.into()),
+            Some(self.button_as(self.primary_index(), Look::Page, cx)),
+        )
+        .into_any_element()
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Look {
+    Tool,
+    Accent,
+    Page,
+}
+/// Fixed column width for a captured section heading; the last column flexes.
+fn track(label: &str) -> f32 {
+    match label {
+        "PID" => 72.,
+        "Granted" => 80.,
+        "User" | "Blockers" | "Transaction age" => 120.,
+        "State" | "Time" => 140.,
+        "Mode" | "Schema" => 160.,
+        "Relation" | "Wait" | "Fact" => 200.,
+        "Command" => 220.,
+        "Name" => 260.,
+        "Category" => 300.,
+        _ => 160.,
+    }
+}
+/// `data_table` columns for a section, from its sentence-case headings.
+fn admin_columns(section: Section) -> Vec<crate::ui::TableColumn> {
+    let labels: Vec<&str> = section.headings().split(" · ").collect();
+    let last = labels.len().saturating_sub(1);
+    labels
+        .into_iter()
+        .enumerate()
+        .map(|(index, label)| {
+            let column = if index == last {
+                crate::ui::TableColumn::flex(label)
+            } else {
+                crate::ui::TableColumn::fixed(label, track(label))
+            };
+            let column = if matches!(label, "PID" | "Transaction age") {
+                column.end()
+            } else {
+                column
+            };
+            if matches!(label, "PID" | "Query" | "Relation" | "Name" | "Schema") {
+                column.mono()
+            } else {
+                column
+            }
+        })
+        .collect()
+}
+/// Cells of a captured row summary: SQL on one line, server NULLs absent.
+fn admin_cells(section: Section, label: &str, columns: usize) -> Vec<Option<SharedString>> {
+    use crate::overview_view::chrome::{compact_timestamp, single_line, split_cells, today};
+    let today = today();
+    split_cells(label, columns)
+        .into_iter()
+        .enumerate()
+        .map(|(index, cell)| {
+            let cell = cell.trim();
+            if cell.is_empty() || cell == "NULL" || cell == "NULL / NULL" {
+                return None;
+            }
+            if index + 1 == columns {
+                return Some(single_line(cell, 240).into());
+            }
+            if section == Section::Audit && index == 0 {
+                return Some(
+                    compact_timestamp(cell, today)
+                        .unwrap_or_else(|| cell.to_owned())
+                        .into(),
+                );
+            }
+            Some(SharedString::from(cell.to_owned()))
+        })
+        .collect()
+}
+/// Activity statistics as label/value pairs, sizes in readable units.
+fn metric_pairs(metrics: &str) -> Vec<(String, String)> {
+    metrics
+        .split(" · ")
+        .filter_map(|part| part.split_once(": "))
+        .map(|(label, value)| {
+            let value = value
+                .strip_suffix(" bytes")
+                .and_then(|bytes| bytes.parse::<u64>().ok())
+                .map_or_else(|| value.to_owned(), readable_bytes);
+            (label.replace(" (cluster)", ""), value)
+        })
+        .collect()
+}
+/// `9694355` → `9.2 MB` (1024-based, one decimal from KB up).
+fn readable_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["KB", "MB", "GB", "TB", "PB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64 / 1024.;
+    let mut unit = 0;
+    while value >= 1024. && unit + 1 < UNITS.len() {
+        value /= 1024.;
+        unit += 1;
+    }
+    format!("{value:.1} {}", UNITS[unit])
+}
+/// The end of a capture interval (`… collected A to B. …`): its last
+/// timestamp, for "Updated 19:02:37".
+fn updated_at(interval: &str) -> Option<String> {
+    let today = crate::overview_view::chrome::today();
+    interval
+        .split_whitespace()
+        .map(|word| word.trim_end_matches(['.', ',']))
+        .rfind(|word| crate::overview_view::chrome::compact_timestamp(word, today).is_some())
+        .map(str::to_owned)
 }
 impl Drop for AdminView {
     fn drop(&mut self) {
@@ -669,6 +852,8 @@ impl Drop for AdminView {
 }
 impl Render for AdminView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        use crate::overview_view::chrome;
+        use crate::style;
         if self.connection_settings.show {
             return div()
                 .id("administration-connection-settings")
@@ -691,6 +876,81 @@ impl Render for AdminView {
         let captured = self.capture_interval();
         let metrics = self.capture_metrics();
         let limits = self.capture_limits();
+        let has_capture = self.has_capture();
+        let activity = matches!(self.section, Section::Activity(_));
+        let columns = admin_columns(self.section);
+        let stats = if activity && self.snapshot.is_some() {
+            metric_pairs(&metrics)
+        } else {
+            Vec::new()
+        };
+        let updated = if has_capture {
+            updated_at(&captured)
+        } else {
+            None
+        };
+        // Caveats and scope notes live behind one info icon, not above the work.
+        let mut caveats = Vec::new();
+        if has_capture || self.section == Section::Audit {
+            caveats.push(captured.clone());
+        }
+        if !activity {
+            caveats.push(metrics.clone());
+        }
+        if !limits.is_empty() {
+            caveats.push(limits.clone());
+        }
+        let caveat = caveats.join("\n");
+        let parsed = chrome::parse_details(&details);
+        let primary = self.primary_index();
+        let primary_in_header = count > 0 || has_capture;
+        let header_actions = primary_in_header
+            .then(|| self.button_as(primary, Look::Accent, cx))
+            .into_iter()
+            .chain(self.enabled(Action::Cancel).then(|| self.button(2, cx)))
+            .chain([self.button(21, cx), self.button(22, cx)])
+            .collect::<Vec<_>>();
+        let capture_row = has_capture || self.enabled(Action::Clear);
+        let row_actions = [15, 16, 3]
+            .into_iter()
+            .filter(|index| self.enabled(ACTIONS[*index].0))
+            .map(|index| self.button(index, cx))
+            .collect::<Vec<_>>();
+        let rows = uniform_list(
+            "admin-rows",
+            count,
+            cx.processor(|this, range: std::ops::Range<usize>, window, cx| {
+                let focused = this.list.is_focused(window);
+                let columns = admin_columns(this.section);
+                range
+                    .map(|index| {
+                        let label = this.row_label(index).unwrap_or_default();
+                        let selected = Some(index) == this.selected_index();
+                        let cells = admin_cells(this.section, &label, columns.len())
+                            .into_iter()
+                            .zip(columns.iter())
+                            .map(|(value, column)| crate::ui::data_cell(column, value))
+                            .collect::<Vec<_>>();
+                        crate::ui::data_table_row(("admin-row", index), cells, selected, focused)
+                            .role(Role::ListBoxOption)
+                            .aria_label(label)
+                            .aria_selected(selected)
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.select(index);
+                                this.detail_scroll.set_offset(gpui::point(px(0.), px(0.)));
+                                window.focus(&this.list, cx);
+                                cx.notify();
+                            }))
+                    })
+                    .collect()
+            }),
+        )
+        .track_scroll(&self.scroll);
+        let rows = if count == 0 {
+            rows.h(px(0.))
+        } else {
+            rows.flex_1()
+        };
         div()
             .id("administration-tool")
             .role(Role::Group)
@@ -699,9 +959,9 @@ impl Render for AdminView {
             .size_full()
             .flex()
             .flex_col()
-            .bg(crate::style::bg())
-            .text_color(crate::style::text())
-            .text_size(px(crate::style::FONT))
+            .bg(style::bg())
+            .text_color(style::text())
+            .text_size(px(style::FONT))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if this.filter.focus_handle(cx).is_focused(window)
                     && this
@@ -789,101 +1049,102 @@ impl Render for AdminView {
                 cx.notify();
                 cx.stop_propagation();
             }))
-            .child(
-                crate::ui::toolbar()
-                    .children((0..5).map(|index| self.button(index, cx)))
-                    .child(self.button(21, cx))
-                    .child(self.button(22, cx)),
-            )
-            .child(
-                div()
-                    .id("admin-connection")
-                    .role(Role::Label)
-                    .aria_label(format!("Connection: {connection}"))
-                    .px_2()
-                    .pt_1()
-                    .text_color(crate::style::dim())
-                    .child(format!("Connection: {connection}")),
-            )
-            .child(
-                div()
-                    .id("admin-metrics")
-                    .role(Role::Label)
-                    .aria_label(metrics.clone())
-                    .px_2()
-                    .py_1()
-                    .font_family(crate::style::MONO)
-                    .text_color(crate::style::dim())
-                    .child(metrics),
-            )
-            .child(
-                div()
-                    .id("admin-interval")
-                    .role(Role::Label)
-                    .aria_label(captured.clone())
-                    .px_2()
-                    .text_size(px(crate::style::FONT_SMALL))
-                    .text_color(crate::style::faint())
-                    .child(captured),
-            )
-            .when(self.capture_stale(), |view| {
+            .child(crate::ui::tool_header(
+                "Administration",
+                chrome::connection_context(
+                    self.tool_connection.as_ref(),
+                    self.connection.is_some(),
+                ),
+                header_actions,
+            ))
+            .when(capture_row, |view| {
                 view.child(
                     div()
-                        .id("admin-stale")
-                        .role(Role::Status)
-                        .aria_label("Retained readings may be stale")
-                        .px_2()
-                        .text_color(crate::style::warn())
-                        .child("Retained readings may be stale"),
-                )
-            })
-            .when(!limits.is_empty(), |view| {
-                view.child(
-                    div()
-                        .id("admin-limits")
-                        .role(Role::Status)
-                        .aria_label(limits.clone())
-                        .px_2()
-                        .text_size(px(crate::style::FONT_SMALL))
-                        .text_color(crate::style::faint())
-                        .child(limits),
+                        .id("admin-capture")
+                        .flex_none()
+                        .min_h(px(style::TOOLBAR))
+                        .px(px(style::INSET_CONTENT))
+                        .py(px(style::S2))
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap_x(px(style::S6))
+                        .border_b_1()
+                        .border_color(style::line_soft())
+                        .text_sm()
+                        .children(stats.into_iter().map(|(label, value)| {
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(style::S2))
+                                .whitespace_nowrap()
+                                .child(div().text_color(style::dim()).child(label))
+                                .child(div().text_color(style::text()).child(value))
+                        }))
+                        .child(crate::ui::grow())
+                        .when(self.capture_stale(), |row| {
+                            row.child(
+                                div()
+                                    .id("admin-stale")
+                                    .role(Role::Status)
+                                    .aria_label("Retained readings may be stale")
+                                    .text_color(style::warn())
+                                    .child("May be stale"),
+                            )
+                        })
+                        .when_some(updated, |row, raw| {
+                            row.child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(style::S2))
+                                    .text_color(style::dim())
+                                    .child("Updated")
+                                    .child(chrome::timestamp("admin-updated", &raw)),
+                            )
+                        })
+                        .when(!caveat.is_empty(), |row| {
+                            row.child(crate::ui::info_hint("admin-capture-notes", caveat.clone()))
+                        })
+                        .when(self.enabled(Action::Clear), |row| {
+                            row.child(self.button(4, cx))
+                        }),
                 )
             })
             .child(
-                crate::ui::segmented()
-                    .id("admin-sections")
-                    .role(Role::TabList)
-                    .aria_label("Administration sections")
-                    .children((5..12).map(|index| self.button(index, cx))),
-            )
-            .when(
-                self.section == Section::Server(ServerSection::Settings),
-                |view| {
-                    view.child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .p_2()
-                            .child(div().flex_1().child(self.filter.clone()))
-                            .child(self.button(12, cx))
-                            .child(self.button(13, cx)),
+                div()
+                    .flex_none()
+                    .px(px(style::INSET_CONTENT))
+                    .py(px(style::S3))
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(px(style::S4))
+                    .child(
+                        crate::ui::segment_group()
+                            .id("admin-sections")
+                            .role(Role::TabList)
+                            .aria_label("Administration sections")
+                            .children((5..12).map(|index| self.button(index, cx))),
                     )
-                },
-            )
-            .when(self.section == Section::Audit, |view| {
-                view.child(crate::ui::toolbar().child(self.button(14, cx)))
-            })
-            .child(
-                div()
-                    .px_2()
-                    .py_1()
-                    .border_b_1()
-                    .border_color(crate::style::line_soft())
-                    .font_family(crate::style::MONO)
-                    .text_size(px(crate::style::FONT_SMALL))
-                    .text_color(crate::style::faint())
-                    .child(self.section.headings()),
+                    .when(
+                        self.section == Section::Server(ServerSection::Settings),
+                        |bar| {
+                            let focused = self.filter.focus_handle(cx).contains_focused(window, cx);
+                            bar.child(
+                                crate::ui::input_well(false, focused)
+                                    .flex_1()
+                                    .min_w(px(160.))
+                                    .max_w(px(360.))
+                                    .child(div().flex_1().min_w_0().child(self.filter.clone())),
+                            )
+                            .child(self.button(12, cx))
+                            .child(self.button(13, cx))
+                        },
+                    )
+                    .when(self.section == Section::Audit, |bar| {
+                        bar.child(crate::ui::grow()).child(self.button(14, cx))
+                    }),
             )
             .child(
                 div()
@@ -900,48 +1161,14 @@ impl Render for AdminView {
                     .tab_index(0)
                     .flex_1()
                     .min_h_0()
-                    .when(count == 0, |list| {
-                        list.child(
-                            div()
-                                .p_2()
-                                .text_color(crate::style::faint())
-                                .child(self.capture_empty_label()),
-                        )
+                    .px(px(style::S3))
+                    .flex()
+                    .flex_col()
+                    .when(count == 0, |list| list.child(self.empty_table(cx)))
+                    .when(count > 0, |list| {
+                        list.child(crate::ui::data_table_header(&columns))
                     })
-                    .child(
-                        uniform_list(
-                            "admin-rows",
-                            count,
-                            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                                range
-                                    .map(|index| {
-                                        let label = this.row_label(index).unwrap_or_default();
-                                        div()
-                                            .id(("admin-row", index))
-                                            .role(Role::ListBoxOption)
-                                            .aria_label(label.clone())
-                                            .aria_selected(Some(index) == this.selected_index())
-                                            .h(px(28.))
-                                            .px_2()
-                                            .overflow_hidden()
-                                            .when(Some(index) == this.selected_index(), |row| {
-                                                row.bg(crate::style::select())
-                                            })
-                                            .child(SharedString::from(label))
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                this.select(index);
-                                                this.detail_scroll
-                                                    .set_offset(gpui::point(px(0.), px(0.)));
-                                                window.focus(&this.list, cx);
-                                                cx.notify();
-                                            }))
-                                    })
-                                    .collect()
-                            }),
-                        )
-                        .track_scroll(&self.scroll)
-                        .h_full(),
-                    ),
+                    .child(rows),
             )
             .when(selected != usize::MAX, |view| {
                 view.child(
@@ -957,24 +1184,109 @@ impl Render for AdminView {
                         .track_focus(&self.details)
                         .tab_index(0)
                         .tab_stop(true)
-                        .max_h(px(180.))
+                        .flex_none()
+                        .max_h(px(DETAILS_HEIGHT))
                         .overflow_y_scroll()
                         .track_scroll(&self.detail_scroll)
-                        .px_2()
-                        .py_1()
+                        .px(px(style::INSET_CONTENT))
+                        .pb(px(style::S4))
                         .border_t_1()
-                        .border_color(crate::style::line())
-                        .child(details),
+                        .border_color(style::line())
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .h(px(style::TOOLBAR))
+                                .flex()
+                                .items_center()
+                                .gap(px(style::S2))
+                                .child(crate::ui::heading("Details"))
+                                .child(crate::ui::grow())
+                                .children(row_actions),
+                        )
+                        .children(chrome::detail_rows("admin-detail", &parsed)),
                 )
             })
             .child(self.control_panel(cx))
             .child(
                 crate::ui::status_line()
                     .id("admin-status")
-                    .text_color(crate::style::dim())
                     .role(Role::Status)
                     .aria_label(self.status.clone())
                     .child(self.status.clone()),
             )
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    #[test]
+    fn sessions_table_has_bounded_tracks_and_a_flexible_query() {
+        let columns = admin_columns(Section::Activity(ActivitySection::Sessions));
+        let labels = columns
+            .iter()
+            .map(|column| column.label.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(labels, ["PID", "User", "State", "Wait", "Query"]);
+        assert_eq!(columns[0].track, crate::ui::Track::Fixed(72.));
+        assert!(columns[0].end && columns[0].mono);
+        assert!(
+            columns[1..4]
+                .iter()
+                .all(|column| matches!(column.track, crate::ui::Track::Fixed(_)))
+        );
+        assert_eq!(columns[4].track, crate::ui::Track::Flex);
+        assert!(columns[4].mono);
+    }
+
+    #[test]
+    fn row_cells_keep_positions_and_put_sql_on_one_line() {
+        let section = Section::Activity(ActivitySection::Sessions);
+        let cells = admin_cells(
+            section,
+            "12207 · dbunk · idle · Client / ClientRead ·           SELECT c.reltuples           FROM pg_class c",
+            5,
+        );
+        assert_eq!(cells[0].as_deref(), Some("12207"));
+        assert_eq!(cells[3].as_deref(), Some("Client / ClientRead"));
+        assert_eq!(
+            cells[4].as_deref(),
+            Some("SELECT c.reltuples FROM pg_class c")
+        );
+        let background = admin_cells(section, "61 · NULL · NULL · NULL / NULL · ", 5);
+        assert_eq!(background[0].as_deref(), Some("61"));
+        assert!(background[1..].iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn metrics_read_as_labelled_values_with_readable_sizes() {
+        let pairs = metric_pairs(
+            "Active sessions: 1 · Blocked locks (cluster): 0 · Cache hit: 99.9% · Database size: 9694355 bytes",
+        );
+        assert_eq!(
+            pairs,
+            vec![
+                ("Active sessions".to_owned(), "1".to_owned()),
+                ("Blocked locks".to_owned(), "0".to_owned()),
+                ("Cache hit".to_owned(), "99.9%".to_owned()),
+                ("Database size".to_owned(), "9.2 MB".to_owned()),
+            ]
+        );
+        assert_eq!(readable_bytes(512), "512 B");
+        assert_eq!(readable_bytes(2048), "2.0 KB");
+    }
+
+    #[test]
+    fn updated_time_is_the_end_of_the_collection_interval() {
+        assert_eq!(
+            updated_at(
+                "Database d · reader PID 1 · collected 2026-11-21T19:02:37.289433+00:00 to 2026-11-21T19:02:37.306748+00:00. Readings may change during collection"
+            )
+            .as_deref(),
+            Some("2026-11-21T19:02:37.306748+00:00")
+        );
+        assert_eq!(updated_at("No readings collected for this section"), None);
     }
 }

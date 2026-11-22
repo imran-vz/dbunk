@@ -716,7 +716,7 @@ impl SchemaEditView {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
+                    .gap(px(style::S2))
                     .child(ui::section_label(format!(
                         "SQL · {} statement{} in {} group{}",
                         state.preview.statements.len(),
@@ -726,14 +726,15 @@ impl SchemaEditView {
                     )))
                     .child(
                         div()
-                            .h(px(180.))
+                            .h(px(SQL_HEIGHT))
                             .flex_none()
-                            .p(px(6.))
-                            .rounded(px(5.))
+                            .p(px(style::S4))
+                            .rounded(px(style::R_MD))
                             .border_1()
                             .border_color(style::line_soft())
                             .bg(style::bg())
                             .font_family(style::MONO)
+                            .text_size(px(style::FONT_DATA))
                             .child(state.sql.clone()),
                     ),
             );
@@ -825,7 +826,7 @@ impl SchemaEditView {
         let mut list = div()
             .flex()
             .flex_col()
-            .gap(px(2.))
+            .gap(px(style::S1))
             .child(ui::section_label("Options"));
         for (index, choice) in toggles.into_iter().enumerate() {
             let on = toggle_on(&state.preview.options, choice);
@@ -838,15 +839,17 @@ impl SchemaEditView {
                     .tab_index(0)
                     .flex()
                     .items_center()
-                    .gap(px(6.))
-                    .h(px(22.))
-                    .px(px(4.))
-                    .rounded(px(4.))
+                    .gap(px(style::S3))
+                    .h(px(style::CONTROL))
+                    .px(px(style::S2))
+                    .rounded(px(style::R_SM))
                     .text_color(if enabled {
                         style::text()
                     } else {
                         style::faint()
                     })
+                    .when(!enabled, |row| row.opacity(0.5))
+                    .focus(|s| s.shadow(vec![ui::ring()]))
                     .when(enabled, |row| {
                         row.cursor_pointer()
                             .hover(|s| s.bg(style::hover()))
@@ -862,30 +865,17 @@ impl SchemaEditView {
     }
 }
 
+/// The dialog header's environment: the one `env_tag` (D8), or a quiet
+/// badge when the connection has no environment.
 fn env_chip(environment: Option<DevelopmentEnvironment>) -> AnyElement {
-    let color = style::env(environment);
-    let label = environment.map_or("Unknown environment", style::env_label);
-    div()
-        .flex_none()
-        .flex()
-        .items_center()
-        .gap(px(4.))
-        .h(px(18.))
-        .px(px(6.))
-        .rounded(px(9.))
-        .border_1()
-        .border_color(style::with_alpha(color, 0x73))
-        .text_size(px(style::FONT_SMALL))
-        .text_color(style::dim())
-        .child(
-            div()
-                .size(px(6.))
-                .rounded_full()
-                .bg(style::with_alpha(color, 0xff)),
-        )
-        .child(label)
-        .into_any_element()
+    match environment {
+        Some(environment) => ui::env_tag(environment).into_any_element(),
+        None => ui::badge("Unknown environment").into_any_element(),
+    }
 }
+
+/// Height of the scrolling SQL block.
+const SQL_HEIGHT: f32 = 180.;
 
 fn outcome_banner(outcome: OutcomeText) -> AnyElement {
     if outcome.error {
@@ -901,10 +891,10 @@ fn outcome_banner(outcome: OutcomeText) -> AnyElement {
         .aria_label(SharedString::from(outcome.text.clone()))
         .flex()
         .items_start()
-        .gap(px(6.))
-        .px(px(8.))
-        .py(px(5.))
-        .rounded(px(5.))
+        .gap(px(style::S3))
+        .px(px(style::S4))
+        .py(px(style::S3))
+        .rounded(px(style::R_MD))
         .border_1()
         .border_color(style::line())
         .bg(style::ok_fill())
@@ -927,8 +917,9 @@ fn change_line(index: usize, change: &SchemaChange) -> AnyElement {
     let (verb, color) = match &change.kind {
         ChangeKind::Added => ("Add", style::ok()),
         ChangeKind::Removed => ("Drop", style::bad()),
-        ChangeKind::Renamed { .. } => ("Rename", style::warn()),
-        ChangeKind::Changed { .. } => ("Change", style::warn()),
+        // The verb reads as a label, not a warning (D18).
+        ChangeKind::Renamed { .. } => ("Rename", style::text()),
+        ChangeKind::Changed { .. } => ("Change", style::text()),
     };
     let detail = match &change.kind {
         ChangeKind::Renamed { from, to } => Some(("name", from.clone(), to.clone())),
@@ -954,10 +945,10 @@ fn change_line(index: usize, change: &SchemaChange) -> AnyElement {
         .aria_label(SharedString::from(label))
         .flex()
         .flex_col()
-        .gap(px(2.))
-        .px(px(8.))
-        .py(px(4.))
-        .rounded(px(5.))
+        .gap(px(style::S1))
+        .px(px(style::S4))
+        .py(px(style::S2))
+        .rounded(px(style::R_MD))
         .border_1()
         .border_color(style::line_soft())
         .bg(style::bg())
@@ -965,7 +956,7 @@ fn change_line(index: usize, change: &SchemaChange) -> AnyElement {
             div()
                 .flex()
                 .items_center()
-                .gap(px(6.))
+                .gap(px(style::S3))
                 .child(
                     div()
                         .flex_none()
@@ -989,17 +980,17 @@ fn change_line(index: usize, change: &SchemaChange) -> AnyElement {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(px(style::S3))
                     .min_w_0()
                     .font_family(style::MONO)
+                    .text_size(px(style::FONT_DATA))
                     .child(div().flex_none().text_color(style::dim()).child(field))
                     .child(
                         div()
                             .flex_shrink_1()
                             .min_w_0()
                             .truncate()
-                            .text_color(style::faint())
-                            .line_through()
+                            .text_color(style::dim())
                             .child(crate::structure_table::clip(&before)),
                     )
                     .child(div().flex_none().text_color(style::faint()).child("→"))
@@ -1031,7 +1022,7 @@ fn changes_list(preview: &SchemaEditPreview) -> AnyElement {
         .aria_label("Changes")
         .flex()
         .flex_col()
-        .gap(px(4.));
+        .gap(px(style::S2));
     let mut start = 0;
     for group in ChangeGroup::ALL {
         let changes: Vec<&SchemaChange> = preview.changes.in_group(group).collect();
@@ -1055,12 +1046,12 @@ fn impact_line(index: usize, tag: &'static str, warn: bool, text: String) -> Any
         .aria_label(SharedString::from(format!("{tag}: {text}")))
         .flex()
         .items_start()
-        .gap(px(6.))
+        .gap(px(style::S3))
         .child(
             div()
                 .flex_none()
-                .px(px(5.))
-                .rounded(px(3.))
+                .px(px(style::S2))
+                .rounded(px(style::R_SM))
                 .bg(if warn {
                     style::warn_fill()
                 } else {
@@ -1133,7 +1124,7 @@ fn impact_list(state: &ReviewState) -> AnyElement {
         .aria_label("Impact")
         .flex()
         .flex_col()
-        .gap(px(3.))
+        .gap(px(style::S1))
         .child(ui::section_label("Impact"));
     if !lines.iter().any(|(tag, _, _)| *tag == "Destructive") {
         list = list.child(

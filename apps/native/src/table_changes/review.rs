@@ -19,6 +19,9 @@ use crate::{
 use dbunk_lib::backend::DevelopmentEnvironment;
 use gpui::AnyElement;
 
+/// Bounds of the column-name track in the diff grid.
+const DIFF_NAME_MIN: f32 = 80.;
+const DIFF_NAME_MAX: f32 = 200.;
 /// Changes rendered in the diff list; the plan is capped at 128 already.
 const DIFF_CHANGES: usize = 128;
 /// Cells rendered per change before a "+N more columns" note.
@@ -45,6 +48,9 @@ pub(super) struct ReviewDialog {
     /// The backend asked for a confirmation the click did not acknowledge.
     pub(super) escalated: bool,
     pub(super) failure: Option<String>,
+    /// The user flipped the SQL section from its default (collapsed when a
+    /// readable diff exists, open otherwise).
+    pub(super) sql_toggled: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -446,8 +452,10 @@ impl TableChanges {
         } else {
             format!("Review changes · {}", dialog.summary)
         };
+        let lead = review_lead(policy.environment, &dialog.diff);
         let diff = diff_list(&dialog.diff);
-        let sql = sql_list(&dialog.statements);
+        let sql_open = dialog.diff.is_empty() != dialog.sql_toggled;
+        let sql = sql_list(&dialog.statements, sql_open, cx);
 
         let status = match phase {
             ReviewPhase::Preparing => Some("Preparing the exact SQL…"),
@@ -457,6 +465,7 @@ impl TableChanges {
             _ => None,
         };
         let mut body = dialog::body("review-body")
+            .child(lead)
             .child(dialog::env_notice(
                 policy.environment,
                 policy.describe(),
@@ -544,7 +553,7 @@ impl TableChanges {
             }
         };
         let modal = dialog::modal("review-dialog", "Review changes", 640.)
-            .child(dialog::header(title, Some(env_chip(policy.environment))))
+            .child(dialog::header(title, None))
             .child(body)
             .child(footer);
         dialog::backdrop("review-backdrop")
@@ -556,29 +565,63 @@ impl TableChanges {
     }
 }
 
-fn env_chip(environment: Option<DevelopmentEnvironment>) -> AnyElement {
-    let color = style::env(environment);
-    let label = environment.map_or("Unknown environment", style::env_label);
+/// The first line of the review: environment tag, the table and how many
+/// rows the changes touch.
+fn review_lead(environment: Option<DevelopmentEnvironment>, changes: &[DiffChange]) -> AnyElement {
+    let target = review_target(changes);
+    let rows = changes.len();
     div()
+        .id("review-lead")
+        .role(Role::Label)
+        .aria_label(SharedString::from(format!(
+            "{}{}, {}",
+            environment.map_or("Unknown environment", style::env_name),
+            target
+                .as_ref()
+                .map_or(String::new(), |target| format!(", {target}")),
+            rows_label(rows)
+        )))
         .flex_none()
         .flex()
         .items_center()
-        .gap(px(4.))
-        .h(px(18.))
-        .px(px(6.))
-        .rounded(px(9.))
-        .border_1()
-        .border_color(style::with_alpha(color, 0x73))
-        .text_size(px(style::FONT_SMALL))
-        .text_color(style::dim())
+        .gap(px(style::S4))
+        .map(|lead| match environment {
+            Some(environment) => lead.child(ui::env_tag(environment)),
+            None => lead.child(ui::badge("Unknown environment")),
+        })
+        .when_some(target, |lead, target| {
+            lead.child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .font_family(style::MONO)
+                    .text_size(px(style::FONT_DATA))
+                    .text_color(style::text())
+                    .child(target),
+            )
+        })
         .child(
             div()
-                .size(px(6.))
-                .rounded_full()
-                .bg(style::with_alpha(color, 0xff)),
+                .flex_none()
+                .text_sm()
+                .text_color(style::dim())
+                .child(rows_label(rows)),
         )
-        .child(label)
         .into_any_element()
+}
+
+/// The one table every change targets, or `None` when they differ.
+fn review_target(changes: &[DiffChange]) -> Option<String> {
+    let first = changes.first()?;
+    changes
+        .iter()
+        .all(|change| change.target == first.target)
+        .then(|| first.target.clone())
+}
+
+/// `1 row`, `2 rows`.
+fn rows_label(rows: usize) -> String {
+    format!("{rows} {}", if rows == 1 { "row" } else { "rows" })
 }
 
 /// Display text and whether it is a placeholder (NULL, or `''` for an empty
@@ -594,19 +637,38 @@ fn value_text(value: &DiffValue) -> (String, bool) {
     }
 }
 
-fn value_cell(value: &DiffValue, color: gpui::Rgba, struck: bool) -> gpui::Div {
-    let (text, null) = value_text(value);
-    div()
-        .min_w_0()
-        .truncate()
-        .font_family(style::MONO)
-        .text_color(if null { style::faint() } else { color })
-        .when(null, |cell| cell.italic())
-        .when(struck, |cell| cell.line_through())
-        .child(text)
+/// What the review shows for a value: the text itself, or an explicit
+/// marker for an empty string and for NULL. `true` marks a marker.
+fn value_display(value: &DiffValue) -> (String, bool) {
+    match &value.text {
+        Some(text) if text.is_empty() => ("Empty string".to_owned(), true),
+        None => ("NULL".to_owned(), true),
+        Some(_) => value_text(value),
+    }
 }
 
-fn cell_row(index: usize, kind: DiffKind, cell: &DiffCell) -> AnyElement {
+/// One value of the diff grid. Values are never struck through: the
+/// column order (before → after) says what changes.
+fn value_cell(value: Option<&DiffValue>, color: gpui::Rgba) -> gpui::Div {
+    let cell = div().flex_1().min_w_0().truncate();
+    let Some(value) = value else {
+        return cell.text_color(style::faint()).child("—");
+    };
+    let (text, marker) = value_display(value);
+    if marker {
+        cell.text_size(px(style::FONT_SMALL))
+            .italic()
+            .text_color(style::dim())
+            .child(text)
+    } else {
+        cell.font_family(style::MONO)
+            .text_size(px(style::FONT_DATA))
+            .text_color(color)
+            .child(text)
+    }
+}
+
+fn cell_row(index: usize, kind: DiffKind, cell: &DiffCell, name_width: f32) -> AnyElement {
     let old = cell.old.as_ref();
     let new = cell.new.as_ref();
     let label = format!(
@@ -618,38 +680,46 @@ fn cell_row(index: usize, kind: DiffKind, cell: &DiffCell) -> AnyElement {
         )),
         new.map_or_else(|| "removed".to_owned(), |value| value_text(value).0),
     );
-    let mut row = div()
+    // Column · before · → · after, aligned across every change.
+    let (before, after) = match kind {
+        DiffKind::Delete => (old, None),
+        _ => (old, new),
+    };
+    div()
         .id(("review-cell", index))
         .role(Role::Label)
         .aria_label(label)
         .flex()
         .items_center()
-        .gap(px(6.))
-        .min_h(px(style::ROW))
+        .gap(px(style::S4))
+        .min_h(px(style::GRID_ROW))
         .child(
             div()
                 .flex_none()
-                .w(px(140.))
+                .w(px(name_width))
                 .truncate()
                 .font_family(style::MONO)
+                .text_size(px(style::FONT_DATA))
                 .text_color(style::dim())
                 .child(cell.column.clone()),
-        );
-    match (kind, old, new) {
-        (DiffKind::Delete, Some(old), _) => {
-            row = row.child(value_cell(old, style::bad_text(), true));
-        }
-        (_, Some(old), Some(new)) => {
-            row = row
-                .child(value_cell(old, style::faint(), true))
-                .child(div().flex_none().text_color(style::faint()).child("→"))
-                .child(value_cell(new, style::warn(), false));
-        }
-        (_, None, Some(new)) => row = row.child(value_cell(new, style::warn(), false)),
-        (_, Some(old), None) => row = row.child(value_cell(old, style::bad_text(), true)),
-        (_, None, None) => {}
-    }
-    row.into_any_element()
+        )
+        .child(value_cell(before, style::dim()))
+        .child(
+            div()
+                .flex_none()
+                .w(px(style::S6))
+                .text_color(style::faint())
+                .child("→"),
+        )
+        .child(value_cell(
+            after,
+            if kind == DiffKind::Delete {
+                style::bad_text()
+            } else {
+                style::warn()
+            },
+        ))
+        .into_any_element()
 }
 
 fn diff_list(changes: &[DiffChange]) -> AnyElement {
@@ -659,11 +729,24 @@ fn diff_list(changes: &[DiffChange]) -> AnyElement {
         .aria_label("Changes")
         .flex()
         .flex_col()
-        .gap(px(6.));
+        .gap(px(style::S3));
     if changes.is_empty() {
         return list.into_any_element();
     }
+    // One column-name track for the whole dialog so values line up.
+    let name_width = ui::fit_track(
+        "",
+        changes
+            .iter()
+            .take(DIFF_CHANGES)
+            .flat_map(|change| change.cells.iter().take(DIFF_CELLS))
+            .map(|cell| cell.column.as_str()),
+        true,
+        DIFF_NAME_MIN,
+        DIFF_NAME_MAX,
+    );
     for (index, change) in changes.iter().take(DIFF_CHANGES).enumerate() {
+        // The verb reads as text; a small dot carries the kind's colour.
         let (verb, tint) = match change.kind {
             DiffKind::Update => ("Update", style::warn()),
             DiffKind::Insert => ("Insert", style::ok()),
@@ -681,10 +764,10 @@ fn diff_list(changes: &[DiffChange]) -> AnyElement {
             .aria_label(format!("Change {}: {verb} {target}", change.op_index + 1))
             .flex()
             .flex_col()
-            .gap(px(2.))
-            .px(px(8.))
-            .py(px(6.))
-            .rounded(px(5.))
+            .gap(px(style::S1))
+            .px(px(style::S5))
+            .py(px(style::S3))
+            .rounded(px(style::R_MD))
             .border_1()
             .border_color(style::line_soft())
             .bg(style::bg())
@@ -692,12 +775,14 @@ fn diff_list(changes: &[DiffChange]) -> AnyElement {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(px(style::S3))
+                    .min_h(px(style::GRID_ROW))
+                    .child(div().flex_none().size(px(6.)).rounded_full().bg(tint))
                     .child(
                         div()
                             .flex_none()
                             .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(tint)
+                            .text_color(style::text())
                             .child(verb),
                     )
                     .child(
@@ -706,6 +791,7 @@ fn diff_list(changes: &[DiffChange]) -> AnyElement {
                             .min_w_0()
                             .truncate()
                             .font_family(style::MONO)
+                            .text_size(px(style::FONT_DATA))
                             .text_color(style::dim())
                             .child(target),
                     ),
@@ -716,13 +802,13 @@ fn diff_list(changes: &[DiffChange]) -> AnyElement {
                     .iter()
                     .take(DIFF_CELLS)
                     .enumerate()
-                    .map(|(cell_index, cell)| cell_row(cell_index, change.kind, cell)),
+                    .map(|(cell_index, cell)| cell_row(cell_index, change.kind, cell, name_width)),
             )
             .when(more > 0, |item| {
                 item.child(
                     div()
                         .text_size(px(style::FONT_SMALL))
-                        .text_color(style::faint())
+                        .text_color(style::dim())
                         .child(format!("+{more} more columns, shown in the SQL below")),
                 )
             })
@@ -730,7 +816,7 @@ fn diff_list(changes: &[DiffChange]) -> AnyElement {
                 item.child(
                     div()
                         .text_size(px(style::FONT_SMALL))
-                        .text_color(style::faint())
+                        .text_color(style::dim())
                         .child("Other columns use their defaults"),
                 )
             });
@@ -739,55 +825,105 @@ fn diff_list(changes: &[DiffChange]) -> AnyElement {
     list.into_any_element()
 }
 
-fn sql_list(statements: &[ReviewStatement]) -> AnyElement {
+/// The SQL section: a disclosure row (`SQL · 2 statements`) and, when open,
+/// each statement with its bound values in mono `text`.
+fn sql_list(statements: &[ReviewStatement], open: bool, cx: &Context<TableChanges>) -> AnyElement {
     let count = statements.len();
+    let heading: SharedString = format!(
+        "SQL · {count} statement{}",
+        if count == 1 { "" } else { "s" }
+    )
+    .into();
+    let weak = cx.weak_entity();
+    let toggle = div()
+        .id("review-sql-toggle")
+        .role(Role::Button)
+        .aria_label(heading.clone())
+        .aria_expanded(open)
+        .flex_none()
+        .h(px(style::CONTROL))
+        .flex()
+        .items_center()
+        .gap(px(style::S3))
+        .text_sm()
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_color(style::dim())
+        .cursor_pointer()
+        .hover(|s| s.text_color(style::text()))
+        .child(
+            gpui::svg()
+                .path(if open {
+                    "icons/chevron_down.svg"
+                } else {
+                    "icons/chevron_right.svg"
+                })
+                .size(px(style::ICON))
+                .flex_none()
+                .text_color(style::dim()),
+        )
+        .child(heading)
+        .on_click(cx.listener(|this, _, _, cx| {
+            if let Some(dialog) = this.review_dialog_mut() {
+                dialog.sql_toggled = !dialog.sql_toggled;
+            }
+            cx.notify();
+        }))
+        .on_a11y_action(gpui::accesskit::Action::Click, move |_, _, cx| {
+            weak.update(cx, |this, cx| {
+                if let Some(dialog) = this.review_dialog_mut() {
+                    dialog.sql_toggled = !dialog.sql_toggled;
+                }
+                cx.notify();
+            })
+            .ok();
+        });
     div()
         .flex()
         .flex_col()
-        .gap(px(4.))
-        .child(ui::section_label(format!(
-            "SQL · {count} statement{}",
-            if count == 1 { "" } else { "s" }
-        )))
-        .children(statements.iter().enumerate().map(|(index, statement)| {
-            div()
-                .id(("review-statement", index))
-                .role(Role::Group)
-                .aria_label(format!("Statement {}", index + 1))
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .px(px(8.))
-                .py(px(6.))
-                .rounded(px(5.))
-                .border_1()
-                .border_color(style::line_soft())
-                .bg(style::bg())
-                .font_family(style::MONO)
-                .child(
-                    div()
-                        .id("sql")
-                        .role(Role::Label)
-                        .aria_label(statement.sql.clone())
-                        .text_color(style::text())
-                        .child(statement.sql.clone()),
-                )
-                .children(
-                    statement
-                        .params
-                        .iter()
-                        .enumerate()
-                        .map(|(param, (line, label))| {
-                            div()
-                                .id(("param", param))
-                                .role(Role::Label)
-                                .aria_label(label.clone())
-                                .truncate()
-                                .text_color(style::dim())
-                                .child(line.clone())
-                        }),
-                )
-        }))
+        .gap(px(style::S2))
+        .child(toggle)
+        .when(open, |section| {
+            section.children(statements.iter().enumerate().map(|(index, statement)| {
+                div()
+                    .id(("review-statement", index))
+                    .role(Role::Group)
+                    .aria_label(format!("Statement {}", index + 1))
+                    .flex()
+                    .flex_col()
+                    .gap(px(style::S1))
+                    .px(px(style::S4))
+                    .py(px(style::S3))
+                    .rounded(px(style::R_MD))
+                    .border_1()
+                    .border_color(style::line_soft())
+                    .bg(style::bg())
+                    .font_family(style::MONO)
+                    .text_size(px(style::FONT_DATA))
+                    .child(
+                        div()
+                            .id("sql")
+                            .role(Role::Label)
+                            .aria_label(statement.sql.clone())
+                            .text_color(style::text())
+                            .child(statement.sql.clone()),
+                    )
+                    .children(
+                        statement
+                            .params
+                            .iter()
+                            .enumerate()
+                            .map(|(param, (line, label))| {
+                                div()
+                                    .id(("param", param))
+                                    .role(Role::Label)
+                                    .aria_label(label.clone())
+                                    .truncate()
+                                    .text_color(style::dim())
+                                    .child(line.clone())
+                            }),
+                    )
+            }))
+        })
         .into_any_element()
 }
 
@@ -806,6 +942,36 @@ mod tests {
         assert_eq!(value_text(&value(Some(""), false)), ("''".into(), true));
         assert_eq!(value_text(&value(Some("a"), false)), ("a".into(), false));
         assert_eq!(value_text(&value(Some("ab"), true)), ("ab…".into(), false));
+        // The dialog shows explicit markers for the two placeholders.
+        assert_eq!(
+            value_display(&value(Some(""), false)),
+            ("Empty string".into(), true)
+        );
+        assert_eq!(value_display(&value(None, false)), ("NULL".into(), true));
+        assert_eq!(value_display(&value(Some("7"), false)), ("7".into(), false));
+    }
+
+    #[test]
+    fn review_lead_names_one_target_and_counts_rows() {
+        let change = |target: &str| DiffChange {
+            op_index: 0,
+            kind: DiffKind::Update,
+            target: target.into(),
+            identity: "id = 1".into(),
+            cells: Vec::new(),
+            omitted_defaults: false,
+        };
+        assert_eq!(review_target(&[]), None);
+        assert_eq!(
+            review_target(&[change("billing.invoices"), change("billing.invoices")]).as_deref(),
+            Some("billing.invoices")
+        );
+        assert_eq!(
+            review_target(&[change("billing.invoices"), change("billing.plans")]),
+            None
+        );
+        assert_eq!(rows_label(1), "1 row");
+        assert_eq!(rows_label(2), "2 rows");
     }
 
     const PHASES: [ReviewPhase; 7] = [

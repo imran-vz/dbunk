@@ -59,7 +59,10 @@ actions!(
     ]
 );
 
-const ROW_HEIGHT: Pixels = px(crate::style::ROW);
+/// Grid row pitch: every body row, the insert band, hit-testing, scroll and
+/// editor placement use this one value (`style::GRID_ROW`).
+const ROW: f32 = crate::style::GRID_ROW;
+const ROW_HEIGHT: Pixels = px(ROW);
 
 struct GridView {
     scroll: UniformListScrollHandle,
@@ -111,6 +114,37 @@ pub struct ResultGrid {
     /// the last prepaint; anchors for popovers.
     body_probe: Rc<Cell<Option<Bounds<Pixels>>>>,
     header_probe: Rc<Cell<Option<Bounds<Pixels>>>>,
+    /// The host paints the row summary and Export button in its own results
+    /// header (query documents), so the grid skips its status row.
+    embedded_status: bool,
+}
+
+/// Compact row count for a result header: "40 rows", or "40 of 1,200 rows
+/// loaded" when fewer rows are loaded than the query returned. Streaming
+/// results count what has arrived so far.
+pub fn rows_summary(returned: Option<u64>, loaded: usize, partial: bool, limited: bool) -> String {
+    let plural = |count: u64| if count == 1 { "row" } else { "rows" };
+    let loaded_rows = loaded as u64;
+    let mut summary = match returned {
+        None => format!(
+            "{} {} so far",
+            crate::ui::grouped(loaded_rows),
+            plural(loaded_rows)
+        ),
+        Some(returned) if returned > loaded_rows => format!(
+            "{} of {} rows loaded",
+            crate::ui::grouped(loaded_rows),
+            crate::ui::grouped(returned)
+        ),
+        Some(returned) => format!("{} {}", crate::ui::grouped(returned), plural(returned)),
+    };
+    if partial {
+        summary.push_str(" · partial");
+    }
+    if limited {
+        summary.push_str(" · row limit");
+    }
+    summary
 }
 
 pub enum GridEvent {
@@ -174,7 +208,56 @@ impl ResultGrid {
             band_scroll: ScrollHandle::new(),
             body_probe: Rc::new(Cell::new(None)),
             header_probe: Rc::new(Cell::new(None)),
+            embedded_status: false,
         }
+    }
+
+    /// Query documents show the row summary and Export in their results
+    /// header; the grid then paints no status row of its own.
+    pub fn set_embedded_status(&mut self, embedded: bool) {
+        self.embedded_status = embedded;
+    }
+
+    /// Whether Export has something to export: a host and at least one row.
+    pub fn can_export(&self) -> bool {
+        self.export_host.is_some() && self.row_count() > 0
+    }
+
+    /// The status row text: row summary, pins and the last copy result.
+    pub fn summary(&self) -> String {
+        let rows = self.row_count();
+        let status = self.model.active_set().map_or_else(
+            || "No results".to_string(),
+            |set| rows_summary(set.row_count, rows, set.partial, set.limit.is_some()),
+        );
+        let status = self.table.as_ref().map_or(status, |page| {
+            format!(
+                "{} {}{}",
+                crate::ui::grouped(rows as u64),
+                if rows == 1 { "row" } else { "rows" },
+                if page.omitted_rows > 0 || page.truncated_cells > 0 {
+                    " · incomplete values"
+                } else {
+                    ""
+                }
+            )
+        });
+        let status = if self.pinned_count() > 0 {
+            format!(
+                "{status} · {} pinned{}",
+                self.pinned_count(),
+                if self.panes().pinned_max > 0. {
+                    " · scroll over pins or use arrows to reveal"
+                } else {
+                    ""
+                }
+            )
+        } else {
+            status
+        };
+        self.copy_status
+            .as_ref()
+            .map_or(status.clone(), |copy| format!("{status} · {copy}"))
     }
 
     /// A browse grid for one relation. ClickHouse data tabs use this too, so
@@ -407,7 +490,7 @@ impl ResultGrid {
                 set.widths.set_explicit(column, width);
             }
             set.widths.rebuild_offsets();
-            self.copy_status = Some("Columns fit to retained rows".into());
+            self.copy_status = Some("Columns fit to loaded rows".into());
             self.clamp_horizontal_scroll();
             self.reveal_selected_column();
         }
@@ -1082,7 +1165,7 @@ impl ResultGrid {
                         format!(
                             "Copied {rows} selected rows{}",
                             if partial {
-                                " from partial results; retained values only"
+                                " from partial results; loaded values only"
                             } else {
                                 ""
                             }
@@ -1113,54 +1196,10 @@ impl Render for ResultGrid {
         }
 
         let export_weak = cx.entity().downgrade();
-        let set = self.model.active_set();
         let rows = self.row_count();
         let columns = self.column_count();
-        let status = set.map_or_else(
-            || "No results".to_string(),
-            |set| {
-                let count = set.row_count.map_or_else(
-                    || "streaming".to_string(),
-                    |count| format!("{count} rows returned"),
-                );
-                format!(
-                    "{count} · {rows} retained · {columns} columns{}{}",
-                    if set.partial { " · partial" } else { "" },
-                    if set.limit.is_some() {
-                        " · row limit"
-                    } else {
-                        ""
-                    }
-                )
-            },
-        );
-        let status = self.table.as_ref().map_or(status, |page| {
-            format!(
-                "{rows} rows · {columns} columns{}",
-                if page.omitted_rows > 0 || page.truncated_cells > 0 {
-                    " · incomplete values"
-                } else {
-                    ""
-                }
-            )
-        });
-        let status = if self.pinned_count() > 0 {
-            format!(
-                "{status} · {} pinned{}",
-                self.pinned_count(),
-                if self.panes().pinned_max > 0. {
-                    " · scroll over pins or use arrows to reveal"
-                } else {
-                    ""
-                }
-            )
-        } else {
-            status
-        };
-        let status = self
-            .copy_status
-            .as_ref()
-            .map_or(status.clone(), |copy| format!("{status} · {copy}"));
+        let status = self.summary();
+        let can_export = self.can_export();
         // Wheel deltas land unclamped and the row list only clamps them during
         // its prepaint, after this header has already read the offset. Clamp
         // first so trackpad overscroll never drags the header past its edge.
@@ -1237,15 +1276,15 @@ impl Render for ResultGrid {
             .bg(crate::style::bg())
             .text_color(crate::style::text())
             .text_sm()
-            .when(!bare, |grid| {
+            .when(!bare && !self.embedded_status, |grid| {
                 grid.child(
                     div()
                         .flex_shrink_0()
-                        .h(px(crate::style::FOOTER))
-                        .px_2()
+                        .h(px(crate::style::CONTROL + crate::style::S1))
+                        .px(px(crate::style::INSET_BAR))
                         .flex()
                         .items_center()
-                        .gap(px(8.))
+                        .gap(px(crate::style::S4))
                         .border_b_1()
                         .border_color(crate::style::line_soft())
                         .child(
@@ -1256,16 +1295,15 @@ impl Render for ResultGrid {
                                 .flex_1()
                                 .min_w_0()
                                 .truncate()
-                                .font_family(crate::style::MONO)
                                 .text_size(px(crate::style::FONT_SMALL))
-                                .text_color(crate::style::faint())
+                                .text_color(crate::style::dim())
                                 .child(status),
                         )
-                        .when(self.export_host.is_some(), |row| {
+                        .when(can_export, |row| {
                             row.child(
                                 crate::ui::tool_button(
                                     "open-result-export",
-                                    "Export retained rows",
+                                    "Export results",
                                     Some("icons/download.svg"),
                                     true,
                                     false,
@@ -1334,5 +1372,26 @@ impl Render for ResultGrid {
             )
             .children(self.inspector.clone())
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::rows_summary;
+
+    #[test]
+    fn row_summary_pluralises_groups_and_names_partial_loads() {
+        assert_eq!(rows_summary(Some(40), 40, false, false), "40 rows");
+        assert_eq!(rows_summary(Some(1), 1, false, false), "1 row");
+        assert_eq!(rows_summary(Some(0), 0, false, false), "0 rows");
+        assert_eq!(
+            rows_summary(Some(2_400), 100, false, false),
+            "100 of 2,400 rows loaded"
+        );
+        assert_eq!(rows_summary(None, 1, false, false), "1 row so far");
+        assert_eq!(
+            rows_summary(Some(500), 500, true, true),
+            "500 rows · partial · row limit"
+        );
     }
 }

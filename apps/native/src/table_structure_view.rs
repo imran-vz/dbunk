@@ -13,6 +13,7 @@ use gpui::{
     UniformListScrollHandle, Window, div, prelude::*, px, uniform_list,
 };
 
+mod details;
 mod render;
 #[cfg(test)]
 mod tests;
@@ -183,6 +184,13 @@ pub struct StructureView {
     section: Section,
     selected: Option<usize>,
     editor: Option<SelectedEditor>,
+    /// The selected row as labelled properties (Details panel).
+    properties: Vec<details::Property>,
+    /// The exact catalog text (the read-only editor) is open under
+    /// Diagnostics.
+    show_raw: bool,
+    /// Columns section layout fitted to this capture.
+    columns_layout: Vec<crate::structure_table::ColumnSpec>,
     root: FocusHandle,
     list: FocusHandle,
     buttons: Vec<FocusHandle>,
@@ -201,12 +209,16 @@ impl StructureView {
     pub fn new(capture: Capture, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let page = Page::new(&capture);
         let section = Section::ALL[0];
+        let columns_layout = details::fitted_columns(&capture);
         let mut view = Self {
             capture,
             page,
             section,
             selected: None,
             editor: None,
+            properties: Vec::new(),
+            show_raw: false,
+            columns_layout,
             root: cx.focus_handle(),
             list: cx.focus_handle(),
             buttons: ACTIONS.iter().map(|_| cx.focus_handle()).collect(),
@@ -384,6 +396,7 @@ impl StructureView {
                 return;
             }
         };
+        self.properties = text.as_deref().map(details::properties).unwrap_or_default();
         // A fresh buffer has no undo history containing the previous selection.
         // Capture's working allowance includes the temporary replacement overlap.
         let editor = text.map(|text| {
@@ -472,7 +485,9 @@ impl StructureView {
                     .skip(TOOLBAR_ACTIONS)
                     .filter_map(enabled),
             );
-            if let Some(editor) = &self.editor {
+            if self.show_raw
+                && let Some(editor) = &self.editor
+            {
                 handles.push(editor.editor.focus_handle(cx));
             }
         }
@@ -509,7 +524,9 @@ impl StructureView {
             }
             "enter" if self.list.is_focused(window) => {
                 if let Some(editor) = &self.editor {
+                    // Enter inspects the exact text: open Diagnostics too.
                     self.show_details = true;
+                    self.show_raw = true;
                     window.focus(&editor.editor.focus_handle(cx), cx);
                 }
             }

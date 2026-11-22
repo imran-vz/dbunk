@@ -68,6 +68,46 @@ pub(super) fn page_range_label(
     }
 }
 
+/// The footer's row count: `100 of ~2,400 rows`, `207 rows` when the page
+/// holds the whole exact total, `1 row`, or `No rows`.
+pub(super) fn footer_rows_label(rows: usize, total: Option<(u64, bool)>) -> String {
+    if rows == 0 {
+        return "No rows".to_owned();
+    }
+    let noun = |count: u64| if count == 1 { "row" } else { "rows" };
+    let shown = rows as u64;
+    match total {
+        Some((value, false)) if value == shown => format!("{} {}", grouped(shown), noun(shown)),
+        Some(total) => format!(
+            "{} of {} {}",
+            grouped(shown),
+            total_label(Some(total)).unwrap_or_default(),
+            noun(total.0)
+        ),
+        None => format!("{} {}", grouped(shown), noun(shown)),
+    }
+}
+
+/// The row total for a page: the exact count once loaded, else the page's
+/// own exact or estimated count. `(count, estimated)`.
+pub(super) fn page_total(
+    model: &crate::data_model::TableDocument,
+    result: &dbunk_lib::backend::data::BrowseTableResult,
+) -> Option<(u64, bool)> {
+    model
+        .exact_count()
+        .map(|count| (count.value, false))
+        .or_else(|| match result.count.kind {
+            dbunk_lib::backend::data::BrowseCountKind::Unknown => None,
+            kind => result.count.value.map(|value| {
+                (
+                    value,
+                    kind == dbunk_lib::backend::data::BrowseCountKind::Estimated,
+                )
+            }),
+        })
+}
+
 /// The last page when the total is exact; estimates never bound a jump.
 pub(super) fn last_page(total: Option<(u64, bool)>, page_size: u32) -> Option<u32> {
     let (value, estimated) = total?;
@@ -105,18 +145,7 @@ impl TableView {
     pub(super) fn page_numbers(&self) -> Option<PageNumbers> {
         let model = self.model.as_ref()?;
         let result = model.result()?;
-        let total = model
-            .exact_count()
-            .map(|count| (count.value, false))
-            .or_else(|| match result.count.kind {
-                dbunk_lib::backend::data::BrowseCountKind::Unknown => None,
-                kind => result.count.value.map(|value| {
-                    (
-                        value,
-                        kind == dbunk_lib::backend::data::BrowseCountKind::Estimated,
-                    )
-                }),
-            });
+        let total = page_total(model, result);
         Some((
             model.page(),
             model.query().page_size,
@@ -192,7 +221,11 @@ impl TableView {
             .map_or(self.state.page_size, |model| model.query().page_size);
         let page = numbers.map_or(1, |(page, ..)| page);
         let last = numbers.and_then(|(_, size, _, total)| last_page(total, size));
-        let mut sizes = div().flex().flex_wrap().gap(px(2.)).px(px(6.));
+        let mut sizes = div()
+            .flex()
+            .flex_wrap()
+            .gap(px(crate::style::S1))
+            .px(px(crate::style::S3));
         for size in PAGE_SIZES {
             let weak = cx.weak_entity();
             let selected = size == current_size;
@@ -229,15 +262,15 @@ impl TableView {
         let jump = div()
             .flex()
             .items_center()
-            .gap(px(4.))
-            .px(px(6.))
+            .gap(px(crate::style::S2))
+            .px(px(crate::style::S3))
             .child(
                 crate::ui::field()
                     .flex_1()
                     .child(div().flex_1().child(field)),
             )
             .child(
-                crate::ui::tool_button("pager-go", "Go", None, enabled, true)
+                crate::ui::tool_button_accent("pager-go", "Go", None, enabled)
                     .aria_label("Go to page")
                     .on_click(cx.listener(move |this, _, window, cx| {
                         if enabled {
@@ -258,7 +291,7 @@ impl TableView {
             .w(px(220.))
             .flex()
             .flex_col()
-            .gap(px(4.))
+            .gap(px(crate::style::S2))
             .on_mouse_down_out(self.dismiss_outside(anchor, cx))
             .child(crate::ui::popover::heading("Limit"))
             .child(sizes)
@@ -269,7 +302,7 @@ impl TableView {
                     .id("pager-error")
                     .role(Role::Alert)
                     .aria_label(message.clone())
-                    .px(px(8.))
+                    .px(px(crate::style::S4))
                     .text_size(px(crate::style::FONT_SMALL))
                     .text_color(crate::style::bad_text())
                     .child(message)
@@ -345,6 +378,20 @@ mod tests {
         assert_eq!(page_range_label(1, 100, 0, None), "No rows");
         assert_eq!(page_range_label(1, 100, 0, Some((0, false))), "No rows");
         assert_eq!(page_range_label(201, 1000, 1000, None), "200,001–201,000");
+    }
+
+    #[test]
+    fn footer_rows_label_counts_the_page_against_the_total() {
+        assert_eq!(
+            footer_rows_label(100, Some((2_400, true))),
+            "100 of ~2,400 rows"
+        );
+        assert_eq!(footer_rows_label(7, Some((207, false))), "7 of 207 rows");
+        assert_eq!(footer_rows_label(207, Some((207, false))), "207 rows");
+        assert_eq!(footer_rows_label(1, Some((1, false))), "1 row");
+        assert_eq!(footer_rows_label(1, Some((1, true))), "1 of ~1 row");
+        assert_eq!(footer_rows_label(50, None), "50 rows");
+        assert_eq!(footer_rows_label(0, Some((0, false))), "No rows");
     }
 
     #[test]

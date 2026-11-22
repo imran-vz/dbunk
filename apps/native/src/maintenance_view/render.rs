@@ -19,7 +19,12 @@ impl MaintenanceView {
         let enabled = self.enabled(action);
         let weak = cx.entity().downgrade();
         let primary = enabled && matches!(action, Action::Apply | Action::Confirm);
-        crate::ui::tool_button(("maintenance-action", index), label, None, enabled, primary)
+        let button = if primary {
+            crate::ui::tool_button_accent(("maintenance-action", index), label, None, enabled)
+        } else {
+            crate::ui::tool_button(("maintenance-action", index), label, None, enabled, false)
+        };
+        button
             .a11y_synthetic_children(move |builder| {
                 if !enabled {
                     builder.parent_node().set_disabled();
@@ -34,6 +39,19 @@ impl MaintenanceView {
                     .ok();
             })
             .into_any_element()
+    }
+    /// Review actions show while they apply to the reference; actions of a
+    /// later step (apply, confirm, cancel, recovery, copy) appear only at
+    /// that step, so the bar never leads with disabled controls.
+    fn shown(&self, action: Action) -> bool {
+        match action {
+            Action::Review(intent) => self.reference.as_ref().is_some_and(|reference| {
+                !matches!(intent, MaintenanceIntent::RefreshMaterializedView { .. })
+                    || reference.kind == PgObjectKind::MaterializedView
+            }),
+            Action::Back => true,
+            _ => self.enabled(action),
+        }
     }
     fn key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let key = &event.keystroke;
@@ -109,7 +127,13 @@ impl Render for MaintenanceView {
             .text_color(crate::style::text())
             .text_size(px(crate::style::FONT))
             .capture_key_down(cx.listener(Self::key))
-            .child(crate::ui::toolbar().children((0..ACTIONS.len()).map(|i| self.button(i, cx))))
+            .child(
+                crate::ui::toolbar().children(
+                    (0..ACTIONS.len())
+                        .filter(|&i| self.shown(ACTIONS[i].0))
+                        .map(|i| self.button(i, cx)),
+                ),
+            )
             .child(
                 div()
                     .id("maintenance-details")
@@ -123,8 +147,9 @@ impl Render for MaintenanceView {
                     .min_h_0()
                     .overflow_y_scroll()
                     .track_scroll(&self.scroll)
-                    .p(px(8.))
+                    .p(px(crate::style::INSET_CONTENT))
                     .font_family(crate::style::MONO)
+                    .text_size(px(crate::style::FONT_DATA))
                     .focus(|s| s.bg(crate::style::row_hover()))
                     .child(text),
             )

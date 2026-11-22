@@ -246,9 +246,9 @@ impl CatalogView {
                 .aria_label(SharedString::from(text.clone()))
                 .flex()
                 .items_center()
-                .gap(px(8.))
-                .px(px(8.))
-                .py(px(4.))
+                .gap(px(crate::style::S4))
+                .px(px(crate::style::S4))
+                .py(px(crate::style::S2))
                 .bg(if unknown {
                     crate::style::bad_fill()
                 } else {
